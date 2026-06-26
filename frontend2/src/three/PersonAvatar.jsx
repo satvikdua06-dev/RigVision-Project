@@ -9,7 +9,7 @@
  * - Ground shadow disc
  */
 
-import React, { useRef, useMemo } from 'react';
+import React, { useRef, useMemo, useState, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
@@ -20,6 +20,7 @@ export default function PersonAvatar({ person }) {
   const groupRef = useRef();
   const glowRef = useRef();
   const currentPos = useRef(new THREE.Vector3(person.x, person.y + 0.9, person.z));
+  const [hovered, setHovered] = useState(false);
 
   // Target position from latest data (person.y is foot position, +0.9 for body center)
   const targetPos = useMemo(
@@ -45,8 +46,37 @@ export default function PersonAvatar({ person }) {
     }
   });
 
+  // Cleanup cursor on unmount if hovered
+  useEffect(() => {
+    return () => {
+      if (hovered) {
+        document.body.style.cursor = 'default';
+      }
+    };
+  }, [hovered]);
+
   return (
-    <group ref={groupRef} position={[person.x, person.y + 0.9, person.z]} renderOrder={10}>
+    <group
+      ref={groupRef}
+      position={[person.x, person.y + 0.9, person.z]}
+      renderOrder={10}
+      scale={hovered ? 1.15 : 1.0}
+      onPointerOver={(e) => {
+        e.stopPropagation();
+        setHovered(true);
+        document.body.style.cursor = 'pointer';
+      }}
+      onPointerOut={(e) => {
+        e.stopPropagation();
+        setHovered(false);
+        document.body.style.cursor = 'default';
+      }}
+      onClick={(e) => {
+        e.stopPropagation();
+        const camIds = person.camera_ids ? person.camera_ids.join(',') : '';
+        window.open(`/cameras.html?personId=${person.id}&cameras=${camIds}`, '_blank');
+      }}
+    >
       {/* Ground shadow disc */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.85, 0]}>
         <circleGeometry args={[0.25, 16]} />

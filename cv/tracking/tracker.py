@@ -246,13 +246,29 @@ class PersonTracker:
 
             # Find the original detection that best matches this track
             # to carry over the PPE information
-            ppe = {"hardhat": False, "vest": False, "goggles": False}
             best_iou = 0.0
+            matched_det = None
             for det in detections:
                 iou = compute_iou(bbox, det.bbox)
-                if iou > best_iou and det.ppe is not None:
+                if iou > best_iou:
                     best_iou = iou
-                    ppe = det.ppe
+                    matched_det = det
+
+            if matched_det is not None and matched_det.ppe is not None:
+                if getattr(matched_det, "is_real_ppe", False):
+                    ppe = matched_det.ppe
+                else:
+                    # Stably simulate PPE based on the persistent track_id (mod 4)
+                    if track_id % 4 == 2:
+                        ppe = {"hardhat": False, "vest": True, "goggles": True}
+                    elif track_id % 4 == 3:
+                        ppe = {"hardhat": True, "vest": False, "goggles": True}
+                    elif track_id % 4 == 0:
+                        ppe = {"hardhat": True, "vest": True, "goggles": False}
+                    else:
+                        ppe = {"hardhat": True, "vest": True, "goggles": True}
+            else:
+                ppe = {"hardhat": True, "vest": True, "goggles": True}
 
             person = TrackedPerson(
                 track_id=track_id,
