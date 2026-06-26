@@ -1,12 +1,10 @@
 import logging
+import os
 from neo4j import GraphDatabase
 from neo4j.exceptions import ServiceUnavailable
 
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-URI = "bolt://localhost:7687"
-AUTH = ("neo4j", "rigvision_neo4j")
 
 def create_topology(tx):
 
@@ -91,7 +89,13 @@ def create_topology(tx):
 
 def main():
     try:
-        driver = GraphDatabase.driver(URI, auth=AUTH)
+        # Read connection details from environment variables with sensible defaults for local dev
+        uri = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
+        user = os.environ.get("NEO4J_USER", "neo4j")
+        password = os.environ.get("NEO4J_PASSWORD", "rigvision_neo4j")
+        auth = (user, password)
+
+        driver = GraphDatabase.driver(uri, auth=auth)
         driver.verify_connectivity()
         logging.info("Connected to Neo4j successfully.")
         
