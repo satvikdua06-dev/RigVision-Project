@@ -1,0 +1,98 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "RigVision-3D Redis Data Contracts",
+  "description": "Exact JSON formats for all Redis keys. All modules MUST conform to these schemas. Changes require team review.",
+  "version": "1.0.0",
+
+  "definitions": {
+    "ppe_status": {
+      "type": "object",
+      "description": "Personal Protective Equipment detection status",
+      "properties": {
+        "hardhat":  { "type": "boolean", "description": "Hard hat detected on person" },
+        "vest":     { "type": "boolean", "description": "Safety vest detected on person" },
+        "goggles":  { "type": "boolean", "description": "Safety goggles detected on person" }
+      },
+      "required": ["hardhat", "vest", "goggles"]
+    },
+
+    "tracked_person": {
+      "type": "object",
+      "description": "A single tracked person with 3D position and PPE status",
+      "properties": {
+        "id":               { "type": "integer", "minimum": 0, "description": "Persistent track ID (unique across cameras)" },
+        "x":                { "type": "number", "description": "X position in meters (along room length)" },
+        "y":                { "type": "number", "description": "Y position in meters (vertical, 0 = floor)" },
+        "z":                { "type": "number", "description": "Z position in meters (along room width)" },
+        "zone":             { "type": "string", "enum": ["zone_a", "corridor", "zone_b", "unknown"], "description": "Which zone the person is in" },
+        "posture":          { "type": "string", "enum": ["standing", "sitting", "bending", "lying", "unknown"], "description": "Estimated body posture" },
+        "ppe":              { "$ref": "#/definitions/ppe_status" },
+        "confidence":       { "type": "number", "minimum": 0, "maximum": 1, "description": "Detection confidence score" },
+        "cameras_visible":  { "type": "integer", "minimum": 1, "description": "Number of cameras that can see this person" }
+      },
+      "required": ["id", "x", "y", "z", "zone", "posture", "ppe", "confidence", "cameras_visible"]
+    },
+
+    "zone_state": {
+      "type": "object",
+      "description": "Current state of a single zone including sensor readings",
+      "properties": {
+        "status":           { "type": "string", "enum": ["normal", "warning", "critical"], "description": "Overall zone safety status" },
+        "warning_reason":   { "type": ["string", "null"], "description": "Human-readable reason for warning/critical status" },
+        "temperature":      { "type": "number", "description": "Temperature in °C" },
+        "vibration":        { "type": "number", "description": "Vibration in g RMS" },
+        "noise":            { "type": "number", "description": "Noise level in dB" },
+        "gas_h2s":          { "type": "number", "description": "H₂S concentration in ppm" },
+        "pressure":         { "type": "number", "description": "Pressure in bar" },
+        "person_count":     { "type": "integer", "minimum": 0, "description": "Number of persons currently in zone" },
+        "ppe_violations":   {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of PPE violation descriptions for persons in this zone"
+        },
+        "updated_at":       { "type": "integer", "description": "Unix timestamp of last update" }
+      },
+      "required": ["status", "warning_reason", "temperature", "vibration", "noise", "gas_h2s", "pressure", "person_count", "ppe_violations", "updated_at"]
+    },
+
+    "violation": {
+      "type": "object",
+      "description": "A single compliance violation event",
+      "properties": {
+        "id":           { "type": "string", "description": "Unique violation ID (e.g., v-001)" },
+        "rule_id":      { "type": "string", "description": "Rule that was violated (e.g., PPE-001)" },
+        "zone":         { "type": "string", "enum": ["zone_a", "corridor", "zone_b"], "description": "Zone where violation occurred" },
+        "severity":     { "type": "string", "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"], "description": "Violation severity level" },
+        "message":      { "type": "string", "description": "Human-readable violation description" },
+        "person_ids":   { "type": "array", "items": { "type": "integer" }, "description": "IDs of persons involved" },
+        "timestamp":    { "type": "integer", "description": "Unix timestamp when violation was detected" }
+      },
+      "required": ["id", "rule_id", "zone", "severity", "message", "person_ids", "timestamp"]
+    }
+  },
+
+  "redis_keys": {
+    "rigvision:persons": {
+      "description": "Written by CV pipeline at ~10Hz. Array of all currently tracked persons.",
+      "type": "array",
+      "items": { "$ref": "#/definitions/tracked_person" }
+    },
+
+    "rigvision:zones": {
+      "description": "Written by sensor engine at ~1Hz. Object with zone IDs as keys.",
+      "type": "object",
+      "properties": {
+        "zone_a":   { "$ref": "#/definitions/zone_state" },
+        "corridor": { "$ref": "#/definitions/zone_state" },
+        "zone_b":   { "$ref": "#/definitions/zone_state" }
+      },
+      "required": ["zone_a", "corridor", "zone_b"]
+    },
+
+    "rigvision:violations:latest": {
+      "description": "Written by compliance engine. Array of recent violations.",
+      "type": "array",
+      "items": { "$ref": "#/definitions/violation" }
+    }
+  }
+}
