@@ -1,68 +1,95 @@
-// useRigStore.js
-// Central state store for the entire dashboard.
-// In mock mode  → data is loaded from the mock files above
-// In live mode  → WebSocket hook writes into this same store
-// The 3D scene and UI panels only ever READ from this store — never from raw data directly.
-
 import { create } from 'zustand'
-import { mockPersons } from '../data/mockPersons'
-import { mockZones }   from '../data/mockZones'
-import { mockViolations } from '../data/mockViolations'
-
-const MOCK_MODE = import.meta.env.VITE_MOCK_DATA === 'true'
-
-const useRigStore = create((set, get) => ({
-
-  // ─── persons ──────────────────────────────────────────────────────────────
-  // Array of tracked_person objects (from rigvision:persons)
-  persons: MOCK_MODE ? mockPersons : [],
-
-  setPersons: (persons) => set({ persons }),
-
-  getPersonById: (id) => get().persons.find((p) => p.id === id),
-
-  // ─── zones ────────────────────────────────────────────────────────────────
-  // Object keyed by zone id (from rigvision:zones)
-  zones: MOCK_MODE ? mockZones : {
-    zone_a:   null,
-    corridor: null,
-    zone_b:   null,
+let mockInterval = null;
+export const useRigStore = create((set, get) => ({
+  // 1. Initial State (Empty, just like when an app first loads)
+  persons: [],
+  zones: {
+    zone_a: { status: 'normal', temperature: 25, vibration: 0, noise: 40, gas_h2s: 0, pressure: 1, person_count: 0, ppe_violations: [], updated_at: Date.now() },
+    corridor: { status: 'normal', temperature: 22, vibration: 0, noise: 35, gas_h2s: 0, pressure: 1, person_count: 0, ppe_violations: [], updated_at: Date.now() },
+    zone_b: { status: 'normal', temperature: 26, vibration: 0, noise: 45, gas_h2s: 0, pressure: 1, person_count: 0, ppe_violations: [], updated_at: Date.now() }
   },
+  violations: [],
+  selectedPerson: null,
+  selectedZone: null,
+  sidebarTab: 'zones',
 
-  setZones: (zones) => set({ zones }),
+  // UI Actions
+  selectPerson: (id) => set({ selectedPerson: id, selectedZone: null }),
+  selectZone: (id) => set({ selectedZone: id, selectedPerson: null }),
+  clearSelection: () => set({ selectedPerson: null, selectedZone: null }),
+  setSidebarTab: (tab) => set({ sidebarTab: tab }),
 
-  setZoneState: (zoneId, zoneState) =>
-    set((s) => ({ zones: { ...s.zones, [zoneId]: zoneState } })),
+  // ----------------------------------------------------------------------
+  // 2. THE WEBSOCKET CONNECTION
+  // ----------------------------------------------------------------------
+  connectToBackend: () => {
+    // 🔮 FUTURE REAL CODE (Leave this commented out for when backend is ready)
+    /*
+    const ws = new WebSocket('ws://your-backend-url')
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data)
+      if (data.type === 'rigvision:persons') set({ persons: data.payload })
+      if (data.type === 'rigvision:zones') set({ zones: data.payload })
+      if (data.type === 'rigvision:violations:latest') set({ violations: data.payload })
+    }
+    */
+    if (mockInterval) {
+      clearInterval(mockInterval);
+    }
+    // 🛠️ CURRENT MOCK CODE (Simulates the 10Hz Redis stream)
+    let time = 0;
+    
+    mockInterval = setInterval(() => {
+      time += 0.1;
+      
+      // Generate mock persons strictly adhering to your 'tracked_person' schema
+// Inside useRigStore.js -> connectToBackend -> setInterval
+      
+      const mockPersons = [
+        {
+          id: 1,
+          // 👇 CHANGED: Base X is now -22 so they spawn in Zone A
+          // Adding the Math.sin lets them pace back and forth inside the room
+          x: -22 + Math.sin(time) * 3, 
+          y: 0,
+          z: -3,
+          zone: "zone_a",
+          posture: "standing",
+          ppe: { hardhat: true, vest: true, goggles: true },
+          confidence: 0.95,
+          cameras_visible: 2
+        },
+        {
+          id: 2,
+          // 👇 CHANGED: Base X is now 0 so they spawn in the Corridor
+          x: 0, 
+          y: 0,
+          z: Math.cos(time * 0.5) * 5, // Walking along the Z axis of the corridor
+          zone: "corridor",
+          posture: "walking",
+          ppe: { hardhat: true, vest: false, goggles: true }, 
+          confidence: 0.88,
+          cameras_visible: 1
+        },
+        {
+          id: 3,
+          // 👇 CHANGED: Base X is now 22 so they spawn in Zone B
+          x: 22, 
+          y: 0,
+          z: 2 + Math.cos(time) * 2, // Slight pacing in Zone B
+          zone: "zone_b",
+          posture: "bending",
+          ppe: { hardhat: false, vest: false, goggles: false }, 
+          confidence: 0.72,
+          cameras_visible: 3
+        }
+      ];
 
-  // ─── violations ───────────────────────────────────────────────────────────
-  // Array of violation objects (from rigvision:violations:latest)
-  violations: MOCK_MODE ? mockViolations : [],
-
-  setViolations: (violations) => set({ violations }),
-
-  addViolation: (v) =>
-    set((s) => ({ violations: [v, ...s.violations].slice(0, 50) })), // keep last 50
-
-  // ─── UI state ─────────────────────────────────────────────────────────────
-  selectedZone: null,           // zone_id string | null
-  selectedPersonId: null,       // person id | null
-  anomalyReasoning: null,       // LLM response object | null (from Person D)
-  isSidebarOpen: true,
-
-  setSelectedZone:    (id)       => set({ selectedZone: id }),
-  setSelectedPerson:  (id)       => set({ selectedPersonId: id }),
-  setAnomalyReasoning:(reasoning)=> set({ anomalyReasoning: reasoning }),
-  toggleSidebar:      ()         => set((s) => ({ isSidebarOpen: !s.isSidebarOpen })),
-
-  // ─── helpers you'll use in the 3D scene ───────────────────────────────────
-  // Maps zone status → color string for Three.js materials
-  getZoneColor: (zoneId) => {
-    const zone = get().zones[zoneId]
-    if (!zone) return '#444444'
-    return zone.status === 'critical' ? '#ef4444'   // red
-         : zone.status === 'warning'  ? '#f59e0b'   // amber
-         :                              '#22c55e'   // green
-  },
+      // Update the store! 
+      // Because Scene3D uses useFrame to interpolate toward these coordinates,
+      // updating this at 10Hz will make the humans walk around smoothly in 3D.
+      set({ persons: mockPersons });
+      
+    }, 100); // 100ms = 10Hz
+  }
 }))
-
-export default useRigStore
