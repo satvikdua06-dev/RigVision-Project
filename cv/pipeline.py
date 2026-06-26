@@ -310,6 +310,7 @@ def run_live_mode(
     model_path: str = "yolov8l.pt",
     show_preview: bool = False,
     device: Optional[str] = None,
+    gmc: str = "sparseOptFlow",
 ) -> None:
     """Run the full CV pipeline with real cameras.
     
@@ -370,7 +371,7 @@ def run_live_mode(
     # Create one BoT-SORT tracker per camera
     trackers: Dict[int, PersonTracker] = {}
     for cam_id in cameras:
-        trackers[cam_id] = PersonTracker(camera_id=cam_id)
+        trackers[cam_id] = PersonTracker(camera_id=cam_id, cmc_method=gmc)
     
     # Cross-camera matcher
     mapper = CrossCameraMapper()
@@ -445,6 +446,7 @@ def run_live_mode(
                 "ppe": ppe,
                 "confidence": round(best_track.confidence, 2),
                 "cameras_visible": len(mp.per_camera),
+                "camera_ids": [int(cid) for cid in mp.per_camera.keys()],
             })
         
         # 7. Generate zone states from person data
@@ -454,19 +456,31 @@ def run_live_mode(
         redis_client.set("rigvision:persons", json.dumps(persons_json))
         redis_client.set("rigvision:zones", json.dumps(zone_states))
         
-        # Show preview if requested
+        # Draw bounding boxes + upload to Redis
+        import base64
+        for cam_id, frame in frames.items():
+            annotated_frame = frame.copy()
+            if cam_id in per_camera_tracks:
+                for track in per_camera_tracks[cam_id]:
+                    x1, y1, x2, y2 = [int(v) for v in track.bbox]
+                    has_hat = track.ppe and track.ppe.get("hardhat", False)
+                    color = (0, 255, 0) if has_hat else (0, 0, 255)
+                    cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
+                    cv2.putText(annotated_frame, f"#{track.track_id}", (x1, y1 - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+                                
+            # Encode to JPEG and publish to Redis
+            try:
+                _, jpeg = cv2.imencode('.jpg', annotated_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+                jpeg_b64 = base64.b64encode(jpeg.tobytes()).decode('utf-8')
+                redis_client.set(f"rigvision:camera:frame:{cam_id}", jpeg_b64)
+            except Exception as e:
+                print(f"Error streaming frame to Redis: {e}")
+                
+            if show_preview:
+                cv2.imshow(f"Camera {cam_id}", annotated_frame)
+                
         if show_preview:
-            for cam_id, frame in frames.items():
-                # Draw bounding boxes
-                if cam_id in per_camera_tracks:
-                    for track in per_camera_tracks[cam_id]:
-                        x1, y1, x2, y2 = [int(v) for v in track.bbox]
-                        color = (0, 255, 0) if track.ppe and track.ppe.get("hardhat") else (0, 0, 255)
-                        cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-                        cv2.putText(frame, f"#{track.track_id}", (x1, y1 - 10),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-                cv2.imshow(f"Camera {cam_id}", frame)
-            
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
         
@@ -567,6 +581,8 @@ Examples:
                         help="Redis port (default: 6379)")
     parser.add_argument("--device", default=None,
                         help="Inference device (e.g. 'cuda', 'cpu', '0'). None = auto-detect.")
+    parser.add_argument("--gmc", choices=["sparseOptFlow", "none"], default="sparseOptFlow",
+                        help="Camera motion compensation method (default: sparseOptFlow). Use 'none' for static cameras to save CPU.")
     
     args = parser.parse_args()
     
@@ -599,6 +615,7 @@ Examples:
             model_path=args.model,
             show_preview=args.show_preview,
             device=args.device,
+            gmc=args.gmc,
         )
     
     elif args.mode == "live":
@@ -611,6 +628,7 @@ Examples:
             model_path=args.model,
             show_preview=args.show_preview,
             device=args.device,
+            gmc=args.gmc,
         )
 
 
@@ -624,6 +642,7 @@ def run_video_mode(
     model_path: str = "yolov8l.pt",
     show_preview: bool = False,
     device: Optional[str] = None,
+    gmc: str = "sparseOptFlow",
 ) -> None:
     """Run detection + tracking on pre-recorded video files.
     
@@ -695,7 +714,7 @@ def run_video_mode(
         print(f"    Video {i}: {vp} ({w}x{h} @ {fps:.0f}fps, {total} frames) -> {video_zone_map[i]}")
         
         caps[i] = cap
-        trackers[i] = PersonTracker(camera_id=i)
+        trackers[i] = PersonTracker(camera_id=i, cmc_method=gmc)
         frame_sizes[i] = (w, h)
     
     print("  [OK] All components initialized. Processing videos...")
@@ -811,6 +830,8 @@ def run_video_mode(
                     # Person already seen in an earlier camera (e.g. video 0). 
                     # We just increase the visibility count. We keep the anchor coordinates.
                     fused_persons_dict[final_id]["cameras_visible"] += 1
+                    if int(vid_id) not in fused_persons_dict[final_id]["camera_ids"]:
+                        fused_persons_dict[final_id]["camera_ids"].append(int(vid_id))
                 else:
                     fused_persons_dict[final_id] = {
                         "id": final_id,
@@ -822,6 +843,7 @@ def run_video_mode(
                         "ppe": ppe,
                         "confidence": float(round(person.confidence, 2)),
                         "cameras_visible": 1,
+                        "camera_ids": [int(vid_id)],
                     }
                     
         all_persons = list(fused_persons_dict.values())
@@ -833,34 +855,46 @@ def run_video_mode(
         redis_client.set("rigvision:persons", json.dumps(all_persons))
         redis_client.set("rigvision:zones", json.dumps(zone_states))
         
-        # 7. Show preview windows if requested
-        if show_preview:
-            for vid_id, frame in frames.items():
-                if vid_id in per_video_tracks:
-                    for track in per_video_tracks[vid_id]:
-                        x1, y1, x2, y2 = [int(v) for v in track.bbox]
-                        has_hat = track.ppe and track.ppe.get("hardhat", False)
-                        color = (0, 255, 0) if has_hat else (0, 0, 255)
-                        cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-                        label = f"#{track.track_id + global_id_offset[vid_id]}"
-                        
-                        # Show unified ID if matched
-                        if vid_id != 0:
-                            hist = get_hist(frame, track.bbox)
-                            if hist is not None:
-                                for anchor_id, ahist in anchor_hists.items():
-                                    if cv2.compareHist(hist, ahist, cv2.HISTCMP_BHATTACHARYYA) < 0.4:
-                                        label = f"#{anchor_id} (fusion)"
-                                        break
-                                        
-                        cv2.putText(frame, label, (x1, y1 - 10),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-                
-                zone_id = video_zone_map[vid_id]
-                cv2.putText(frame, f"Zone: {zone_id}", (10, 25),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-                cv2.imshow(f"Video {vid_id} - {zone_id}", frame)
+        # Draw bounding boxes + upload to Redis
+        import base64
+        for vid_id, frame in frames.items():
+            annotated_frame = frame.copy()
+            if vid_id in per_video_tracks:
+                for track in per_video_tracks[vid_id]:
+                    x1, y1, x2, y2 = [int(v) for v in track.bbox]
+                    has_hat = track.ppe and track.ppe.get("hardhat", False)
+                    color = (0, 255, 0) if has_hat else (0, 0, 255)
+                    cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
+                    label = f"#{track.track_id + global_id_offset[vid_id]}"
+                    
+                    # Show unified ID if matched
+                    if vid_id != 0:
+                        hist = get_hist(frame, track.bbox)
+                        if hist is not None:
+                            for anchor_id, ahist in anchor_hists.items():
+                                if cv2.compareHist(hist, ahist, cv2.HISTCMP_BHATTACHARYYA) < 0.4:
+                                    label = f"#{anchor_id} (fusion)"
+                                    break
+                                    
+                    cv2.putText(annotated_frame, label, (x1, y1 - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
             
+            zone_id = video_zone_map[vid_id]
+            cv2.putText(annotated_frame, f"Zone: {zone_id}", (10, 25),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+            
+            # Encode to JPEG and publish to Redis
+            try:
+                _, jpeg = cv2.imencode('.jpg', annotated_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+                jpeg_b64 = base64.b64encode(jpeg.tobytes()).decode('utf-8')
+                redis_client.set(f"rigvision:camera:frame:{vid_id}", jpeg_b64)
+            except Exception as e:
+                print(f"Error streaming frame to Redis: {e}")
+                
+            if show_preview:
+                cv2.imshow(f"Video {vid_id} - {zone_id}", annotated_frame)
+            
+        if show_preview:
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 print("\n[*] Quit by user")
                 break

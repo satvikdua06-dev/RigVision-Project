@@ -28,9 +28,10 @@
         "posture":          { "type": "string", "enum": ["standing", "sitting", "bending", "lying", "unknown"], "description": "Estimated body posture" },
         "ppe":              { "$ref": "#/definitions/ppe_status" },
         "confidence":       { "type": "number", "minimum": 0, "maximum": 1, "description": "Detection confidence score" },
-        "cameras_visible":  { "type": "integer", "minimum": 1, "description": "Number of cameras that can see this person" }
+        "cameras_visible":  { "type": "integer", "minimum": 1, "description": "Number of cameras that can see this person" },
+        "camera_ids":       { "type": "array", "items": { "type": "integer" }, "description": "IDs of cameras currently seeing this person" }
       },
-      "required": ["id", "x", "y", "z", "zone", "posture", "ppe", "confidence", "cameras_visible"]
+      "required": ["id", "x", "y", "z", "zone", "posture", "ppe", "confidence", "cameras_visible", "camera_ids"]
     },
 
     "zone_state": {

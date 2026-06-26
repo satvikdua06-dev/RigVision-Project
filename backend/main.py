@@ -33,6 +33,7 @@ USAGE:
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import os
 import time
@@ -43,6 +44,7 @@ import redis.asyncio as aioredis
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
 
 # ─── Redis Connection ───────────────────────────────────────
@@ -247,6 +249,35 @@ async def get_violations() -> List[Dict]:
     r = await get_redis()
     raw = await r.get("rigvision:violations:latest")
     return json.loads(raw) if raw else []
+
+
+@app.get("/api/video/mjpeg/{camera_id}")
+async def get_mjpeg_stream(camera_id: str):
+    """MJPEG stream endpoint that retrieves camera frames from Redis."""
+    async def frame_generator():
+        r = await get_redis()
+        while True:
+            try:
+                # Retrieve base64 encoded frame
+                jpeg_b64 = await r.get(f"rigvision:camera:frame:{camera_id}")
+                if jpeg_b64:
+                    # Decode base64 to raw jpeg bytes
+                    jpeg_bytes = base64.b64decode(jpeg_b64)
+                    yield (
+                        b'--frame\r\n'
+                        b'Content-Type: image/jpeg\r\n'
+                        b'Content-Length: ' + str(len(jpeg_bytes)).encode() + b'\r\n\r\n' +
+                        jpeg_bytes + b'\r\n'
+                    )
+            except Exception as e:
+                print(f"[mjpeg] Error yielding frame for cam {camera_id}: {e}")
+            # Run at ~25fps stream pacing
+            await asyncio.sleep(0.04)
+
+    return StreamingResponse(
+        frame_generator(),
+        media_type="multipart/x-mixed-replace; boundary=frame"
+    )
 
 
 # ─── WebSocket Endpoint ────────────────────────────────────
