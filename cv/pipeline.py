@@ -311,6 +311,7 @@ def run_live_mode(
     show_preview: bool = False,
     device: Optional[str] = None,
     gmc: str = "sparseOptFlow",
+    resize_width: Optional[int] = None,
 ) -> None:
     """Run the full CV pipeline with real cameras.
     
@@ -403,6 +404,12 @@ def run_live_mode(
                 if cam_id in calibrations:
                     cal = calibrations[cam_id]
                     frame = cv2.undistort(frame, cal.K, cal.dist_coeffs)
+                # Resize if specified
+                if resize_width:
+                    h, w = frame.shape[:2]
+                    aspect_ratio = h / w
+                    target_height = int(resize_width * aspect_ratio)
+                    frame = cv2.resize(frame, (resize_width, target_height), interpolation=cv2.INTER_LINEAR)
                 frames[cam_id] = frame
         
         if not frames:
@@ -583,6 +590,8 @@ Examples:
                         help="Inference device (e.g. 'cuda', 'cpu', '0'). None = auto-detect.")
     parser.add_argument("--gmc", choices=["sparseOptFlow", "none"], default="sparseOptFlow",
                         help="Camera motion compensation method (default: sparseOptFlow). Use 'none' for static cameras to save CPU.")
+    parser.add_argument("--resize-width", type=int, default=None,
+                        help="Resize input frames to this width (maintaining aspect ratio) to increase performance.")
     
     args = parser.parse_args()
     
@@ -616,6 +625,7 @@ Examples:
             show_preview=args.show_preview,
             device=args.device,
             gmc=args.gmc,
+            resize_width=args.resize_width,
         )
     
     elif args.mode == "live":
@@ -629,6 +639,7 @@ Examples:
             show_preview=args.show_preview,
             device=args.device,
             gmc=args.gmc,
+            resize_width=args.resize_width,
         )
 
 
@@ -643,6 +654,7 @@ def run_video_mode(
     show_preview: bool = False,
     device: Optional[str] = None,
     gmc: str = "sparseOptFlow",
+    resize_width: Optional[int] = None,
 ) -> None:
     """Run detection + tracking on pre-recorded video files.
     
@@ -715,6 +727,12 @@ def run_video_mode(
         
         caps[i] = cap
         trackers[i] = PersonTracker(camera_id=i, cmc_method=gmc)
+        
+        # Resize dimensions if target width is specified
+        if resize_width:
+            aspect_ratio = h / w
+            h = int(resize_width * aspect_ratio)
+            w = resize_width
         frame_sizes[i] = (w, h)
     
     print("  [OK] All components initialized. Processing videos...")
@@ -749,6 +767,12 @@ def run_video_mode(
                 if not ret:
                     finished_videos.append(vid_id)
                     continue
+            # Resize if specified
+            if resize_width:
+                h, w = frame.shape[:2]
+                aspect_ratio = h / w
+                target_height = int(resize_width * aspect_ratio)
+                frame = cv2.resize(frame, (resize_width, target_height), interpolation=cv2.INTER_LINEAR)
             frames[vid_id] = frame
         
         if not frames:
