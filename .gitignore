@@ -20,6 +20,10 @@ build/
 .venv/
 venv/
 env/
+*.pyc
+*.pyo
+*.pyd
+.Python
 
 # ── Node.js ──
 node_modules/
