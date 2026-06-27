@@ -212,12 +212,77 @@ function EquipmentBox({ equipment }) {
   );
 }
 
+/* ── Coordinate Helpers ───────────────────────────────────── */
+function CoordinateHelpers() {
+  const labelStyle = {
+    background: 'rgba(15, 23, 42, 0.85)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '4px',
+    padding: '2px 6px',
+    fontSize: '9px',
+    fontFamily: 'monospace',
+    color: '#94a3b8',
+    whiteSpace: 'nowrap',
+    pointerEvents: 'none',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+  };
+
+  return (
+    <group>
+      {/* 1m Division Grid Helpers covering exactly 10m x 5m floor */}
+      <gridHelper args={[5, 5, '#06b6d4', '#1e293b']} position={[2.5, 0.01, 2.5]} />
+      <gridHelper args={[5, 5, '#06b6d4', '#1e293b']} position={[7.5, 0.01, 2.5]} />
+
+      {/* Axis lines at the origin [0, 0.02, 0] */}
+      {/* X Axis (Red) */}
+      <Line points={[[0, 0.02, 0], [1, 0.02, 0]]} color="#ef4444" lineWidth={3} />
+      {/* Z Axis (Blue) */}
+      <Line points={[[0, 0.02, 0], [0, 0.02, 1]]} color="#3b82f6" lineWidth={3} />
+      {/* Y Axis (Green) */}
+      <Line points={[[0, 0.02, 0], [0, 1.0, 0]]} color="#10b981" lineWidth={3} />
+
+      {/* Labels at key coordinates */}
+      {/* Origin (0,0,0) */}
+      <Html position={[0, 0.1, 0]} center distanceFactor={10}>
+        <div style={labelStyle}>Origin (0,0,0)</div>
+      </Html>
+
+      {/* Room A / Corridor Boundary */}
+      <Html position={[4, 0.1, 2.5]} center distanceFactor={10}>
+        <div style={labelStyle}>x=4.0m</div>
+      </Html>
+
+      {/* Corridor / Room B Boundary */}
+      <Html position={[6, 0.1, 2.5]} center distanceFactor={10}>
+        <div style={labelStyle}>x=6.0m</div>
+      </Html>
+
+      {/* Far Corner (10,0,5) */}
+      <Html position={[10, 0.1, 5]} center distanceFactor={10}>
+        <div style={labelStyle}>Room B Corner (10,0,5)</div>
+      </Html>
+
+      {/* Axis helper labels */}
+      <Html position={[1.2, 0.05, 0]} center distanceFactor={10}>
+        <div style={{ ...labelStyle, color: '#ef4444' }}>+X (Length)</div>
+      </Html>
+      <Html position={[0, 0.05, 1.2]} center distanceFactor={10}>
+        <div style={{ ...labelStyle, color: '#3b82f6' }}>+Z (Width)</div>
+      </Html>
+      <Html position={[0, 1.2, 0]} center distanceFactor={10}>
+        <div style={{ ...labelStyle, color: '#10b981' }}>+Y (Height)</div>
+      </Html>
+    </group>
+  );
+}
+
 /* ── Main Room Model ────────────────────────────────────── */
 export default function RigModel() {
   return (
     <group>
       <Floor />
       <Walls />
+      <CoordinateHelpers />
 
       {/* Zone volumes */}
       {Object.entries(ZONES).map(([zoneId, zone]) => (

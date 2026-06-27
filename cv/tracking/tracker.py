@@ -103,6 +103,11 @@ class TrackedPerson:
     foot_point: Tuple[float, float] = field(default=(0.0, 0.0))
     confidence: float = 0.0
     ppe: Optional[dict] = None
+    posture: str = "standing"
+    keypoints: Optional[np.ndarray] = None
+    face_id: Optional[int] = None
+    face_confidence: float = 0.0
+    recognition_method: Optional[str] = None
     frames_seen: int = 0
     frames_missing: int = 0
     features: Optional[np.ndarray] = None
@@ -270,11 +275,29 @@ class PersonTracker:
             else:
                 ppe = {"hardhat": True, "vest": True, "goggles": True}
 
+            if matched_det is not None:
+                posture = getattr(matched_det, "posture", "standing")
+                keypoints = getattr(matched_det, "keypoints", None)
+                face_id = getattr(matched_det, "face_id", None)
+                face_confidence = getattr(matched_det, "face_confidence", 0.0)
+                recognition_method = getattr(matched_det, "recognition_method", None)
+            else:
+                posture = "standing"
+                keypoints = None
+                face_id = None
+                face_confidence = 0.0
+                recognition_method = None
+
             person = TrackedPerson(
                 track_id=track_id,
                 bbox=bbox,
                 confidence=conf,
                 ppe=ppe,
+                posture=posture,
+                keypoints=keypoints,
+                face_id=face_id,
+                face_confidence=face_confidence,
+                recognition_method=recognition_method,
                 frames_seen=1,
             )
             result.append(person)

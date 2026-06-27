@@ -29,6 +29,7 @@ import argparse
 import json
 import math
 import os
+os.environ["OPENCV_LOG_LEVEL"] = "OFF"  # Suppress internal OpenCV logging and warnings
 import signal
 import sys
 import time
@@ -96,6 +97,7 @@ class DemoDataGenerator:
                 "has_hardhat": np.random.random() > 0.3,  # 70% wear hard hats
                 "has_vest": np.random.random() > 0.4,      # 60% wear vests
                 "has_goggles": np.random.random() > 0.6,   # 40% wear goggles
+                "posture": "standing",
             })
 
     def generate_persons(self) -> List[Dict]:
@@ -138,13 +140,20 @@ class DemoDataGenerator:
             if np.random.random() < 0.002:  # ~once every 50 seconds at 10Hz
                 person["has_hardhat"] = not person["has_hardhat"]
             
+            # Randomly transition postures (standing is most common)
+            if np.random.random() < 0.01:  # ~once every 10 seconds at 10Hz
+                person["posture"] = np.random.choice(
+                    ["standing", "sitting", "bending", "lying"],
+                    p=[0.7, 0.15, 0.1, 0.05]
+                )
+            
             result.append({
                 "id": pid,
                 "x": round(x, 2),
                 "y": round(y, 2),
                 "z": round(z, 2),
                 "zone": zone,
-                "posture": "standing",
+                "posture": person["posture"],
                 "ppe": {
                     "hardhat": person["has_hardhat"],
                     "vest": person["has_vest"],
@@ -299,6 +308,98 @@ def run_demo_mode(redis_client: redis.Redis, zone_definitions_path: str) -> None
     print(f"[OK] Demo stopped after {frame_count} frames")
 
 
+import threading
+
+class ThreadedCamera:
+    """Threaded camera reader that continuously flushes OpenCV's internal frame buffer.
+    
+    Reads from the stream as fast as frames arrive in a background thread and holds
+    only the latest frame. This completely eliminates RTSP/MJPEG stream buffering latency.
+    """
+    def __init__(self, source: str) -> None:
+        import cv2
+        try:
+            cam_index = int(source)
+            self.cap = cv2.VideoCapture(cam_index)
+        except ValueError:
+            self.cap = cv2.VideoCapture(source)
+            
+        if not self.cap.isOpened():
+            raise RuntimeError(f"Cannot open camera: {source}")
+            
+        # Set buffer size to 1 as a hint
+        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        
+        self.ret = False
+        self.frame = None
+        self.running = True
+        self.lock = threading.Lock()
+        
+        self.thread = threading.Thread(target=self._update, daemon=True)
+        self.thread.start()
+
+    def _update(self) -> None:
+        import time
+        while self.running:
+            ret, frame = self.cap.read()
+            if ret:
+                with self.lock:
+                    self.ret = ret
+                    self.frame = frame.copy() if frame is not None else None
+            else:
+                time.sleep(0.01)
+
+    def read(self) -> Tuple[bool, Optional[np.ndarray]]:
+        with self.lock:
+            return self.ret, self.frame
+
+    def get(self, propId: int) -> float:
+        return self.cap.get(propId)
+
+    def release(self) -> None:
+        self.running = False
+        if self.thread.is_alive():
+            self.thread.join(timeout=1.0)
+        self.cap.release()
+
+
+def _draw_skeleton(frame: np.ndarray, keypoints: Optional[np.ndarray]) -> None:
+    """Draw the 17 keypoint COCO skeleton on the frame."""
+    import cv2
+    if keypoints is None or len(keypoints) == 0:
+        return
+        
+    # Standard COCO connection pairs
+    CONNECTIONS = [
+        (5, 6),   # Shoulder line
+        (5, 11),  # Left torso side
+        (6, 12),  # Right torso side
+        (11, 12), # Hip line
+        (5, 7), (7, 9),     # Left arm
+        (6, 8), (8, 10),    # Right arm
+        (11, 13), (13, 15), # Left leg
+        (12, 14), (14, 16), # Right leg
+        (0, 1), (0, 2), (1, 3), (2, 4) # Face keypoints connection
+    ]
+    
+    # Draw bones in yellow
+    for start_idx, end_idx in CONNECTIONS:
+        if start_idx < len(keypoints) and end_idx < len(keypoints):
+            pt1 = tuple(map(int, keypoints[start_idx]))
+            pt2 = tuple(map(int, keypoints[end_idx]))
+            # Skip invalid/zero coordinates
+            if pt1 != (0, 0) and pt2 != (0, 0):
+                cv2.line(frame, pt1, pt2, (0, 255, 255), 2)
+                
+    # Draw joints in red
+    for kp in keypoints:
+        pt = tuple(map(int, kp))
+        if pt != (0, 0):
+            cv2.circle(frame, pt, 4, (0, 0, 255), -1)
+
+
 # ─── Live Mode ──────────────────────────────────────────────
 
 def run_live_mode(
@@ -320,6 +421,13 @@ def run_live_mode(
     """
     # Import heavy CV dependencies only when actually needed
     import cv2
+    try:
+        cv2.utils.logging.setLogLevel(cv2.utils.logging.LOG_LEVEL_SILENT)
+    except Exception:
+        try:
+            cv2.utils.logging.setLogLevel(0)
+        except Exception:
+            pass
     from detection.detector import PersonDetector
     from tracking.tracker import PersonTracker, TrackedPerson
     from tracking.cross_camera import CrossCameraMapper, MatchedPerson
@@ -329,24 +437,13 @@ def run_live_mode(
         load_calibrations,
     )
 
-    def open_camera(source: str) -> cv2.VideoCapture:
-        """Open a camera source (USB index or RTSP URL)."""
-        try:
-            cam_index = int(source)
-            cap = cv2.VideoCapture(cam_index)
-        except ValueError:
-            cap = cv2.VideoCapture(source)
-        
-        if not cap.isOpened():
-            raise RuntimeError(f"Cannot open camera: {source}")
-        
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-        
+    def open_camera(source: str) -> ThreadedCamera:
+        """Open a camera source in a background thread to prevent buffer lag."""
+        cap = ThreadedCamera(source)
         w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = cap.get(cv2.CAP_PROP_FPS)
-        print(f"  Opened {source}: {w}x{h} @ {fps:.1f}fps")
+        print(f"  Opened threaded camera {source}: {w}x{h} @ {fps:.1f}fps")
         
         return cap
 
@@ -390,6 +487,12 @@ def run_live_mode(
     print("  [OK] All components initialized. Pipeline running...")
     print("  Press Ctrl+C to stop\n")
     
+    # Mappings for persistent recognition
+    global_to_personnel_map: Dict[int, int] = {}
+    global_to_recognition_method: Dict[int, str] = {}
+    local_to_personnel_map: Dict[Tuple[int, int], int] = {}
+    local_to_recognition_method: Dict[Tuple[int, int], str] = {}
+
     frame_count = 0
     
     while RUNNING:
@@ -432,9 +535,51 @@ def run_live_mode(
         
         # 5. Triangulate 3D positions + assign zones
         matched_persons = triangulator.triangulate_all(matched_persons)
+
+        # Update persistent face/QR recognition mappings and propagate across matched cameras
+        for mp in matched_persons:
+            # Check if any track currently matched has a face_id detected in this frame
+            recognized_id = None
+            rec_method = None
+            for cam_id, track in mp.per_camera.items():
+                if getattr(track, "face_id", None) is not None:
+                    recognized_id = track.face_id
+                    rec_method = track.recognition_method
+                    break
+            
+            if recognized_id is not None:
+                # Store globally
+                global_to_personnel_map[mp.global_id] = recognized_id
+                global_to_recognition_method[mp.global_id] = rec_method
+                # Propagate to all camera tracks in this matched group
+                for cam_id, track in mp.per_camera.items():
+                    local_to_personnel_map[(cam_id, track.track_id)] = recognized_id
+                    local_to_recognition_method[(cam_id, track.track_id)] = rec_method
+            else:
+                # No face/QR recognized in this frame. Check if global_id is already mapped from a previous frame
+                if mp.global_id in global_to_personnel_map:
+                    # Propagate to any new/current tracks in this matched group
+                    pers_id = global_to_personnel_map[mp.global_id]
+                    method = global_to_recognition_method[mp.global_id]
+                    for cam_id, track in mp.per_camera.items():
+                        local_to_personnel_map[(cam_id, track.track_id)] = pers_id
+                        local_to_recognition_method[(cam_id, track.track_id)] = method
+                else:
+                    # Check if any of the local camera tracks were previously mapped
+                    for cam_id, track in mp.per_camera.items():
+                        if (cam_id, track.track_id) in local_to_personnel_map:
+                            pers_id = local_to_personnel_map[(cam_id, track.track_id)]
+                            method = local_to_recognition_method[(cam_id, track.track_id)]
+                            global_to_personnel_map[mp.global_id] = pers_id
+                            global_to_recognition_method[mp.global_id] = method
+                            # Propagate to all tracks in this matched group
+                            for cid, t in mp.per_camera.items():
+                                local_to_personnel_map[(cid, t.track_id)] = pers_id
+                                local_to_recognition_method[(cid, t.track_id)] = method
+                            break
         
-        # 6. Build persons JSON for Redis
-        persons_json = []
+        # 6. Build persons JSON for Redis (de-duplicated by personnel ID)
+        fused_persons_dict = {}
         for mp in matched_persons:
             if mp.position_3d is None:
                 continue
@@ -443,18 +588,49 @@ def run_live_mode(
             best_track = max(mp.per_camera.values(), key=lambda t: t.confidence)
             ppe = best_track.ppe or {"hardhat": False, "vest": False, "goggles": False}
             
-            persons_json.append({
-                "id": mp.global_id,
+            person_id = mp.global_id
+            rec_method = None
+            if mp.global_id in global_to_personnel_map:
+                person_id = global_to_personnel_map[mp.global_id]
+                rec_method = global_to_recognition_method.get(mp.global_id)
+            
+            person_dict = {
+                "id": person_id,
                 "x": round(mp.position_3d[0], 2),
                 "y": round(mp.position_3d[1], 2),
                 "z": round(mp.position_3d[2], 2),
                 "zone": mp.zone or "unknown",
-                "posture": "standing",  # RTMPose integration TODO
+                "posture": getattr(best_track, "posture", "standing"),
                 "ppe": ppe,
                 "confidence": round(best_track.confidence, 2),
                 "cameras_visible": len(mp.per_camera),
                 "camera_ids": [int(cid) for cid in mp.per_camera.keys()],
-            })
+                "recognition_method": rec_method,
+            }
+            
+            if person_id in fused_persons_dict:
+                # Merge camera visibility lists
+                existing = fused_persons_dict[person_id]
+                for cid in person_dict["camera_ids"]:
+                    if cid not in existing["camera_ids"]:
+                        existing["camera_ids"].append(cid)
+                existing["cameras_visible"] = len(existing["camera_ids"])
+                # Keep coordinates and posture from track with more visibility or higher confidence
+                if person_dict["cameras_visible"] > existing["cameras_visible"] or \
+                   (person_dict["cameras_visible"] == existing["cameras_visible"] and person_dict["confidence"] > existing["confidence"]):
+                    existing["x"] = person_dict["x"]
+                    existing["y"] = person_dict["y"]
+                    existing["z"] = person_dict["z"]
+                    existing["zone"] = person_dict["zone"]
+                    existing["posture"] = person_dict["posture"]
+                    existing["ppe"] = person_dict["ppe"]
+                    existing["confidence"] = person_dict["confidence"]
+                    if rec_method:
+                        existing["recognition_method"] = rec_method
+            else:
+                fused_persons_dict[person_id] = person_dict
+                
+        persons_json = list(fused_persons_dict.values())
         
         # 7. Generate zone states from person data
         zone_states = _generate_zone_states_from_persons(persons_json, zone_defs)
@@ -473,8 +649,16 @@ def run_live_mode(
                     has_hat = track.ppe and track.ppe.get("hardhat", False)
                     color = (0, 255, 0) if has_hat else (0, 0, 255)
                     cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
-                    cv2.putText(annotated_frame, f"#{track.track_id}", (x1, y1 - 10),
+                    
+                    label = f"#{track.track_id}"
+                    if (cam_id, track.track_id) in local_to_personnel_map:
+                        pers_id = local_to_personnel_map[(cam_id, track.track_id)]
+                        method = local_to_recognition_method.get((cam_id, track.track_id), "face")
+                        label = f"#{pers_id} ({method.upper()})"
+                        
+                    cv2.putText(annotated_frame, label, (x1, y1 - 10),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+                    _draw_skeleton(annotated_frame, getattr(track, 'keypoints', None))
                                 
             # Encode to JPEG and publish to Redis
             try:
@@ -675,6 +859,13 @@ def run_video_mode(
     """
     # Import heavy CV dependencies
     import cv2
+    try:
+        cv2.utils.logging.setLogLevel(cv2.utils.logging.LOG_LEVEL_SILENT)
+    except Exception:
+        try:
+            cv2.utils.logging.setLogLevel(0)
+        except Exception:
+            pass
     from detection.detector import PersonDetector
     from tracking.tracker import PersonTracker
     
@@ -747,6 +938,12 @@ def run_video_mode(
             "min_z": b["min"]["z"], "max_z": b["max"]["z"],
         }
     
+    # Mappings for persistent recognition
+    global_to_personnel_map: Dict[int, int] = {}
+    global_to_recognition_method: Dict[int, str] = {}
+    local_to_personnel_map: Dict[Tuple[int, int], int] = {}
+    local_to_recognition_method: Dict[Tuple[int, int], str] = {}
+
     frame_count = 0
     global_id_offset = {}  # per-video ID offset to avoid collisions
     for i in range(len(video_paths)):
@@ -811,6 +1008,17 @@ def run_video_mode(
             zb = zone_bounds[zone_id]
             fw, fh = frame_sizes[vid_id]
             
+            # Update local personnel mapping for this video track if a face is detected
+            for person in tracked:
+                if getattr(person, "face_id", None) is not None:
+                    local_to_personnel_map[(vid_id, person.track_id)] = person.face_id
+                    local_to_recognition_method[(vid_id, person.track_id)] = person.recognition_method
+                else:
+                    # Restore previous local mapping if it exists
+                    if (vid_id, person.track_id) in local_to_personnel_map:
+                        person.face_id = local_to_personnel_map[(vid_id, person.track_id)]
+                        person.recognition_method = local_to_recognition_method[(vid_id, person.track_id)]
+
             for person in tracked:
                 foot_x, foot_y = person.foot_point
                 
@@ -827,7 +1035,6 @@ def run_video_mode(
                 
                 # Y is always floor level
                 room_y = 0.05
-                
                 
                 ppe = person.ppe or {"hardhat": False, "vest": False, "goggles": False}
                 
@@ -849,25 +1056,45 @@ def run_video_mode(
                                 best_match = anchor_id
                         if best_match is not None:
                             final_id = best_match
+
+                # Update global personnel mapping for this unified/final ID
+                if getattr(person, "face_id", None) is not None:
+                    global_to_personnel_map[final_id] = person.face_id
+                    global_to_recognition_method[final_id] = person.recognition_method
+                else:
+                    # Restore global mapping if it exists
+                    if final_id in global_to_personnel_map:
+                        person.face_id = global_to_personnel_map[final_id]
+                        person.recognition_method = global_to_recognition_method[final_id]
+                        # Propagate back to local tracker for future stability
+                        local_to_personnel_map[(vid_id, person.track_id)] = person.face_id
+                        local_to_recognition_method[(vid_id, person.track_id)] = person.recognition_method
                 
-                if final_id in fused_persons_dict:
+                redis_id = final_id
+                rec_method = None
+                if final_id in global_to_personnel_map:
+                    redis_id = global_to_personnel_map[final_id]
+                    rec_method = global_to_recognition_method.get(final_id)
+                
+                if redis_id in fused_persons_dict:
                     # Person already seen in an earlier camera (e.g. video 0). 
                     # We just increase the visibility count. We keep the anchor coordinates.
-                    fused_persons_dict[final_id]["cameras_visible"] += 1
-                    if int(vid_id) not in fused_persons_dict[final_id]["camera_ids"]:
-                        fused_persons_dict[final_id]["camera_ids"].append(int(vid_id))
+                    fused_persons_dict[redis_id]["cameras_visible"] += 1
+                    if int(vid_id) not in fused_persons_dict[redis_id]["camera_ids"]:
+                        fused_persons_dict[redis_id]["camera_ids"].append(int(vid_id))
                 else:
-                    fused_persons_dict[final_id] = {
-                        "id": final_id,
+                    fused_persons_dict[redis_id] = {
+                        "id": redis_id,
                         "x": float(round(room_x, 2)),
                         "y": float(room_y),
                         "z": float(round(room_z, 2)),
                         "zone": zone_id,
-                        "posture": "standing",
+                        "posture": getattr(person, "posture", "standing"),
                         "ppe": ppe,
                         "confidence": float(round(person.confidence, 2)),
                         "cameras_visible": 1,
                         "camera_ids": [int(vid_id)],
+                        "recognition_method": rec_method,
                     }
                     
         all_persons = list(fused_persons_dict.values())
@@ -889,19 +1116,33 @@ def run_video_mode(
                     has_hat = track.ppe and track.ppe.get("hardhat", False)
                     color = (0, 255, 0) if has_hat else (0, 0, 255)
                     cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
-                    label = f"#{track.track_id + global_id_offset[vid_id]}"
                     
-                    # Show unified ID if matched
-                    if vid_id != 0:
-                        hist = get_hist(frame, track.bbox)
-                        if hist is not None:
-                            for anchor_id, ahist in anchor_hists.items():
-                                if cv2.compareHist(hist, ahist, cv2.HISTCMP_BHATTACHARYYA) < 0.4:
-                                    label = f"#{anchor_id} (fusion)"
-                                    break
-                                    
+                    orig_final_id = track.track_id + global_id_offset[vid_id]
+                    
+                    # Resolve labels using mappings
+                    label = f"#{orig_final_id}"
+                    if (vid_id, track.track_id) in local_to_personnel_map:
+                        pers_id = local_to_personnel_map[(vid_id, track.track_id)]
+                        method = local_to_recognition_method.get((vid_id, track.track_id), "face")
+                        label = f"#{pers_id} ({method.upper()})"
+                    else:
+                        # Show unified ID if matched
+                        if vid_id != 0:
+                            hist = get_hist(frame, track.bbox)
+                            if hist is not None:
+                                for anchor_id, ahist in anchor_hists.items():
+                                    if cv2.compareHist(hist, ahist, cv2.HISTCMP_BHATTACHARYYA) < 0.4:
+                                        label = f"#{anchor_id} (fusion)"
+                                        # If anchor_id is mapped to a personnel ID, use it
+                                        if anchor_id in global_to_personnel_map:
+                                            pers_id = global_to_personnel_map[anchor_id]
+                                            method = global_to_recognition_method.get(anchor_id, "face")
+                                            label = f"#{pers_id} ({method.upper()})"
+                                        break
+                                        
                     cv2.putText(annotated_frame, label, (x1, y1 - 10),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+                    _draw_skeleton(annotated_frame, getattr(track, 'keypoints', None))
             
             zone_id = video_zone_map[vid_id]
             cv2.putText(annotated_frame, f"Zone: {zone_id}", (10, 25),
