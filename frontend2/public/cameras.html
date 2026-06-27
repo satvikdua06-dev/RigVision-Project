@@ -426,6 +426,10 @@
           <span class="stat-val" id="person-coords">-- , -- , --</span>
         </div>
         <div class="stat-box">
+          <span class="stat-label">Posture</span>
+          <span class="stat-val" id="person-posture">UNKNOWN</span>
+        </div>
+        <div class="stat-box">
           <span class="stat-label">PPE Compliance</span>
           <span class="badge" id="person-ppe-badge">CHECKING</span>
         </div>
@@ -567,7 +571,11 @@
         if (target) {
           // Update panel elements
           personAvatarBadge.textContent = `#${target.id}`;
-          personTitle.textContent = `Tracking Operator #${target.id}`;
+          if (target.recognition_method) {
+            personTitle.textContent = `Tracking Operator #${target.id} (${target.recognition_method.toUpperCase()})`;
+          } else {
+            personTitle.textContent = `Tracking Operator #${target.id}`;
+          }
           
           const hasHardhat = target.ppe?.hardhat;
           const hasVest = target.ppe?.vest;
@@ -600,6 +608,20 @@
           // Coordinates
           personCoords.textContent = `${target.x.toFixed(2)}m, ${target.y.toFixed(2)}m, ${target.z.toFixed(2)}m`;
           
+          // Posture
+          const postureVal = target.posture ? target.posture.toUpperCase() : "STANDING";
+          const postureElem = document.getElementById('person-posture');
+          if (postureElem) {
+            postureElem.textContent = postureVal;
+            if (postureVal === "STANDING") {
+              postureElem.style.color = 'var(--text-main)';
+            } else if (postureVal === "SITTING" || postureVal === "BENDING") {
+              postureElem.style.color = 'var(--accent-cyan)';
+            } else {
+              postureElem.style.color = 'var(--accent-red)';
+            }
+          }
+          
           // Dynamically check if camera lists have changed and we need to add a camera feed card
           const liveCamIds = target.camera_ids || [];
           if (liveCamIds.length > 0) {
@@ -626,6 +648,13 @@
           personZone.textContent = "LOST";
           personZone.style.color = 'var(--accent-red)';
           personCoords.textContent = "-- , -- , --";
+          
+          const postureElem = document.getElementById('person-posture');
+          if (postureElem) {
+            postureElem.textContent = "--";
+            postureElem.style.color = 'var(--text-muted)';
+          }
+          
           personPpeBadge.textContent = "UNKNOWN";
           personPpeBadge.className = "badge";
           personPpeBadge.style.background = 'rgba(255,255,255,0.05)';
