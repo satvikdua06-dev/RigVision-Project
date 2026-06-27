@@ -146,6 +146,8 @@ class PersonDetector:
         if device is None:
             import torch
             device = "cuda" if torch.cuda.is_available() else "cpu"
+        elif device.isdigit():
+            device = f"cuda:{device}"
         self.model.to(device)
         print(f"[detector] Loaded {model_path} on device={self.model.device}")
 

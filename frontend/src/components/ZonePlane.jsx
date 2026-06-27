@@ -10,19 +10,7 @@ const STATUS_COLORS = {
   critical: { base: '#ff3b3b', emissive: '#ff0000', opacity: 0.22 },
 }
 
-// ------------------------------------------------------------------------
-// 🗺️ STATIC LAYOUT CONFIGURATION
-// Since the room doesn't move, we store the X,Y,Z coordinates here 
-// rather than expecting the WebSocket to send them 10 times a second.
-// (You may need to tweak these numbers to perfectly fit your new larger room!)
-// ------------------------------------------------------------------------
-const ZONE_LAYOUTS = {
-  zone_a:   { position: [-22, 0, 0], size: [25, 0, 20] }, // Wraps Room A on the left
-  corridor: { position: [0, 0, 0],   size: [20, 0, 8] },  // Wraps the new Bridge in the middle
-  zone_b:   { position: [22, 0, 0],  size: [25, 0, 20] }, // Wraps Room B on the right
-}
-
-export default function ZonePlane({ zoneId, zone }) {
+export default function ZonePlane({ zoneId, zone, staticDef }) {
   const planeRef  = useRef()
   const borderRef = useRef()
   const [hovered, setHovered] = useState(false)
@@ -33,10 +21,9 @@ export default function ZonePlane({ zoneId, zone }) {
   
   const col = STATUS_COLORS[zone.status] || STATUS_COLORS.normal
   
-  // Safely grab the static physical layout for this specific zone ID
-  // If the ID isn't found, default to a box in the middle of the room
-  const layout = ZONE_LAYOUTS[zoneId] || { position: [0,0,0], size: [5,0,5] }
-  const [px, , pz] = layout.position
+  // Use static physical layout from ZONES if provided, otherwise default fallback
+  const layout = staticDef || { center: [0, 0, 0], size: [5, 3, 5] }
+  const [px, , pz] = layout.center
   const [sx, , sz] = layout.size
 
   useFrame(() => {
