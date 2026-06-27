@@ -5,6 +5,8 @@ import TopBar from './components/TopBar.jsx'
 import { useSimulation } from './hooks/useSimulation.js'
 import { useRigStore } from './stores/useRigStore.js'
 
+import CameraFeeds from './components/CameraFeeds.jsx'
+
 // Clock tick to force TopBar re-render every second
 function useClockTick() {
   const [, setTick] = [null, () => {}]
@@ -39,6 +41,9 @@ export default function App() {
         {/* 3D Canvas takes remaining space */}
         <div style={{ flex:1, position:'relative' }}>
           <Scene3D />
+          
+          {/* Overlay for Camera Feeds */}
+          <CameraFeeds />
 
           {/* Corner watermark */}
           <div style={{

@@ -189,6 +189,12 @@ export default function Sidebar() {
   const persons   = useRigStore(s => s.persons)
   const zones     = useRigStore(s => s.zones)
   const violations = useRigStore(s => s.violations)
+  
+  const connected     = useRigStore(s => s.connected)
+  const showAvatars   = useRigStore(s => s.showAvatars)
+  const showSensors   = useRigStore(s => s.showSensors)
+  const toggleAvatars = useRigStore(s => s.toggleAvatars)
+  const toggleSensors = useRigStore(s => s.toggleSensors)
 
   const criticalCount = Object.values(zones).filter(z => z.status === 'critical').length
   const alertPersons  = persons.filter(p => !p.ppe.hardhat || !p.ppe.vest || !p.ppe.goggles).length
@@ -216,15 +222,40 @@ export default function Sidebar() {
           fontFamily:"'Barlow Condensed'", fontSize:26, fontWeight:700,
           color:'#00b4ff', letterSpacing:2, lineHeight:1,
         }}>LIVE MONITOR</div>
-        <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:6, marginBottom:16 }}>
-          <span style={{ width:7, height:7, borderRadius:'50%', background:'#00e676',
-            boxShadow:'0 0 8px #00e676', display:'inline-block',
-            animation:'pulse 2s infinite' }} />
-          <span style={{ fontFamily:"'Share Tech Mono'", fontSize:11, color:'#00e676' }}>
-            CONNECTED · {persons.length} TRACKED
+        
+        {/* Connection Status */}
+        <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:6, marginBottom:12 }}>
+          <span style={{ width:7, height:7, borderRadius:'50%', 
+            background: connected ? '#00e676' : '#ff3b3b',
+            boxShadow: connected ? '0 0 8px #00e676' : '0 0 8px #ff3b3b', 
+            display:'inline-block',
+            animation: connected ? 'pulse 2s infinite' : 'none' }} />
+          <span style={{ fontFamily:"'Share Tech Mono'", fontSize:11, color: connected ? '#00e676' : '#ff3b3b' }}>
+            {connected ? `CONNECTED · ${persons.length} TRACKED` : 'DISCONNECTED - RECONNECTING...'}
           </span>
         </div>
         <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}`}</style>
+        
+        {/* Toggles */}
+        <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+          <button onClick={toggleAvatars} style={{
+            flex: 1, padding: '4px 0', border: `1px solid ${showAvatars ? '#00b4ff' : '#2a4a5a'}`, 
+            background: showAvatars ? 'rgba(0,180,255,0.15)' : 'transparent',
+            color: showAvatars ? '#e0f4ff' : '#5a8aaa', borderRadius: 4, cursor: 'pointer',
+            fontFamily: "'Share Tech Mono'", fontSize: 10, transition: 'all 0.2s'
+          }}>
+            👤 Avatars {showAvatars ? 'ON' : 'OFF'}
+          </button>
+          <button onClick={toggleSensors} style={{
+            flex: 1, padding: '4px 0', border: `1px solid ${showSensors ? '#00e676' : '#2a4a5a'}`, 
+            background: showSensors ? 'rgba(0,230,118,0.15)' : 'transparent',
+            color: showSensors ? '#e0f4ff' : '#5a8aaa', borderRadius: 4, cursor: 'pointer',
+            fontFamily: "'Share Tech Mono'", fontSize: 10, transition: 'all 0.2s'
+          }}>
+            📊 Sensors {showSensors ? 'ON' : 'OFF'}
+          </button>
+        </div>
+
         <div style={{ height:'1px', background:'linear-gradient(90deg,#00b4ff33,transparent)', marginBottom:16 }} />
       </div>
 

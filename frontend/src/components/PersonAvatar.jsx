@@ -47,8 +47,7 @@ export default function PersonAvatar({ person }) {
     <group 
       ref={meshRef} 
       position={[person.x, 0, person.z]}
-      // 👇 Crank these numbers up to match your new room size!
-      scale={[6, 6, 6]} 
+      scale={[1, 1, 1]} 
       onClick={(e) => { e.stopPropagation(); selectPerson(person.id) }}
       onPointerOver={() => setHovered(true)}
       onPointerOut={() => setHovered(false)}
@@ -103,7 +102,7 @@ export default function PersonAvatar({ person }) {
         <Html 
           position={[0, 1.8, 0]} // Pushed slightly higher above the head
           center 
-          distanceFactor={25} // Increased from 8 so it stays readable when zoomed out
+          distanceFactor={6} // Reduced from 25 so it stays properly scaled
           style={{ pointerEvents: 'none' }}
         >
           <div style={{
@@ -123,8 +122,8 @@ export default function PersonAvatar({ person }) {
       {/* Hover / selected detail popup */}
       {(hovered || isSelected) && (
         <Html 
-          position={[0.8, 1.2, 0]} // Shifted further right to clear the bigger avatar body
-          distanceFactor={25} // Increased from 7
+          position={[1.2, 1.2, 0]} // Shifted further right to clear the bigger avatar body
+          distanceFactor={7} // Reduced from 25
           style={{ pointerEvents: 'none', width: 180 }} // Made slightly wider to fit text cleanly
         >
           <div style={{
