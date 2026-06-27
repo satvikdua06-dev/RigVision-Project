@@ -1,0 +1,51 @@
+--- AC UNIT MANUAL ---
+Device: AC Unit
+Model: RigCool 9000 Series
+General Operating Parameters: 
+- Normal Operating Temperature: 60C to 68C.
+- Normal Structural Vibration: 1.0 mm/s to 2.5 mm/s.
+Diagnostics & Protocols:
+1. Compressor Failure: The compressor is the most critical mechanical component. If the ambient temperature exceeds 80C AND structural vibration spikes beyond 10.0 mm/s, compressor failure is imminent and catastrophic. The system is entering a lethal threshold and could trigger an electrical fire. 
+- Required Action: Immediately 'Replace Compressor' and isolate power.
+2. Refrigerant Leak: If the temperature spikes above 80C but the structural vibration remains relatively normal (under 5.0 mm/s), the compressor is working overtime but is not mechanically failing. This strongly indicates a Refrigerant Leak.
+- Required Action: 'Recharge Refrigerant' and inspect copper lines for micro-fractures.
+
+--- CEILING FAN MANUAL ---
+Device: Ceiling Fan
+Model: AeroFlow Industrial 500
+General Operating Parameters:
+- Normal Operating Temperature: 30C to 40C.
+- Normal Structural Vibration: 0.5 mm/s to 2.0 mm/s.
+Diagnostics & Protocols:
+1. Motor Degradation: Ceiling fan motors rely on electromagnetic coils. Due to their lightweight mounting, even in complete mechanical failure, a ceiling fan will rarely exceed 5.0 mm/s of vibration. If temperature exceeds 55C and vibration is between 3.5 mm/s and 5.0 mm/s, the internal friction is destroying the coil insulation. 
+- Required Action: 'Rewind Motor Coils' and lubricate the primary bearing. Do not replace the entire unit unless the housing is cracked.
+
+--- EXHAUST FAN MANUAL ---
+Device: Exhaust Fan
+Model: VentMaster Pro Heavy Duty
+General Operating Parameters:
+- Normal Operating Temperature: 40C to 50C (depending on exhaust air).
+- Normal Acoustic Noise: 45 dB to 55 dB.
+Diagnostics & Protocols:
+1. Motor Burnout: Exhaust fans operate in high-stress environments. If the acoustic noise level exceeds 80 dB (a loud grinding or screeching sound) AND the motor casing temperature exceeds 75C, the internal bearings have disintegrated, leading to immediate Motor Burnout. The fan will seize completely within minutes.
+- Required Action: 'Replace Motor'. Do not attempt to rewind; the internal housing is likely warped.
+
+--- GAS STOVE MANUAL ---
+Device: Gas Stove
+Model: Ignis Commercial Range
+General Operating Parameters:
+- Ambient Temperature (Near Valve): 25C to 35C.
+- Gas Concentration: 0 PPM (Parts Per Million). Any detected gas is an anomaly.
+Diagnostics & Protocols:
+1. Valve Leak: The commercial gas valve is rated for high pressure. If the gas sensor detects ANY trace of combustible gas (> 50 PPM), this is a critical life-safety event. Secondary indicators include an anomalous rise in localized temperature (> 55C near the manifold) without the burners being actively lit, indicating a pressurized micro-leak reacting with ambient heat.
+- Required Action: Immediately trigger emergency shutoff and 'Fix Valve'. Evacuate the immediate zone until PPM returns to 0.
+
+--- LIGHT FIXTURE MANUAL ---
+Device: Light Fixture
+Model: LumiTech Industrial LED Array
+General Operating Parameters:
+- Normal Operating Temperature: 30C to 45C.
+- Normal Acoustic Noise: < 20 dB (Completely silent).
+Diagnostics & Protocols:
+1. Ballast Failure: Modern LED fixtures use electronic drivers (often referred to colloquially as ballasts). These solid-state devices do not vibrate, but when their internal capacitors fail, they emit a highly specific high-frequency electrical hum. If acoustic noise spikes above 50 dB (humming/buzzing) AND the heat sink temperature exceeds 65C, the driver is in thermal runaway. 
+- Required Action: 'Replace LED Driver' before the thermal load melts the optical casing.

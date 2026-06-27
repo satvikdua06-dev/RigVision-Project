@@ -1,16 +1,25 @@
 import json
 import logging
 import os
+import sys
 import paho.mqtt.client as mqtt
+
+# Path hack to import from sibling directory 'agent_layer'
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import the existing components from neighboring files
 from query_generator import AnomalyQueryBuilder
 from graph_extractor import SubgraphExtractor
+from agent_layer.diagnostic_agent import LLMDiagnosticAgent
 
 # --- Configuration ---
 MQTT_BROKER = os.environ.get("MQTT_BROKER", "localhost")
 MQTT_PORT = int(os.environ.get("MQTT_PORT", "1883"))
 MQTT_TOPIC = os.environ.get("MQTT_TOPIC", "rigvision/alerts")
+MQTT_DIAGNOSTIC_TOPIC = "rigvision/diagnostics"
+
+# --- Initializations ---
+agent = LLMDiagnosticAgent()
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -56,16 +65,29 @@ def on_message(client, userdata, msg):
                 parsed_sensors=parsed_sensors
             )
             
-            # 4. Print the final output to the console
-            logging.info("Step 3: Formatting complete. Final context below.")
+            # 4. Print the resulting LLM context string to the console.
+            logging.info("Step 3: Context extracted. Passing to LLM Agent.")
             print("\n" + "="*50)
             print("LLM CONTEXT READY")
             print("="*50)
             print(llm_context)
             print("="*50 + "\n")
 
+            # --- PHASE 5: CLOSED LOOP DIAGNOSIS ---
+            logging.info("Step 4: Generating diagnostic report with LLM Agent...")
+            full_telemetry_data = json.loads(payload_str)
+            diagnostic_report_json = agent.generate_report(
+                telemetry=full_telemetry_data, 
+                graph_context=llm_context
+            )
+
+            # 5. Publish the final report
+            client.publish(MQTT_DIAGNOSTIC_TOPIC, diagnostic_report_json)
+            logging.info(f"Step 5: Diagnostic report published to '{MQTT_DIAGNOSTIC_TOPIC}'.")
+            # --- END PHASE 5 ---
+
         finally:
-            # 5. Ensure the database connection is always closed cleanly
+            # 6. Ensure the database connection is always closed cleanly
             extractor.close()
             logging.info("Cleanly closed Neo4j connection.")
 
