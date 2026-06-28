@@ -24,12 +24,14 @@ DATA FLOW:
 """
 
 from __future__ import annotations
-
 import argparse
+import base64
 import json
 import math
 import os
 os.environ["OPENCV_LOG_LEVEL"] = "OFF"  # Suppress internal OpenCV logging and warnings
+os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp"  # Force TCP for RTSP stream stability
+import queue
 import signal
 import sys
 import time
@@ -318,9 +320,11 @@ class ThreadedCamera:
     """
     def __init__(self, source: str) -> None:
         import cv2
+        is_usb_cam = False
         try:
             cam_index = int(source)
             self.cap = cv2.VideoCapture(cam_index)
+            is_usb_cam = True
         except ValueError:
             self.cap = cv2.VideoCapture(source)
             
@@ -329,8 +333,11 @@ class ThreadedCamera:
             
         # Set buffer size to 1 as a hint
         self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        
+        # Set resolution only for USB webcams to avoid breaking/reconnecting RTSP streams
+        if is_usb_cam:
+            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
         
         self.ret = False
         self.frame = None
@@ -413,6 +420,7 @@ def run_live_mode(
     device: Optional[str] = None,
     gmc: str = "sparseOptFlow",
     resize_width: Optional[int] = None,
+    max_fps: Optional[float] = None,
 ) -> None:
     """Run the full CV pipeline with real cameras.
     
@@ -486,6 +494,35 @@ def run_live_mode(
     
     print("  [OK] All components initialized. Pipeline running...")
     print("  Press Ctrl+C to stop\n")
+    
+    # Initialize background queue and thread for Redis uploads
+    import threading
+    upload_queue = queue.Queue(maxsize=30)
+    
+    def redis_uploader():
+        import base64
+        while RUNNING:
+            try:
+                item = upload_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            
+            if item is None:
+                upload_queue.task_done()
+                break
+                
+            cam_id, annotated_frame = item
+            try:
+                _, jpeg = cv2.imencode('.jpg', annotated_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+                jpeg_b64 = base64.b64encode(jpeg.tobytes()).decode('utf-8')
+                redis_client.set(f"rigvision:camera:frame:{cam_id}", jpeg_b64, ex=2)
+            except Exception as e:
+                print(f"Error streaming frame to Redis: {e}")
+            finally:
+                upload_queue.task_done()
+
+    uploader_thread = threading.Thread(target=redis_uploader, daemon=True)
+    uploader_thread.start()
     
     # Mappings for persistent recognition
     global_to_personnel_map: Dict[int, int] = {}
@@ -640,7 +677,6 @@ def run_live_mode(
         redis_client.set("rigvision:zones", json.dumps(zone_states))
         
         # Draw bounding boxes + upload to Redis
-        import base64
         for cam_id, frame in frames.items():
             annotated_frame = frame.copy()
             if cam_id in per_camera_tracks:
@@ -660,13 +696,19 @@ def run_live_mode(
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
                     _draw_skeleton(annotated_frame, getattr(track, 'keypoints', None))
                                 
-            # Encode to JPEG and publish to Redis
+            # Put annotated frame on the background uploader queue
             try:
-                _, jpeg = cv2.imencode('.jpg', annotated_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
-                jpeg_b64 = base64.b64encode(jpeg.tobytes()).decode('utf-8')
-                redis_client.set(f"rigvision:camera:frame:{cam_id}", jpeg_b64)
-            except Exception as e:
-                print(f"Error streaming frame to Redis: {e}")
+                upload_queue.put_nowait((cam_id, annotated_frame))
+            except queue.Full:
+                try:
+                    upload_queue.get_nowait()
+                    upload_queue.task_done()
+                except queue.Empty:
+                    pass
+                try:
+                    upload_queue.put_nowait((cam_id, annotated_frame))
+                except queue.Full:
+                    pass
                 
             if show_preview:
                 cv2.imshow(f"Camera {cam_id}", annotated_frame)
@@ -680,12 +722,18 @@ def run_live_mode(
             fps_actual = 1.0 / max(time.time() - t_start, 0.001)
             print(f"  [live] frame={frame_count} persons={len(persons_json)} fps={fps_actual:.1f}")
         
-        # Maintain ~10Hz output rate (detection may be faster)
-        elapsed = time.time() - t_start
-        sleep_time = max(0, 0.1 - elapsed)
-        time.sleep(sleep_time)
+        # Maintain max-fps rate limiter if specified
+        if max_fps is not None and max_fps > 0:
+            elapsed = time.time() - t_start
+            sleep_time = max(0, (1.0 / max_fps) - elapsed)
+            if sleep_time > 0:
+                time.sleep(sleep_time)
     
     # Cleanup
+    # Tell the uploader thread to exit
+    upload_queue.put(None)
+    uploader_thread.join(timeout=1.0)
+
     for cap in cameras.values():
         cap.release()
     if show_preview:
@@ -776,6 +824,8 @@ Examples:
                         help="Camera motion compensation method (default: sparseOptFlow). Use 'none' for static cameras to save CPU.")
     parser.add_argument("--resize-width", type=int, default=None,
                         help="Resize input frames to this width (maintaining aspect ratio) to increase performance.")
+    parser.add_argument("--max-fps", type=float, default=None,
+                        help="Maximum FPS for video mode processing. None/unlimited by default.")
     
     args = parser.parse_args()
     
@@ -810,6 +860,7 @@ Examples:
             device=args.device,
             gmc=args.gmc,
             resize_width=args.resize_width,
+            max_fps=args.max_fps,
         )
     
     elif args.mode == "live":
@@ -824,6 +875,7 @@ Examples:
             device=args.device,
             gmc=args.gmc,
             resize_width=args.resize_width,
+            max_fps=args.max_fps,
         )
 
 
@@ -839,6 +891,7 @@ def run_video_mode(
     device: Optional[str] = None,
     gmc: str = "sparseOptFlow",
     resize_width: Optional[int] = None,
+    max_fps: Optional[float] = None,
 ) -> None:
     """Run detection + tracking on pre-recorded video files.
     
@@ -857,6 +910,9 @@ def run_video_mode(
         python pipeline.py --mode video --cameras cam0.mp4 cam1.mp4 --show-preview
         python pipeline.py --mode video --cameras cam0.mp4 cam1.mp4 cam2.mp4
     """
+    if resize_width is None:
+        resize_width = 640
+
     # Import heavy CV dependencies
     import cv2
     try:
@@ -868,7 +924,35 @@ def run_video_mode(
             pass
     from detection.detector import PersonDetector
     from tracking.tracker import PersonTracker
+    import threading
+
+    # Initialize background queue and thread for Redis uploads
+    upload_queue = queue.Queue(maxsize=30)
     
+    def redis_uploader():
+        while RUNNING:
+            try:
+                item = upload_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            
+            if item is None:
+                upload_queue.task_done()
+                break
+                
+            vid_id, annotated_frame = item
+            try:
+                _, jpeg = cv2.imencode('.jpg', annotated_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+                jpeg_b64 = base64.b64encode(jpeg.tobytes()).decode('utf-8')
+                redis_client.set(f"rigvision:camera:frame:{vid_id}", jpeg_b64, ex=2)
+            except Exception as e:
+                print(f"Error streaming frame to Redis: {e}")
+            finally:
+                upload_queue.task_done()
+
+    uploader_thread = threading.Thread(target=redis_uploader, daemon=True)
+    uploader_thread.start()
+
     print("[*] Starting VIDEO mode")
     print(f"    Videos: {video_paths}")
     print(f"    Model: {model_path}, Confidence: {confidence}")
@@ -998,6 +1082,7 @@ def run_video_mode(
             
         anchor_hists = {}  # track_id -> hist for video 0
         fused_persons_dict = {}  # final_id -> person_dict
+        person_matched_info = {}  # (vid_id, track_id) -> (matched_with_anchor, matched_anchor_id, matched_dist)
         
         for idx, vid_id in enumerate(vid_ids):
             tracked = trackers[vid_id].update(frames[vid_id], batch_detections[idx])
@@ -1042,6 +1127,10 @@ def run_video_mode(
                 final_id = person.track_id + global_id_offset[vid_id]
                 hist = get_hist(frames[vid_id], person.bbox)
                 
+                matched_with_anchor = False
+                matched_anchor_id = None
+                matched_dist = None
+                
                 if vid_id == 0:
                     if hist is not None:
                         anchor_hists[final_id] = hist
@@ -1056,6 +1145,11 @@ def run_video_mode(
                                 best_match = anchor_id
                         if best_match is not None:
                             final_id = best_match
+                            matched_with_anchor = True
+                            matched_anchor_id = best_match
+                            matched_dist = best_dist
+                
+                person_matched_info[(vid_id, person.track_id)] = (matched_with_anchor, matched_anchor_id, matched_dist)
 
                 # Update global personnel mapping for this unified/final ID
                 if getattr(person, "face_id", None) is not None:
@@ -1099,6 +1193,30 @@ def run_video_mode(
                     
         all_persons = list(fused_persons_dict.values())
         
+        # Build label cache after all tracking/matching logic has run for this frame
+        label_cache: Dict[Tuple[int, int], str] = {}
+        for vid_id, tracked in per_video_tracks.items():
+            for person in tracked:
+                orig_final_id = person.track_id + global_id_offset[vid_id]
+                label = f"#{orig_final_id}"
+                if (vid_id, person.track_id) in local_to_personnel_map:
+                    pers_id = local_to_personnel_map[(vid_id, person.track_id)]
+                    method = local_to_recognition_method.get((vid_id, person.track_id), "face")
+                    label = f"#{pers_id} ({method.upper()})"
+                else:
+                    if vid_id != 0:
+                        matched_with_anchor, matched_anchor_id, matched_dist = person_matched_info.get(
+                            (vid_id, person.track_id), (False, None, None)
+                        )
+                        if matched_with_anchor and matched_dist is not None and matched_dist < 0.4:
+                            anchor_id = matched_anchor_id
+                            label = f"#{anchor_id} (fusion)"
+                            if anchor_id in global_to_personnel_map:
+                                pers_id = global_to_personnel_map[anchor_id]
+                                method = global_to_recognition_method.get(anchor_id, "face")
+                                label = f"#{pers_id} ({method.upper()})"
+                label_cache[(vid_id, person.track_id)] = label
+        
         # 5. Generate zone states
         zone_states = _generate_zone_states_from_persons(all_persons, zone_defs)
         
@@ -1107,7 +1225,6 @@ def run_video_mode(
         redis_client.set("rigvision:zones", json.dumps(zone_states))
         
         # Draw bounding boxes + upload to Redis
-        import base64
         for vid_id, frame in frames.items():
             annotated_frame = frame.copy()
             if vid_id in per_video_tracks:
@@ -1117,28 +1234,7 @@ def run_video_mode(
                     color = (0, 255, 0) if has_hat else (0, 0, 255)
                     cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
                     
-                    orig_final_id = track.track_id + global_id_offset[vid_id]
-                    
-                    # Resolve labels using mappings
-                    label = f"#{orig_final_id}"
-                    if (vid_id, track.track_id) in local_to_personnel_map:
-                        pers_id = local_to_personnel_map[(vid_id, track.track_id)]
-                        method = local_to_recognition_method.get((vid_id, track.track_id), "face")
-                        label = f"#{pers_id} ({method.upper()})"
-                    else:
-                        # Show unified ID if matched
-                        if vid_id != 0:
-                            hist = get_hist(frame, track.bbox)
-                            if hist is not None:
-                                for anchor_id, ahist in anchor_hists.items():
-                                    if cv2.compareHist(hist, ahist, cv2.HISTCMP_BHATTACHARYYA) < 0.4:
-                                        label = f"#{anchor_id} (fusion)"
-                                        # If anchor_id is mapped to a personnel ID, use it
-                                        if anchor_id in global_to_personnel_map:
-                                            pers_id = global_to_personnel_map[anchor_id]
-                                            method = global_to_recognition_method.get(anchor_id, "face")
-                                            label = f"#{pers_id} ({method.upper()})"
-                                        break
+                    label = label_cache.get((vid_id, track.track_id), f"#{track.track_id + global_id_offset[vid_id]}")
                                         
                     cv2.putText(annotated_frame, label, (x1, y1 - 10),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
@@ -1148,13 +1244,19 @@ def run_video_mode(
             cv2.putText(annotated_frame, f"Zone: {zone_id}", (10, 25),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
             
-            # Encode to JPEG and publish to Redis
+            # Put annotated frame on the background uploader queue
             try:
-                _, jpeg = cv2.imencode('.jpg', annotated_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
-                jpeg_b64 = base64.b64encode(jpeg.tobytes()).decode('utf-8')
-                redis_client.set(f"rigvision:camera:frame:{vid_id}", jpeg_b64)
-            except Exception as e:
-                print(f"Error streaming frame to Redis: {e}")
+                upload_queue.put_nowait((vid_id, annotated_frame))
+            except queue.Full:
+                try:
+                    upload_queue.get_nowait()
+                    upload_queue.task_done()
+                except queue.Empty:
+                    pass
+                try:
+                    upload_queue.put_nowait((vid_id, annotated_frame))
+                except queue.Full:
+                    pass
                 
             if show_preview:
                 cv2.imshow(f"Video {vid_id} - {zone_id}", annotated_frame)
@@ -1169,12 +1271,18 @@ def run_video_mode(
             fps_actual = 1.0 / max(time.time() - t_start, 0.001)
             print(f"  [video] frame={frame_count} persons={len(all_persons)} fps={fps_actual:.1f}")
         
-        # Maintain ~10Hz output (video plays at processing speed, not real-time)
-        elapsed = time.time() - t_start
-        sleep_time = max(0, 0.1 - elapsed)
-        time.sleep(sleep_time)
+        # Maintain max-fps rate limiter if specified
+        if max_fps is not None and max_fps > 0:
+            elapsed = time.time() - t_start
+            sleep_time = max(0, (1.0 / max_fps) - elapsed)
+            if sleep_time > 0:
+                time.sleep(sleep_time)
     
     # Cleanup
+    # Tell the uploader thread to exit
+    upload_queue.put(None)
+    uploader_thread.join(timeout=1.0)
+
     for cap in caps.values():
         cap.release()
     if show_preview:
