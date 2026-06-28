@@ -42,7 +42,7 @@ from typing import Any, Dict, List, Set
 
 import redis.asyncio as aioredis
 import uvicorn
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
@@ -254,13 +254,21 @@ async def get_violations() -> List[Dict]:
 @app.get("/api/video/mjpeg/{camera_id}")
 async def get_mjpeg_stream(camera_id: str):
     """MJPEG stream endpoint that retrieves camera frames from Redis."""
+    r = await get_redis()
+    
+    # Check if the camera stream exists/has frames in Redis first
+    frame_exists = await r.exists(f"rigvision:camera:frame:{camera_id}")
+    if not frame_exists:
+        raise HTTPException(status_code=404, detail=f"Camera stream {camera_id} is offline")
+
     async def frame_generator():
-        r = await get_redis()
+        missing_count = 0
         while True:
             try:
                 # Retrieve base64 encoded frame
                 jpeg_b64 = await r.get(f"rigvision:camera:frame:{camera_id}")
                 if jpeg_b64:
+                    missing_count = 0
                     # Decode base64 to raw jpeg bytes
                     jpeg_bytes = base64.b64decode(jpeg_b64)
                     yield (
@@ -269,8 +277,14 @@ async def get_mjpeg_stream(camera_id: str):
                         b'Content-Length: ' + str(len(jpeg_bytes)).encode() + b'\r\n\r\n' +
                         jpeg_bytes + b'\r\n'
                     )
+                else:
+                    missing_count += 1
+                    if missing_count >= 50:  # 50 * 0.04 = 2.0 seconds of no frames
+                        print(f"[mjpeg] Camera {camera_id} offline (no frames in Redis for 2s). Closing stream.")
+                        break
             except Exception as e:
                 print(f"[mjpeg] Error yielding frame for cam {camera_id}: {e}")
+                break
             # Run at ~25fps stream pacing
             await asyncio.sleep(0.04)
 
