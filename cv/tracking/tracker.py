@@ -27,10 +27,6 @@ It improves over simple IoU matching with:
    have similar vectors (small cosine distance). This lets BoT-SORT
    re-identify someone even after they're occluded for several frames.
 
-3. CAMERA MOTION COMPENSATION — if the camera moves (e.g., phone vibration),
-   BoT-SORT adjusts bounding box predictions so movement from camera shake
-   doesn't confuse the tracker.
-
 IoU EXPLAINED:
 ──────────────
 IoU = Intersection over Union. Measures how much two bounding boxes overlap.
@@ -66,7 +62,7 @@ from detection.detector import Detection
 # ─── Default tracker hyperparameters ────────────────────────
 # Stored once, reused by __init__ and reset().
 
-def _default_args(cmc_method: str = "sparseOptFlow") -> argparse.Namespace:
+def _default_args() -> argparse.Namespace:
     """Build the args namespace for BoT-SORT with RigVision defaults."""
     args = argparse.Namespace()
     args.track_high_thresh = 0.6
@@ -77,7 +73,6 @@ def _default_args(cmc_method: str = "sparseOptFlow") -> argparse.Namespace:
     args.proximity_thresh = 0.5
     args.appearance_thresh = 0.25
     args.with_reid = False
-    args.cmc_method = cmc_method
     args.name = "rigvision"
     args.ablation = False
     args.mot20 = False
@@ -161,8 +156,8 @@ def compute_iou(box_a: Tuple[float, ...], box_b: Tuple[float, ...]) -> float:
 class PersonTracker:
     """BoT-SORT based multi-object tracker.
     
-    Uses Kalman filtering for motion prediction, ReID embeddings for
-    appearance matching, and camera motion compensation.
+    Uses Kalman filtering for motion prediction and ReID embeddings for
+    appearance matching.
     
     Usage:
         tracker = PersonTracker(camera_id=0)
@@ -180,24 +175,19 @@ class PersonTracker:
         camera_id: int = 0,
         device: str = "cuda",
         half: bool = False,
-        cmc_method: str = "sparseOptFlow",
     ) -> None:
         """
         Args:
             camera_id: Which camera this tracker is for (for logging).
             device: Torch device for ReID model ('cuda' for RTX 4070).
             half: Use half-precision (FP16). Faster but slightly less accurate.
-            cmc_method: Camera motion compensation method.
-                'sparseOptFlow' — good for moving cameras / recorded video.
-                'none' — use for static DroidCam phones (saves ~5ms/frame).
         """
         self.camera_id = camera_id
-        self.cmc_method = cmc_method
 
         # M4: Store args so reset() can reuse them without duplication
-        self._args = _default_args(cmc_method=cmc_method)
+        self._args = _default_args()
         self.botsort = BoTSORT(self._args, frame_rate=30)
-        print(f"[tracker] Camera {camera_id}: Native BoT-SORT initialized (ReID={self._args.with_reid}, GMC={cmc_method})")
+        print(f"[tracker] Camera {camera_id}: Native BoT-SORT initialized (ReID={self._args.with_reid})")
 
     def update(
         self, frame: np.ndarray, detections: List[Detection]
@@ -307,6 +297,6 @@ class PersonTracker:
     def reset(self) -> None:
         """Reset tracker state. Use when switching scenes or restarting."""
         # M4: Reuse stored args instead of duplicating hyperparameters
-        self._args = _default_args(cmc_method=self.cmc_method)
+        self._args = _default_args()
         self.botsort = BoTSORT(self._args, frame_rate=30)
         print(f"[tracker] Camera {self.camera_id}: BoT-SORT reset")

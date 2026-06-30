@@ -6,7 +6,6 @@ Based on: https://github.com/NirAharon/BoT-SORT
 Changes from upstream:
   - Relative imports for RigVision package structure
   - Fixed update_features in-place mutation (H1) and zero-norm crash (H2)
-  - Fixed mutable default argument in multi_gmc (H3)
   - Enabled is_activated filter to prevent phantom tracks (M3)
   - Capped removed_stracks to prevent memory leak (M2)
   - Fixed typo activated_starcks -> activated_stracks (L1)
@@ -20,7 +19,6 @@ import numpy as np
 from collections import deque
 
 from . import matching
-from .gmc import GMC
 from .basetrack import BaseTrack, TrackState
 from .kalman_filter import KalmanFilter
 
@@ -43,14 +41,14 @@ class STrack(BaseTrack):
         self.score = score
         self.tracklet_len = 0
 
-        self.smooth_feat = None
-        self.curr_feat = None
+        self.smooth_feat = None #appearance vector trend stored using exponential average
+        self.curr_feat = None #current appearance vector it has received 
         if feat is not None:
             self.update_features(feat)
         self.features = deque([], maxlen=feat_history)
-        self.alpha = 0.9
+        self.alpha = 0.9                       #for the exponential moving average
 
-    def update_features(self, feat):
+    def update_features(self, feat): #to update the tracklet of the person this should include teh new apperance vector we have recieved 
         # H2: Guard against zero-norm features (e.g. failed ReID extraction)
         norm = np.linalg.norm(feat)
         if norm < 1e-6:
@@ -61,7 +59,7 @@ class STrack(BaseTrack):
         if self.smooth_feat is None:
             self.smooth_feat = feat
         else:
-            self.smooth_feat = self.alpha * self.smooth_feat + (1 - self.alpha) * feat
+            self.smooth_feat = self.alpha * self.smooth_feat + (1 - self.alpha) * feat #exponential moving-average method to store the appearance vector
         self.features.append(feat)
         self.smooth_feat /= np.linalg.norm(self.smooth_feat)
 
@@ -84,27 +82,6 @@ class STrack(BaseTrack):
                     multi_mean[i][7] = 0
             multi_mean, multi_covariance = STrack.shared_kalman.multi_predict(multi_mean, multi_covariance)
             for i, (mean, cov) in enumerate(zip(multi_mean, multi_covariance)):
-                stracks[i].mean = mean
-                stracks[i].covariance = cov
-
-    @staticmethod
-    def multi_gmc(stracks, H=None):
-        # H3: Avoid mutable default argument
-        if H is None:
-            H = np.eye(2, 3)
-        if len(stracks) > 0:
-            multi_mean = np.asarray([st.mean.copy() for st in stracks])
-            multi_covariance = np.asarray([st.covariance for st in stracks])
-
-            R = H[:2, :2]
-            R8x8 = np.kron(np.eye(4, dtype=float), R)
-            t = H[:2, 2]
-
-            for i, (mean, cov) in enumerate(zip(multi_mean, multi_covariance)):
-                mean = R8x8.dot(mean)
-                mean[:2] += t
-                cov = R8x8.dot(cov).dot(R8x8.transpose())
-
                 stracks[i].mean = mean
                 stracks[i].covariance = cov
 
@@ -249,8 +226,6 @@ class BoTSORT(object):
             from fast_reid.fast_reid_interfece import FastReIDInterface
             self.encoder = FastReIDInterface(args.fast_reid_config, args.fast_reid_weights, args.device)
 
-        self.gmc = GMC(method=args.cmc_method, verbose=[args.name, args.ablation])
-
     def update(self, output_results, img):
         self.frame_id += 1
         activated_stracks = []
@@ -321,11 +296,6 @@ class BoTSORT(object):
 
         # Predict the current location with KF
         STrack.multi_predict(strack_pool)
-
-        # Fix camera motion
-        warp = self.gmc.apply(img, dets)
-        STrack.multi_gmc(strack_pool, warp)
-        STrack.multi_gmc(unconfirmed, warp)
 
         # Associate with high score detection boxes
         ious_dists = matching.iou_distance(strack_pool, detections)
