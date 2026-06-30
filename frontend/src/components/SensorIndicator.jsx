@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Html } from '@react-three/drei';
+import { useRigStore } from '../stores/useRigStore.js';
 
 const SENSOR_COLORS = {
   temperature: '#ff6600',
@@ -13,6 +14,7 @@ const SENSOR_COLORS = {
 export default function SensorIndicator({ sensor }) {
   const [hovered, setHovered] = useState(false);
   const color = SENSOR_COLORS[sensor.type] || SENSOR_COLORS.default;
+  const showDiagnosticsModal = useRigStore(s => s.showDiagnosticsModal);
 
   return (
     <group position={sensor.position}>
@@ -31,7 +33,7 @@ export default function SensorIndicator({ sensor }) {
         <meshBasicMaterial color={color} transparent opacity={hovered ? 0.4 : 0.15} depthWrite={false} />
       </mesh>
 
-      {hovered && (
+      {hovered && !showDiagnosticsModal && (
         <Html position={[0, 0.2, 0]} center distanceFactor={6} zIndexRange={[100, 0]}>
           <div style={{
             background: 'rgba(20, 20, 30, 0.85)',

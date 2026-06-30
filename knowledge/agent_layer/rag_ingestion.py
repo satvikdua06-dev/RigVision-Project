@@ -11,8 +11,8 @@ if not api_key:
 
 client = genai.Client(api_key=api_key)
 
-print("Connecting to ChromaDB Docker container on port 8000...")
-db_client = chromadb.HttpClient(host='localhost', port=8000)
+print("Connecting to ChromaDB Docker container on port 8100...")
+db_client = chromadb.HttpClient(host='localhost', port=8100)
 
 try:
     db_client.delete_collection(name="device_manuals")
@@ -39,4 +39,6 @@ def ingest_manuals(filepath):
     print("RAG Ingestion Complete!")
 
 if __name__ == "__main__":
-    ingest_manuals("../documents/ONGC_Device_Manuals.txt")
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    document_path = os.path.join(current_dir, "..", "documents", "ONGC_Device_Manuals.txt")
+    ingest_manuals(document_path)

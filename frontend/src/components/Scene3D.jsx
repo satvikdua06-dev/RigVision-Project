@@ -500,13 +500,6 @@ function SettingsPanel() {
         </div>
       )}
       
-      <style dangerouslySetInnerHTML={{__html: `
-        @keyframes pulse {
-          0% { opacity: 0.6; }
-          50% { opacity: 1; }
-          100% { opacity: 0.6; }
-        }
-      `}} />
     </div>
   )
 }
@@ -529,7 +522,7 @@ export default function Scene3D() {
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <Canvas
-        shadows
+        shadows={{ type: THREE.PCFShadowMap }}
         camera={{ position: [5, 8, 12], fov: 45, near: 0.1, far: 500 }}
         gl={{ antialias: true, alpha: false }}
         style={{ background: '#050a0f' }}

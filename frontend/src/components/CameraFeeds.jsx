@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useRigStore } from '../stores/useRigStore.js'
 
 const POSTURE_COLORS = {
@@ -10,19 +10,26 @@ const POSTURE_COLORS = {
   unknown:  '#5a8aaa',
 }
 
+function ppeStatus(val) {
+  if (val === true) return { label: '✓', color: '#00e676', bg: 'rgba(0, 230, 118, 0.08)', border: 'rgba(0, 230, 118, 0.3)' }
+  if (val === false) return { label: '✗', color: '#ff3b3b', bg: 'rgba(255, 59, 59, 0.08)', border: 'rgba(255, 59, 59, 0.3)' }
+  return { label: '?', color: '#5a8aaa', bg: 'rgba(90, 138, 170, 0.08)', border: 'rgba(90, 138, 170, 0.3)' }
+}
+
+const host = window.location.hostname === 'localhost' ? '127.0.0.1' : window.location.hostname
+const API_BASE = import.meta.env.VITE_API_URL || `http://${host}:8000/api`
+
 export default function CameraFeeds() {
   const selectedPerson = useRigStore(s => s.selectedPerson)
   const persons = useRigStore(s => s.persons)
   const [failedCams, setFailedCams] = useState({})
   const [retryCounts, setRetryCounts] = useState({})
 
-  // Reset states when selectedPerson changes
   useEffect(() => {
     setFailedCams({})
     setRetryCounts({})
   }, [selectedPerson])
 
-  // Handle retry interval for failed cameras
   useEffect(() => {
     const failedCamIds = Object.keys(failedCams).filter(id => failedCams[id])
     if (failedCamIds.length === 0) return
@@ -30,27 +37,38 @@ export default function CameraFeeds() {
     const timer = setTimeout(() => {
       setFailedCams(prev => {
         const next = { ...prev }
-        failedCamIds.forEach(id => {
-          next[id] = false // Try loading again
-        })
+        failedCamIds.forEach(id => { next[id] = false })
         return next
       })
       setRetryCounts(prev => {
         const next = { ...prev }
-        failedCamIds.forEach(id => {
-          next[id] = (next[id] || 0) + 1
-        })
+        failedCamIds.forEach(id => { next[id] = (next[id] || 0) + 1 })
         return next
       })
-    }, 4000) // Retry loading every 4 seconds
+    }, 4000)
 
     return () => clearTimeout(timer)
   }, [failedCams])
 
+  const cameraIds = useMemo(() => {
+    const ids = new Set()
+    persons.forEach(p => {
+      if (p.camera_ids) p.camera_ids.forEach(id => ids.add(id))
+    })
+    return ids.size > 0 ? [...ids].sort((a, b) => a - b) : [0, 1, 2]
+  }, [persons])
+
   if (selectedPerson === null || selectedPerson === undefined) return null
 
   const person = persons.find(p => p.id === selectedPerson)
-  const host = window.location.hostname === 'localhost' ? '127.0.0.1' : window.location.hostname
+
+  const ppe = person?.ppe || {}
+  const hatStatus = ppeStatus(ppe.hardhat)
+  const vestStatus = ppeStatus(ppe.vest)
+  const gogglesStatus = ppeStatus(ppe.goggles)
+
+  const hasAlert = ppe.hardhat === false || ppe.vest === false || ppe.goggles === false
+  const hasUnknown = ppe.hardhat == null || ppe.vest == null || ppe.goggles == null
 
   return (
     <div style={{
@@ -59,12 +77,8 @@ export default function CameraFeeds() {
       boxShadow: '0 4px 20px rgba(0,0,0,0.8)',
       width: 344,
     }}>
-      {/* Pulse keyframe injection */}
-      <style>{`@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }`}</style>
-
       {/* Person Detailed Info Card */}
       {person ? (() => {
-        const hasAlert = !person.ppe.hardhat || !person.ppe.vest || !person.ppe.goggles
         return (
           <div style={{
             borderBottom: '1px solid rgba(0,180,255,0.25)',
@@ -88,6 +102,18 @@ export default function CameraFeeds() {
                   letterSpacing: 1,
                   animation: 'pulse 1.5s infinite'
                 }}>PPE VIOLATION</span>
+              ) : hasUnknown ? (
+                <span style={{
+                  background: 'rgba(90, 138, 170, 0.15)',
+                  border: '1px solid #5a8aaa',
+                  color: '#5a8aaa',
+                  fontFamily: "'Share Tech Mono', monospace",
+                  fontSize: 10,
+                  padding: '2px 8px',
+                  borderRadius: 4,
+                  fontWeight: 600,
+                  letterSpacing: 1
+                }}>UNMONITORED</span>
               ) : (
                 <span style={{
                   background: 'rgba(0, 230, 118, 0.15)',
@@ -120,27 +146,27 @@ export default function CameraFeeds() {
               </div>
               <div>
                 <span style={{ color: '#5a8aaa' }}>Cams:</span>{' '}
-                <span style={{ color: '#e0f4ff', fontWeight: 'bold' }}>{person.cameras_visible} / 3</span>
+                <span style={{ color: '#e0f4ff', fontWeight: 'bold' }}>{person.cameras_visible} / {cameraIds.length}</span>
               </div>
             </div>
 
             <div style={{ display: 'flex', gap: 6, fontFamily: "'Share Tech Mono', monospace", fontSize: 11 }}>
               {[
-                { label: '🪖 Hat', ok: person.ppe.hardhat },
-                { label: '🦺 Vest', ok: person.ppe.vest },
-                { label: '🥽 Goggles', ok: person.ppe.goggles },
-              ].map(({ label, ok }) => (
+                { label: '🪖 Hat', status: hatStatus },
+                { label: '🦺 Vest', status: vestStatus },
+                { label: '🥽 Goggles', status: gogglesStatus },
+              ].map(({ label, status }) => (
                 <div key={label} style={{
                   flex: 1,
                   textAlign: 'center',
                   padding: '4px 6px',
                   borderRadius: 4,
-                  background: ok ? 'rgba(0, 230, 118, 0.08)' : 'rgba(255, 59, 59, 0.08)',
-                  border: `1px solid ${ok ? 'rgba(0, 230, 118, 0.3)' : 'rgba(255, 59, 59, 0.3)'}`,
-                  color: ok ? '#00e676' : '#ff3b3b',
+                  background: status.bg,
+                  border: `1px solid ${status.border}`,
+                  color: status.color,
                   fontWeight: 500,
                 }}>
-                  {label} {ok ? '✓' : '✗'}
+                  {label} {status.label}
                 </div>
               ))}
             </div>
@@ -178,16 +204,16 @@ export default function CameraFeeds() {
         LIVE FEED STREAM
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {[0, 1, 2].map(camId => {
+        {cameraIds.map(camId => {
           const isFailed = failedCams[camId]
           const retry = retryCounts[camId] || 0
           return (
             <div key={camId} style={{ position: 'relative' }}>
               {!isFailed ? (
-                <img 
-                  src={`http://${host}:8000/api/video/mjpeg/${camId}?t=${retry}`} 
-                  alt={`Camera ${camId}`} 
-                  style={{ width: 320, height: 180, borderRadius: 6, border: '1px solid #2a4a5a', objectFit: 'cover', color: 'transparent' }} 
+                <img
+                  src={`${API_BASE}/video/mjpeg/${camId}?t=${retry}`}
+                  alt={`Camera ${camId}`}
+                  style={{ width: 320, height: 180, borderRadius: 6, border: '1px solid #2a4a5a', objectFit: 'cover', color: 'transparent' }}
                   onError={() => {
                     setFailedCams(prev => ({ ...prev, [camId]: true }))
                   }}

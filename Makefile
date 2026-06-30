@@ -8,7 +8,8 @@
 #   make demo      → run full demo (backend + CV demo + frontend)
 # ──────────────────────────────────────────────────────────
 
-.PHONY: up down backend frontend cv-demo cv-live demo install clean logs
+.PHONY: up down backend frontend cv-demo cv-live demo install clean logs \
+        sensor-sim kafka-bridge compliance
 
 # ── Infrastructure ──
 
@@ -18,7 +19,8 @@ up:
 	@echo "   Redis:     localhost:6379"
 	@echo "   Postgres:  localhost:5432"
 	@echo "   Neo4j:     http://localhost:7474"
-	@echo "   EMQX:      http://localhost:18083"
+	@echo "   ChromaDB:  http://localhost:8100"
+	@echo "   Kafka:     localhost:9092"
 
 down:
 	docker compose down
@@ -40,24 +42,37 @@ cv-demo:
 cv-live:
 	cd cv && python pipeline.py --mode live --cameras 0 1 2
 
+sensor-sim:
+	python -m sensors.simulator.simulate
+
+kafka-bridge:
+	python -m sensors.ingest.kafka_bridge
+
+compliance:
+	python -m sensors.compliance.engine
+
 # ── Combo Commands ──
 
 # Full demo: requires 3 terminal windows
 demo:
 	@echo "🚀 RigVision-3D Demo Mode"
-	@echo "Run these in 3 separate terminals:"
+	@echo "Run these in separate terminals:"
 	@echo ""
 	@echo "  Terminal 1:  make backend"
 	@echo "  Terminal 2:  make cv-demo"
 	@echo "  Terminal 3:  make frontend"
+	@echo "  Terminal 4:  make compliance    (optional — evaluates safety rules)"
+	@echo "  Terminal 5:  make sensor-sim    (optional — fake sensor data via Kafka)"
+	@echo "  Terminal 6:  make kafka-bridge  (optional — bridges Kafka sensors to Redis)"
 	@echo ""
-	@echo "Then open: http://localhost:3000"
+	@echo "Then open: http://localhost:5173"
 
 # ── Setup ──
 
 install:
 	cd backend && pip install -r requirements.txt
 	cd cv && pip install -r requirements.txt
+	pip install pyyaml kafka-python
 	cd frontend && npm install
 	@echo "✅ All dependencies installed"
 
