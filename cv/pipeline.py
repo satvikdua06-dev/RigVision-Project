@@ -1,20 +1,21 @@
 """RigVision-3D — Main CV Pipeline"""
 from __future__ import annotations
 import argparse, base64, json, math, os, queue, signal, sys, threading, time
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 import numpy as np
 import redis
 
 os.environ["OPENCV_LOG_LEVEL"] = "OFF"
 os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp"
 
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from tracking.triangulation import load_zones, assign_zone
 
 shutdown_event = threading.Event()
 clear_tracking_cache_event = threading.Event()
+DEFAULT_PPE = {"hardhat": None, "vest": None, "goggles": None}
+PERSON_UPDATE_FIELDS = ("x", "y", "z", "zone", "floor", "posture", "ppe", "confidence")
 
 def signal_handler(sig: int, frame: object) -> None:
     shutdown_event.set()
@@ -50,7 +51,9 @@ def create_redis_uploader(redis_client: redis.Redis, upload_queue: queue.Queue) 
                 break
             cam_id, frame = item
             try:
-                _, jpeg = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+                ok, jpeg = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+                if not ok:
+                    continue
                 redis_client.set(f"rigvision:camera:frame:{cam_id}", base64.b64encode(jpeg.tobytes()).decode('utf-8'), ex=2)
             except Exception as e:
                 print(f"Uploader error: {e}")
@@ -59,6 +62,24 @@ def create_redis_uploader(redis_client: redis.Redis, upload_queue: queue.Queue) 
     t = threading.Thread(target=_uploader, daemon=True)
     t.start()
     return t
+
+def _queue_latest_frame(upload_queue: queue.Queue, cam_id: int, frame: np.ndarray) -> None:
+    try:
+        upload_queue.put_nowait((cam_id, frame))
+        return
+    except queue.Full:
+        pass
+
+    try:
+        upload_queue.get_nowait()
+        upload_queue.task_done()
+    except queue.Empty:
+        pass
+
+    try:
+        upload_queue.put_nowait((cam_id, frame))
+    except queue.Full:
+        pass
 
 def annotate_and_enqueue(
     frame: np.ndarray,
@@ -87,20 +108,35 @@ def annotate_and_enqueue(
             lbl = f"#{t.track_id + (global_id_offset or 0)}"
         cv2.putText(annotated, lbl, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
         _draw_skeleton(annotated, getattr(t, 'keypoints', None))
-    try:
-        upload_queue.put_nowait((cam_id, annotated))
-    except queue.Full:
-        try:
-            upload_queue.get_nowait()
-            upload_queue.task_done()
-        except queue.Empty:
-            pass
-        try:
-            upload_queue.put_nowait((cam_id, annotated))
-        except queue.Full:
-            pass
+    _queue_latest_frame(upload_queue, cam_id, annotated)
     if show_preview:
         cv2.imshow(f"Camera {cam_id}", annotated)
+
+def _ppe_or_unknown(ppe: Optional[dict]) -> dict:
+    return dict(ppe) if ppe else dict(DEFAULT_PPE)
+
+def _merge_person_observation(existing: dict, candidate: dict) -> None:
+    previous_visible = existing.get("cameras_visible", len(existing.get("camera_ids", [])))
+    candidate_visible = candidate.get("cameras_visible", len(candidate.get("camera_ids", [])))
+    previous_confidence = existing.get("confidence", 0.0)
+    candidate_confidence = candidate.get("confidence", 0.0)
+
+    candidate_is_better = (
+        candidate_visible > previous_visible
+        or (candidate_visible == previous_visible and candidate_confidence > previous_confidence)
+    )
+
+    if candidate_is_better:
+        for key in PERSON_UPDATE_FIELDS:
+            existing[key] = candidate[key]
+
+    if candidate.get("recognition_method") and not existing.get("recognition_method"):
+        existing["recognition_method"] = candidate["recognition_method"]
+
+    camera_ids = set(existing.get("camera_ids", []))
+    camera_ids.update(candidate.get("camera_ids", []))
+    existing["camera_ids"] = sorted(camera_ids)
+    existing["cameras_visible"] = len(existing["camera_ids"])
 
 def propagate_recognition(
     matched_persons: list,
@@ -158,21 +194,14 @@ def build_fused_persons(
             "zone": mp.zone or "unknown",
             "floor": 1 if (mp.zone and mp.zone.endswith("_f1")) else 0,
             "posture": getattr(best, "posture", "standing"),
-            "ppe": best.ppe or {"hardhat": None, "vest": None, "goggles": None},
+            "ppe": _ppe_or_unknown(best.ppe),
             "confidence": round(best.confidence, 2),
             "cameras_visible": len(mp.per_camera),
-            "camera_ids": [int(cid) for cid in mp.per_camera.keys()],
+            "camera_ids": sorted(int(cid) for cid in mp.per_camera.keys()),
             "recognition_method": global_to_recognition_method.get(mp.global_id) if mp.global_id in global_to_personnel_map else None,
         }
         if pid in fused:
-            exist = fused[pid]
-            exist["camera_ids"] = list(set(exist["camera_ids"] + p_dict["camera_ids"]))
-            exist["cameras_visible"] = len(exist["camera_ids"])
-            if p_dict["cameras_visible"] > exist["cameras_visible"] or (p_dict["cameras_visible"] == exist["cameras_visible"] and p_dict["confidence"] > exist["confidence"]):
-                for k in ("x", "y", "z", "zone", "floor", "posture", "ppe", "confidence"):
-                    exist[k] = p_dict[k]
-                if p_dict["recognition_method"]:
-                    exist["recognition_method"] = p_dict["recognition_method"]
+            _merge_person_observation(fused[pid], p_dict)
         else:
             fused[pid] = p_dict
     return list(fused.values())
@@ -196,7 +225,6 @@ def _evict_stale_tracks(
     global_to_recognition_method: dict,
     active_global_ids: set,
     mapper: Optional[object],
-    frame_count: int,
 ) -> None:
     active_local = {(cam_id, track.track_id) for cam_id, tracks in per_camera_tracks.items() for track in tracks}
     for k in list(local_to_personnel_map.keys()):
@@ -242,18 +270,86 @@ def _handle_cache_clear(g_map, g_meth, l_map, l_meth, trackers) -> None:
         for t in trackers.values(): t.reset()
         clear_tracking_cache_event.clear()
 
-def _check_vlm_gating(redis_client: redis.Redis, frame_count: int) -> bool:
-    if frame_count % 5 != 0: return False
-    try:
-        return redis_client.get("rigvision:settings:vlm_gating") == "true"
-    except Exception:
-        return False
-
 def _publish_fps(redis_client: redis.Redis, fps: float) -> None:
     try:
         redis_client.set("rigvision:pipeline:fps", str(round(fps, 1)), ex=10)
     except Exception:
         pass
+
+def _normalize_floor_map(floor_map: Optional[List[int]], source_count: int) -> List[int]:
+    normalized = list(floor_map or [])[:source_count]
+    normalized.extend([0] * (source_count - len(normalized)))
+    return normalized
+
+def _track_frames(frames: dict[int, np.ndarray], detector, trackers: dict[int, object]) -> dict[int, list]:
+    source_ids = sorted(frames.keys())
+    frame_list = [frames[source_id] for source_id in source_ids]
+    batch_detections = detector.detect_batch(frame_list)
+    return {
+        source_id: trackers[source_id].update(frames[source_id], batch_detections[index])
+        for index, source_id in enumerate(source_ids)
+    }
+
+def _write_realtime_state(redis_client: redis.Redis, persons: list[dict], zone_defs: dict) -> dict:
+    zone_states = _generate_zone_states_from_persons(persons, zone_defs)
+    try:
+        redis_client.set("rigvision:persons", json.dumps(persons))
+        redis_client.set("rigvision:zones", json.dumps(zone_states))
+    except Exception as e:
+        print(f"Redis write error: {e}")
+    return zone_states
+
+def _publish_annotated_frames(
+    frames: dict[int, np.ndarray],
+    tracks_by_source: dict[int, list],
+    local_to_personnel_map: dict,
+    local_to_recognition_method: dict,
+    global_to_personnel_map: dict,
+    global_to_recognition_method: dict,
+    upload_queue: queue.Queue,
+    show_preview: bool,
+    global_id_offsets: Optional[dict[int, int]] = None,
+    label_cache: Optional[dict] = None,
+) -> None:
+    for source_id, frame in frames.items():
+        annotate_and_enqueue(
+            frame,
+            source_id,
+            tracks_by_source.get(source_id, []),
+            local_to_personnel_map,
+            local_to_recognition_method,
+            global_id_offsets.get(source_id) if global_id_offsets else None,
+            global_to_personnel_map,
+            global_to_recognition_method,
+            upload_queue,
+            show_preview,
+            label_cache,
+        )
+
+def _finish_frame(
+    redis_client: redis.Redis,
+    mode_name: str,
+    frame_count: int,
+    frame_started_at: float,
+    person_count: int,
+    max_fps: Optional[float],
+) -> int:
+    frame_count += 1
+    elapsed = time.time() - frame_started_at
+    if frame_count % 30 == 0:
+        fps_actual = 1.0 / max(elapsed, 0.001)
+        print(f"  [{mode_name}] frame={frame_count} persons={person_count} fps={fps_actual:.1f}")
+        _publish_fps(redis_client, fps_actual)
+    if max_fps:
+        time.sleep(max(0, (1.0 / max_fps) - elapsed))
+    return frame_count
+
+def _shutdown_uploader(upload_queue: queue.Queue, uploader_thread: threading.Thread) -> None:
+    try:
+        upload_queue.put(None, timeout=1.0)
+    except queue.Full:
+        pass
+    uploader_thread.join(timeout=1.0)
 
 class DemoDataGenerator:
     def __init__(self, zone_definitions_path: str, num_persons: int = 4) -> None:
@@ -416,12 +512,12 @@ def run_live_mode(
     max_fps: Optional[float] = None,
     floor_map: Optional[List[int]] = None,
 ) -> None:
-    floor_map = (floor_map or []) + [0] * max(0, len(camera_sources) - len(floor_map or []))
+    floor_map = _normalize_floor_map(floor_map, len(camera_sources))
     import cv2
     from detection.detector import PersonDetector
     from tracking.tracker import PersonTracker
     from tracking.cross_camera import CrossCameraMapper
-    from tracking.triangulation import CameraCalibration, load_calibrations, load_zones as _load_zones, triangulate_all
+    from tracking.triangulation import CameraCalibration, load_calibrations, triangulate_all
 
     print(f"[*] Starting LIVE mode with {len(camera_sources)} camera(s)")
     detector = PersonDetector(model_path=model_path, confidence=confidence, device=device)
@@ -431,7 +527,7 @@ def run_live_mode(
         if i not in calibrations: calibrations[i] = CameraCalibration.create_default(i)
     trackers = {i: PersonTracker(camera_id=i) for i in cameras}
     mapper = CrossCameraMapper()
-    tri_zones = _load_zones(zone_definitions_path)
+    tri_zones = load_zones(zone_definitions_path)
     zone_defs = load_zone_definitions(zone_definitions_path)
     upload_queue = queue.Queue(maxsize=30)
     uploader_thread = create_redis_uploader(redis_client, upload_queue)
@@ -442,7 +538,6 @@ def run_live_mode(
 
     while not shutdown_event.is_set():
         _handle_cache_clear(global_to_personnel_map, global_to_recognition_method, local_to_personnel_map, local_to_recognition_method, trackers)
-        _check_vlm_gating(redis_client, frame_count)
         t_start = time.time()
         frames = {}
         for cam_id, cap in cameras.items():
@@ -454,40 +549,33 @@ def run_live_mode(
                     h, w = frame.shape[:2]
                     frame = cv2.resize(frame, (resize_width, int(resize_width * (h / w))), interpolation=cv2.INTER_LINEAR)
                 frames[cam_id] = frame
-        if not frames: continue
+        if not frames:
+            time.sleep(0.02)
+            continue
 
-        frame_list = [frames[cid] for cid in sorted(frames.keys())]
-        cam_ids = sorted(frames.keys())
-        batch_detections = detector.detect_batch(frame_list)
-        per_camera_tracks = {cid: trackers[cid].update(frames[cid], batch_detections[i]) for i, cid in enumerate(cam_ids)}
+        per_camera_tracks = _track_frames(frames, detector, trackers)
 
         matched_persons = mapper.match(per_camera_tracks)
         matched_persons = triangulate_all(matched_persons, calibrations, tri_zones, floor_map)
         propagate_recognition(matched_persons, global_to_personnel_map, global_to_recognition_method, local_to_personnel_map, local_to_recognition_method)
         persons_json = build_fused_persons(matched_persons, global_to_personnel_map, global_to_recognition_method)
-        zone_states = _generate_zone_states_from_persons(persons_json, zone_defs)
-
-        try:
-            redis_client.set("rigvision:persons", json.dumps(persons_json))
-            redis_client.set("rigvision:zones", json.dumps(zone_states))
-        except Exception as e:
-            print(f"Redis write error: {e}")
-
-        for cam_id, frame in frames.items():
-            annotate_and_enqueue(frame, cam_id, per_camera_tracks.get(cam_id, []), local_to_personnel_map, local_to_recognition_method, None, global_to_personnel_map, global_to_recognition_method, upload_queue, show_preview)
+        _write_realtime_state(redis_client, persons_json, zone_defs)
+        _publish_annotated_frames(
+            frames,
+            per_camera_tracks,
+            local_to_personnel_map,
+            local_to_recognition_method,
+            global_to_personnel_map,
+            global_to_recognition_method,
+            upload_queue,
+            show_preview,
+        )
         if show_preview and cv2.waitKey(1) & 0xFF == ord('q'): break
 
-        _evict_stale_tracks(per_camera_tracks, local_to_personnel_map, local_to_recognition_method, global_to_personnel_map, global_to_recognition_method, {mp.global_id for mp in matched_persons}, mapper, frame_count)
-        frame_count += 1
-        if frame_count % 30 == 0:
-            fps_actual = 1.0 / max(time.time() - t_start, 0.001)
-            print(f"  [live] frame={frame_count} persons={len(persons_json)} fps={fps_actual:.1f}")
-            _publish_fps(redis_client, fps_actual)
-        if max_fps:
-            time.sleep(max(0, (1.0 / max_fps) - (time.time() - t_start)))
+        _evict_stale_tracks(per_camera_tracks, local_to_personnel_map, local_to_recognition_method, global_to_personnel_map, global_to_recognition_method, {mp.global_id for mp in matched_persons}, mapper)
+        frame_count = _finish_frame(redis_client, "live", frame_count, t_start, len(persons_json), max_fps)
 
-    upload_queue.put(None)
-    uploader_thread.join(timeout=1.0)
+    _shutdown_uploader(upload_queue, uploader_thread)
     for cap in cameras.values(): cap.release()
     if show_preview: cv2.destroyAllWindows()
 
@@ -503,7 +591,7 @@ def run_video_mode(
     max_fps: Optional[float] = None,
     floor_map: Optional[List[int]] = None,
 ) -> None:
-    floor_map = (floor_map or []) + [0] * max(0, len(video_paths) - len(floor_map or []))
+    floor_map = _normalize_floor_map(floor_map, len(video_paths))
     resize_width = resize_width or 640
     import cv2
     from detection.detector import PersonDetector
@@ -551,7 +639,6 @@ def run_video_mode(
 
     while not shutdown_event.is_set():
         _handle_cache_clear(global_to_personnel_map, global_to_recognition_method, local_to_personnel_map, local_to_recognition_method, trackers)
-        _check_vlm_gating(redis_client, frame_count)
         t_start = time.time()
         frames = {}
         for vid_id, cap in caps.items():
@@ -564,14 +651,10 @@ def run_video_mode(
             frames[vid_id] = cv2.resize(frame, (resize_width, int(resize_width * (h / w))), interpolation=cv2.INTER_LINEAR)
         if not frames: break
 
-        frame_list = [frames[vid_id] for vid_id in sorted(frames.keys())]
-        vid_ids = sorted(frames.keys())
-        batch_detections = detector.detect_batch(frame_list)
-
-        per_video_tracks, fused_persons_dict, person_matched_info, anchor_hists = {}, {}, {}, {}
-        for idx, vid_id in enumerate(vid_ids):
-            tracked = trackers[vid_id].update(frames[vid_id], batch_detections[idx])
-            per_video_tracks[vid_id] = tracked
+        per_video_tracks = _track_frames(frames, detector, trackers)
+        fused_persons_dict, person_matched_info, anchor_hists, active_global_ids = {}, {}, {}, set()
+        for vid_id in sorted(frames.keys()):
+            tracked = per_video_tracks[vid_id]
             zone_id = f"{video_zone_map[vid_id]}_f1" if (floor_map[vid_id] == 1 and not video_zone_map[vid_id].endswith("_f1")) else video_zone_map[vid_id]
             zb = zone_bounds[zone_id]
             fw, fh = frame_sizes[vid_id]
@@ -604,6 +687,7 @@ def run_video_mode(
                         final_id = best_match
                         matched_with_anchor, matched_anchor_id, matched_dist = True, best_match, best_dist
 
+                active_global_ids.add(final_id)
                 person_matched_info[(vid_id, p.track_id)] = (matched_with_anchor, matched_anchor_id, matched_dist)
                 if getattr(p, "face_id", None) is not None:
                     global_to_personnel_map[final_id] = p.face_id
@@ -616,18 +700,17 @@ def run_video_mode(
 
                 redis_id = global_to_personnel_map.get(final_id, final_id)
                 rec_method = global_to_recognition_method.get(final_id) if final_id in global_to_personnel_map else None
+                person_observation = {
+                    "id": redis_id, "x": float(round(room_x, 2)), "y": float(room_y), "z": float(round(room_z, 2)),
+                    "zone": zone_id, "floor": floor_map[vid_id], "posture": getattr(p, "posture", "standing"),
+                    "ppe": _ppe_or_unknown(p.ppe), "confidence": float(round(p.confidence, 2)),
+                    "cameras_visible": 1, "camera_ids": [int(vid_id)], "recognition_method": rec_method,
+                }
 
                 if redis_id in fused_persons_dict:
-                    fused_persons_dict[redis_id]["cameras_visible"] += 1
-                    if int(vid_id) not in fused_persons_dict[redis_id]["camera_ids"]:
-                        fused_persons_dict[redis_id]["camera_ids"].append(int(vid_id))
+                    _merge_person_observation(fused_persons_dict[redis_id], person_observation)
                 else:
-                    fused_persons_dict[redis_id] = {
-                        "id": redis_id, "x": float(round(room_x, 2)), "y": float(room_y), "z": float(round(room_z, 2)),
-                        "zone": zone_id, "floor": floor_map[vid_id], "posture": getattr(p, "posture", "standing"),
-                        "ppe": p.ppe or {"hardhat": None, "vest": None, "goggles": None}, "confidence": float(round(p.confidence, 2)),
-                        "cameras_visible": 1, "camera_ids": [int(vid_id)], "recognition_method": rec_method,
-                    }
+                    fused_persons_dict[redis_id] = person_observation
 
         all_persons = list(fused_persons_dict.values())
         label_cache = {}
@@ -645,28 +728,25 @@ def run_video_mode(
                             lbl = f"#{mai} (fusion)"
                 label_cache[(vid_id, p.track_id)] = lbl
 
-        zone_states = _generate_zone_states_from_persons(all_persons, zone_defs)
-        try:
-            redis_client.set("rigvision:persons", json.dumps(all_persons))
-            redis_client.set("rigvision:zones", json.dumps(zone_states))
-        except Exception as e:
-            print(f"Redis write error: {e}")
-
-        for vid_id, frame in frames.items():
-            annotate_and_enqueue(frame, vid_id, per_video_tracks.get(vid_id, []), local_to_personnel_map, local_to_recognition_method, global_id_offset[vid_id], global_to_personnel_map, global_to_recognition_method, upload_queue, show_preview, label_cache)
+        _write_realtime_state(redis_client, all_persons, zone_defs)
+        _publish_annotated_frames(
+            frames,
+            per_video_tracks,
+            local_to_personnel_map,
+            local_to_recognition_method,
+            global_to_personnel_map,
+            global_to_recognition_method,
+            upload_queue,
+            show_preview,
+            global_id_offsets=global_id_offset,
+            label_cache=label_cache,
+        )
         if show_preview and cv2.waitKey(1) & 0xFF == ord('q'): break
 
-        _evict_stale_tracks(per_video_tracks, local_to_personnel_map, local_to_recognition_method, global_to_personnel_map, global_to_recognition_method, set(fused_persons_dict.keys()), None, frame_count)
-        frame_count += 1
-        if frame_count % 30 == 0:
-            fps_actual = 1.0 / max(time.time() - t_start, 0.001)
-            print(f"  [video] frame={frame_count} persons={len(all_persons)} fps={fps_actual:.1f}")
-            _publish_fps(redis_client, fps_actual)
-        if max_fps:
-            time.sleep(max(0, (1.0 / max_fps) - (time.time() - t_start)))
+        _evict_stale_tracks(per_video_tracks, local_to_personnel_map, local_to_recognition_method, global_to_personnel_map, global_to_recognition_method, active_global_ids, None)
+        frame_count = _finish_frame(redis_client, "video", frame_count, t_start, len(all_persons), max_fps)
 
-    upload_queue.put(None)
-    uploader_thread.join(timeout=1.0)
+    _shutdown_uploader(upload_queue, uploader_thread)
     for cap in caps.values(): cap.release()
     if show_preview: cv2.destroyAllWindows()
 
