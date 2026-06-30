@@ -1,7 +1,9 @@
 import { create } from 'zustand'
 
 const host = window.location.hostname === 'localhost' ? '127.0.0.1' : window.location.hostname;
-const WS_URL = `ws://${host}:8000/ws/realtime`;
+const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+const WS_URL = import.meta.env.VITE_WS_URL || `${wsProtocol}//${host}:8000/ws/realtime`;
+const API_BASE = import.meta.env.VITE_API_URL || `http://${host}:8000/api`;
 
 export const useRigStore = create((set, get) => ({
   // ── State ──────────────────────────────────────────────
@@ -15,6 +17,7 @@ export const useRigStore = create((set, get) => ({
     zone_b_f1: { status: 'normal', temperature: 26, vibration: 0, noise: 45, gas_h2s: 0, pressure: 1, person_count: 0, ppe_violations: [], updated_at: Date.now() }
   },
   violations: [],
+  diagnostics: [],
   connected: false,
   
   // Selection & UI State
@@ -23,6 +26,7 @@ export const useRigStore = create((set, get) => ({
   sidebarTab: 'zones',
   showSensors: true,
   showAvatars: true,
+  showDiagnosticsModal: false,
 
   // Stream controls
   wallOpacity: 0.4,
@@ -35,33 +39,36 @@ export const useRigStore = create((set, get) => ({
   // ── WebSocket & Rendering Decoupler ─────────────────────
   _ws: null,
   _reconnectTimer: null,
-  _renderTimer: null,
+  _rafId: null,
   _latestRawData: null,
+  _lastRenderTime: 0,
 
   _startRenderLoop: () => {
-    const loop = () => {
+    const loop = (now) => {
       const state = get();
-      const raw = state._latestRawData;
-      if (raw) {
-        set({
-          persons: raw.persons !== undefined ? raw.persons : state.persons,
-          zones: raw.zones !== undefined ? raw.zones : state.zones,
-          violations: raw.violations !== undefined ? raw.violations : state.violations,
-          _latestRawData: null, // consume raw buffer
-        });
+      const minInterval = 1000 / state.fpsLimit;
+      if (now - state._lastRenderTime >= minInterval) {
+        const raw = state._latestRawData;
+        if (raw) {
+          set({
+            persons: raw.persons !== undefined ? raw.persons : state.persons,
+            zones: raw.zones !== undefined ? raw.zones : state.zones,
+            violations: raw.violations !== undefined ? raw.violations : state.violations,
+            diagnostics: raw.diagnostics !== undefined ? raw.diagnostics : state.diagnostics,
+            _latestRawData: null,
+            _lastRenderTime: now,
+          });
+        }
       }
-      const fps = get().fpsLimit;
-      const delay = 1000 / fps;
-      const timer = setTimeout(loop, delay);
-      set({ _renderTimer: timer });
+      set({ _rafId: requestAnimationFrame(loop) });
     };
 
-    if (get()._renderTimer) clearTimeout(get()._renderTimer);
-    loop();
+    if (get()._rafId) cancelAnimationFrame(get()._rafId);
+    set({ _rafId: requestAnimationFrame(loop) });
   },
 
   _restartRenderLoop: () => {
-    if (get()._renderTimer) clearTimeout(get()._renderTimer);
+    if (get()._rafId) cancelAnimationFrame(get()._rafId);
     get()._startRenderLoop();
   },
 
@@ -90,6 +97,7 @@ export const useRigStore = create((set, get) => ({
             persons: data.persons,
             zones: data.zones,
             violations: data.violations,
+            diagnostics: data.diagnostics,
           };
           if (state.vlmPending) {
             nextState.vlmPending = false;
@@ -101,10 +109,12 @@ export const useRigStore = create((set, get) => ({
             persons: state.persons,
             zones: state.zones,
             violations: state.violations,
+            diagnostics: state.diagnostics,
           };
           if (data.type === 'rigvision:persons') currentRaw.persons = data.payload;
           if (data.type === 'rigvision:zones') currentRaw.zones = data.payload;
           if (data.type === 'rigvision:violations:latest') currentRaw.violations = data.payload;
+          if (data.type === 'rigvision:diagnostics') currentRaw.diagnostics = data.payload;
           
           nextState._latestRawData = currentRaw;
           if (state.vlmPending) {
@@ -120,7 +130,7 @@ export const useRigStore = create((set, get) => ({
     ws.onclose = () => {
       console.log('[ws] Disconnected. Reconnecting in 2s...');
       set({ connected: false, _ws: null });
-      if (get()._renderTimer) clearTimeout(get()._renderTimer);
+      if (get()._rafId) cancelAnimationFrame(get()._rafId);
 
       // Auto-reconnect after 2 seconds
       const timer = setTimeout(() => {
@@ -142,13 +152,13 @@ export const useRigStore = create((set, get) => ({
     if (state._reconnectTimer) {
       clearTimeout(state._reconnectTimer);
     }
-    if (state._renderTimer) {
-      clearTimeout(state._renderTimer);
+    if (state._rafId) {
+      cancelAnimationFrame(state._rafId);
     }
     if (state._ws) {
       state._ws.close();
     }
-    set({ connected: false, _ws: null, _reconnectTimer: null, _renderTimer: null });
+    set({ connected: false, _ws: null, _reconnectTimer: null, _rafId: null });
   },
 
   // ── UI Actions ─────────────────────────────────────────
@@ -164,7 +174,11 @@ export const useRigStore = create((set, get) => ({
     const nextVal = !get().vlmGating;
     set({ vlmPending: true, vlmGating: nextVal });
     try {
-      const res = await fetch(`http://${host}:8000/api/control/vlm_gating?enabled=${nextVal}`, { method: 'POST' });
+      const res = await fetch(`${API_BASE}/control/vlm_gating`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: nextVal }),
+      });
       if (!res.ok) {
         console.error('Failed to update VLM gating');
         set({ vlmPending: false, vlmGating: !nextVal }); // rollback
@@ -177,7 +191,7 @@ export const useRigStore = create((set, get) => ({
 
   clearTrackingCache: async () => {
     try {
-      const res = await fetch(`http://${host}:8000/api/control/clear_cache`, { method: 'POST' });
+      const res = await fetch(`${API_BASE}/control/clear_cache`, { method: 'POST' });
       if (res.ok) {
         console.log('Tracking cache cleared successfully');
       } else {
@@ -194,4 +208,5 @@ export const useRigStore = create((set, get) => ({
   setSidebarTab: (tab) => set({ sidebarTab: tab }),
   toggleSensors: () => set((state) => ({ showSensors: !state.showSensors })),
   toggleAvatars: () => set((state) => ({ showAvatars: !state.showAvatars })),
+  setShowDiagnosticsModal: (val) => set({ showDiagnosticsModal: val }),
 }))

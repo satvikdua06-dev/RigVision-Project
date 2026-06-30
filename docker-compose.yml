@@ -59,7 +59,7 @@ services:
     image: chromadb/chroma:latest
     container_name: rigvision-chromadb
     ports:
-      - "8000:8000"
+      - "8100:8000"
     volumes:
       - chroma_data:/chroma/chroma
     restart: unless-stopped

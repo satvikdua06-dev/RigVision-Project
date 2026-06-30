@@ -1,366 +1,276 @@
-"""
-RigVision-3D — FastAPI Backend
-================================
-
-The server that bridges Redis (CV pipeline output) to the browser (3D dashboard).
-
-WHAT IT DOES:
-    1. REST API — on-demand endpoints for current state
-    2. WebSocket — real-time 10Hz push to the browser
-
-WHY WebSocket INSTEAD OF POLLING?
-──────────────────────────────────
-REST polling at 10Hz = 10 HTTP requests/second per client.
-Each request: TCP handshake + headers + response = ~50ms overhead.
-
-WebSocket: ONE persistent connection, server pushes only when data changes.
-For real-time 3D rendering at 60fps, this difference is critical.
-
-ARCHITECTURE:
-    Redis ──(10Hz read)──→ FastAPI ──(WebSocket push)──→ Browser
-                           │
-                           ├── GET /api/health
-                           ├── GET /api/zones
-                           ├── GET /api/persons
-                           └── GET /api/violations
-
-USAGE:
-    python main.py
-    # or
-    uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-"""
-
 from __future__ import annotations
 
 import asyncio
 import base64
 import json
+import logging
 import os
 import time
 from contextlib import asynccontextmanager
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Optional, Set
 
 import redis.asyncio as aioredis
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger("rigvision")
 
-# ─── Redis Connection ───────────────────────────────────────
 
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
+REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "") or None
+_redis_pool = None
 
-redis_client: aioredis.Redis | None = None
-
-
-async def get_redis() -> aioredis.Redis:
-    """Get the async Redis client."""
-    global redis_client
-    if redis_client is None:
-        redis_client = aioredis.Redis(
-            host=REDIS_HOST,
-            port=REDIS_PORT,
-            decode_responses=True,
+def _get_pool():
+    global _redis_pool
+    if _redis_pool is None:
+        _redis_pool = aioredis.ConnectionPool.from_url(
+            f"redis://{REDIS_HOST}:{REDIS_PORT}", password=REDIS_PASSWORD, decode_responses=True, max_connections=20
         )
-    return redis_client
+    return _redis_pool
 
-
-# ─── WebSocket Manager ──────────────────────────────────────
+def get_redis():
+    return aioredis.Redis(connection_pool=_get_pool())
 
 class ConnectionManager:
-    """Manages active WebSocket connections.
-    
-    Handles multiple browser tabs/windows connecting simultaneously.
-    When the CV pipeline writes new data to Redis, ALL connected
-    clients get the update.
-    """
-
-    def __init__(self) -> None:
+    def __init__(self):
         self.active_connections: Set[WebSocket] = set()
 
-    async def connect(self, websocket: WebSocket) -> None:
+    async def connect(self, websocket: WebSocket):
         await websocket.accept()
         self.active_connections.add(websocket)
-        print(f"[ws] Client connected. Total: {len(self.active_connections)}")
+        logger.info("Client connected. Total: %d", len(self.active_connections))
 
-    def disconnect(self, websocket: WebSocket) -> None:
+    def disconnect(self, websocket: WebSocket):
         self.active_connections.discard(websocket)
-        print(f"[ws] Client disconnected. Total: {len(self.active_connections)}")
+        logger.info("Client disconnected. Total: %d", len(self.active_connections))
 
-    async def broadcast(self, message: str) -> None:
-        """Send a message to ALL connected clients."""
-        disconnected: List[WebSocket] = []
-        for connection in self.active_connections:
+    async def broadcast(self, message: str):
+        if not self.active_connections: return
+        async def _safe_send(ws):
             try:
-                await connection.send_text(message)
+                await ws.send_text(message)
             except Exception:
-                disconnected.append(connection)
-        
-        for conn in disconnected:
-            self.active_connections.discard(conn)
+                return ws
+        results = await asyncio.gather(*(_safe_send(ws) for ws in self.active_connections), return_exceptions=True)
+        for r in results:
+            if isinstance(r, WebSocket): self.active_connections.discard(r)
 
+    async def close_all(self):
+        for ws in list(self.active_connections):
+            try: await ws.close(code=1001, reason="Server shutting down")
+            except Exception: pass
+        self.active_connections.clear()
 
 manager = ConnectionManager()
 
 
-# ─── Background Task: Redis → WebSocket Bridge ──────────────
+_active_mjpeg_streams = 0
+MAX_MJPEG_STREAMS = 10
 
-async def redis_to_websocket_bridge() -> None:
-    """Reads Redis at ~10Hz and pushes to all WebSocket clients.
-    
-    This is the core real-time loop. It:
-    1. Reads rigvision:persons, rigvision:zones, rigvision:violations:latest from Redis
-    2. Packages them into a single JSON message
-    3. Broadcasts to all connected browser clients
-    
-    Runs as a background async task for the lifetime of the server.
-    """
-    r = await get_redis()
-    print("[bridge] Redis->WebSocket bridge started (10Hz)")
-    
+async def redis_to_websocket_bridge():
+    r = get_redis()
+    _prev_hash = None
     while True:
         try:
             if manager.active_connections:
-                # Read all three keys from Redis
-                persons_raw = await r.get("rigvision:persons")
-                zones_raw = await r.get("rigvision:zones")
-                violations_raw = await r.get("rigvision:violations:latest")
-                
-                # Package into a single message
-                message = {
-                    "type": "realtime_update",
-                    "timestamp": time.time(),
-                    "persons": json.loads(persons_raw) if persons_raw else [],
-                    "zones": json.loads(zones_raw) if zones_raw else {},
-                    "violations": json.loads(violations_raw) if violations_raw else [],
-                }
-                
-                await manager.broadcast(json.dumps(message))
-            
-            # 10Hz = every 100ms
+                p_raw, z_raw, v_raw, d_raw = await asyncio.gather(
+                    r.get("rigvision:persons"),
+                    r.get("rigvision:zones"),
+                    r.get("rigvision:violations:latest"),
+                    r.get("rigvision:diagnostics")
+                )
+                cur_hash = hash((p_raw, z_raw, v_raw, d_raw))
+                if cur_hash != _prev_hash:
+                    _prev_hash = cur_hash
+                    msg = {
+                        "type": "realtime_update",
+                        "timestamp": time.time(),
+                        "persons": json.loads(p_raw) if p_raw else [],
+                        "zones": json.loads(z_raw) if z_raw else {},
+                        "violations": json.loads(v_raw) if v_raw else [],
+                        "diagnostics": json.loads(d_raw) if d_raw else [],
+                    }
+                    await manager.broadcast(json.dumps(msg))
             await asyncio.sleep(0.1)
-        
-        except aioredis.ConnectionError:
-            print("[bridge] Redis connection lost, retrying in 2s...")
-            await asyncio.sleep(2)
         except Exception as e:
-            print(f"[bridge] Error: {e}")
+            logger.error("Bridge error: %s", e)
             await asyncio.sleep(1)
 
+def start_kafka_consumer():
+    import threading
+    def _run():
+        try:
+            from kafka import KafkaConsumer
+            import redis
+            logger.info("Kafka diagnostics/alerts consumer thread started.")
+            consumer = KafkaConsumer(
+                "rigvision_alerts",
+                "rigvision_diagnostics",
+                bootstrap_servers=os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"),
+                auto_offset_reset="latest",
+                consumer_timeout_ms=1000
+            )
+            r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, password=REDIS_PASSWORD, decode_responses=True)
+            
+            latest_alert_raw = r.get("rigvision:latest_alert")
+            latest_alert = json.loads(latest_alert_raw) if latest_alert_raw else None
 
-# ─── App Lifecycle ──────────────────────────────────────────
+            while True:
+                records = consumer.poll(timeout_ms=500)
+                for tp, messages in records.items():
+                    for message in messages:
+                        try:
+                            payload = message.value.decode("utf-8")
+                            topic = message.topic
+                            
+                            if topic == "rigvision_alerts":
+                                latest_alert = json.loads(payload)
+                                r.set("rigvision:latest_alert", payload)
+                                logger.info("Backend stored latest alert: %s", payload)
+                            elif topic == "rigvision_diagnostics":
+                                logger.info("Backend received diagnostic: %s", payload)
+                                diag = json.loads(payload)
+                                
+                                if latest_alert:
+                                    diag.update({
+                                        "event_id": latest_alert.get("event_id"),
+                                        "zone_id": latest_alert.get("zone_id"),
+                                        "severity": latest_alert.get("severity"),
+                                        "triggered_sensors": latest_alert.get("triggered_sensors"),
+                                        "telemetry_snapshot": latest_alert.get("telemetry_snapshot"),
+                                        "timestamp": latest_alert.get("timestamp") or int(time.time() * 1000)
+                                    })
+                                else:
+                                    diag["timestamp"] = int(time.time() * 1000)
+                                
+                                raw = r.get("rigvision:diagnostics")
+                                diags = json.loads(raw) if raw else []
+                                
+                                if not any(d.get("event_id") == diag.get("event_id") for d in diags if "event_id" in d and "event_id" in diag):
+                                    diags.insert(0, diag)
+                                    if len(diags) > 50:
+                                        diags = diags[:50]
+                                    r.set("rigvision:diagnostics", json.dumps(diags))
+                        except Exception as e:
+                            logger.error("Error processing message in thread: %s", e)
+        except Exception as e:
+            logger.error("Kafka consumer thread failed/stopped: %s", e)
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Start the Redis→WebSocket bridge when the server starts."""
-    # Startup
-    r = await get_redis()
-    await r.ping()
-    print(f"[startup] Redis connected at {REDIS_HOST}:{REDIS_PORT}")
-    
-    # Start bridge as background task
+    await get_redis().ping()
+    start_kafka_consumer()
     bridge_task = asyncio.create_task(redis_to_websocket_bridge())
-    
     yield
-    
-    # Shutdown
     bridge_task.cancel()
-    if redis_client:
-        await redis_client.close()
-    print("[shutdown] Cleanup complete")
+    await manager.close_all()
+    await _get_pool().disconnect()
 
-
-# ─── FastAPI App ────────────────────────────────────────────
-
-app = FastAPI(
-    title="RigVision-3D API",
-    description="Real-time 3D Digital Twin Monitoring System for Industrial Drilling Rigs",
-    version="1.0.0",
-    lifespan=lifespan,
-)
-
-# CORS — allow the Vite dev server (port 3000 and 5173) to call the API
+app = FastAPI(title="RigVision-3D API", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:5173",
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:3000", "http://127.0.0.1:5173"],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
-
-# ─── REST Endpoints ────────────────────────────────────────
-
 @app.get("/api/health")
-async def health_check() -> Dict[str, Any]:
-    """Service health check.
-    
-    Returns server status and Redis connectivity.
-    Useful for monitoring and debugging.
-    """
-    r = await get_redis()
+async def health_check():
     try:
-        await r.ping()
-        redis_status = "connected"
+        await get_redis().ping()
+        status = "connected"
     except Exception:
-        redis_status = "disconnected"
-    
-    return {
-        "status": "ok",
-        "redis": redis_status,
-        "websocket_clients": len(manager.active_connections),
-        "timestamp": time.time(),
-    }
-
+        status = "disconnected"
+    return {"status": "ok", "redis": status, "websocket_clients": len(manager.active_connections), "timestamp": time.time()}
 
 @app.get("/api/persons")
-async def get_persons() -> List[Dict]:
-    """Get current tracked persons.
-    
-    Returns the latest person positions from the CV pipeline.
-    For real-time updates, use the WebSocket endpoint instead.
-    """
-    r = await get_redis()
-    raw = await r.get("rigvision:persons")
+async def get_persons():
+    raw = await get_redis().get("rigvision:persons")
     return json.loads(raw) if raw else []
 
-
 @app.get("/api/zones")
-async def get_zones() -> Dict:
-    """Get current zone states.
-    
-    Returns sensor readings, status, and person counts per zone.
-    """
-    r = await get_redis()
-    raw = await r.get("rigvision:zones")
+async def get_zones():
+    raw = await get_redis().get("rigvision:zones")
     return json.loads(raw) if raw else {}
 
-
 @app.get("/api/violations")
-async def get_violations() -> List[Dict]:
-    """Get latest compliance violations."""
-    r = await get_redis()
-    raw = await r.get("rigvision:violations:latest")
+async def get_violations():
+    raw = await get_redis().get("rigvision:violations:latest")
+    return json.loads(raw) if raw else []
+
+@app.get("/api/diagnostics")
+async def get_diagnostics():
+    raw = await get_redis().get("rigvision:diagnostics")
     return json.loads(raw) if raw else []
 
 
 @app.get("/api/video/mjpeg/{camera_id}")
 async def get_mjpeg_stream(camera_id: str):
-    """MJPEG stream endpoint that retrieves camera frames from Redis."""
-    r = await get_redis()
-    
-    # Check if the camera stream exists/has frames in Redis first
-    frame_exists = await r.exists(f"rigvision:camera:frame:{camera_id}")
-    if not frame_exists:
-        raise HTTPException(status_code=404, detail=f"Camera stream {camera_id} is offline")
-
+    global _active_mjpeg_streams
+    if _active_mjpeg_streams >= MAX_MJPEG_STREAMS:
+        raise HTTPException(status_code=503, detail="Too many streams")
+    r = get_redis()
+    if not await r.exists(f"rigvision:camera:frame:{camera_id}"):
+        raise HTTPException(status_code=404, detail="Camera offline")
     async def frame_generator():
+        global _active_mjpeg_streams
+        _active_mjpeg_streams += 1
         missing_count = 0
-        while True:
-            try:
-                # Retrieve base64 encoded frame
+        try:
+            while True:
                 jpeg_b64 = await r.get(f"rigvision:camera:frame:{camera_id}")
                 if jpeg_b64:
                     missing_count = 0
-                    # Decode base64 to raw jpeg bytes
                     jpeg_bytes = base64.b64decode(jpeg_b64)
-                    yield (
-                        b'--frame\r\n'
-                        b'Content-Type: image/jpeg\r\n'
-                        b'Content-Length: ' + str(len(jpeg_bytes)).encode() + b'\r\n\r\n' +
-                        jpeg_bytes + b'\r\n'
-                    )
+                    yield (b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: " + str(len(jpeg_bytes)).encode() + b"\r\n\r\n" + jpeg_bytes + b"\r\n")
                 else:
                     missing_count += 1
-                    if missing_count >= 50:  # 50 * 0.04 = 2.0 seconds of no frames
-                        print(f"[mjpeg] Camera {camera_id} offline (no frames in Redis for 2s). Closing stream.")
-                        break
-            except Exception as e:
-                print(f"[mjpeg] Error yielding frame for cam {camera_id}: {e}")
-                break
-            # Run at ~25fps stream pacing
-            await asyncio.sleep(0.04)
+                    if missing_count >= 50: break
+                await asyncio.sleep(0.04)
+        finally:
+            _active_mjpeg_streams -= 1
+    return StreamingResponse(frame_generator(), media_type="multipart/x-mixed-replace; boundary=frame")
 
-    return StreamingResponse(
-        frame_generator(),
-        media_type="multipart/x-mixed-replace; boundary=frame"
-    )
-
+class VlmGatingRequest(BaseModel):
+    enabled: bool
 
 @app.post("/api/control/vlm_gating")
-async def post_vlm_gating(enabled: bool) -> Dict[str, str]:
-    """Enable or disable VLM gating setting in Redis."""
-    r = await get_redis()
-    val = "true" if enabled else "false"
-    await r.set("rigvision:settings:vlm_gating", val)
-    print(f"[control] VLM gating set to: {val}")
+async def post_vlm_gating(body: VlmGatingRequest):
+    val = "true" if body.enabled else "false"
+    await get_redis().set("rigvision:settings:vlm_gating", val)
     return {"status": "ok", "vlm_gating": val}
 
 @app.post("/api/control/clear_cache")
-async def post_clear_cache() -> Dict[str, str]:
-    """Publish a command to clear CV pipeline tracking cache."""
-    r = await get_redis()
-    await r.publish("rigvision:commands", "clear_cache")
-    print("[control] Published clear_cache command to Redis")
+async def post_clear_cache():
+    await get_redis().publish("rigvision:commands", "clear_cache")
     return {"status": "ok", "message": "clear_cache command published"}
 
-
-# ─── WebSocket Endpoint ────────────────────────────────────
-
 @app.websocket("/ws/realtime")
-async def websocket_realtime(websocket: WebSocket) -> None:
-    """Real-time data stream via WebSocket.
-    
-    The browser connects here and receives JSON messages at ~10Hz:
-    {
-        "type": "realtime_update",
-        "timestamp": 1716969600.123,
-        "persons": [...],
-        "zones": {...},
-        "violations": [...]
-    }
-    
-    The frontend Zustand store processes these messages and updates
-    the 3D scene in real-time.
-    """
+async def websocket_realtime(websocket: WebSocket):
     await manager.connect(websocket)
     try:
-        # Keep connection alive — listen for client messages
-        # (e.g., ping/pong, future: client-side commands)
         while True:
             data = await websocket.receive_text()
-            # Client can send commands like {"type": "ping"}
             if data:
                 try:
                     msg = json.loads(data)
                     if msg.get("type") == "ping":
                         await websocket.send_text(json.dumps({"type": "pong"}))
-                except json.JSONDecodeError:
-                    pass
-    except WebSocketDisconnect:
+                except Exception: pass
+    except (WebSocketDisconnect, Exception):
         manager.disconnect(websocket)
-    except Exception:
-        manager.disconnect(websocket)
-
-
-# ─── Entry point ────────────────────────────────────────────
 
 if __name__ == "__main__":
-    host = os.getenv("BACKEND_HOST", "0.0.0.0")
-    port = int(os.getenv("BACKEND_PORT", "8000"))
-    
-    print(f"[*] Starting RigVision-3D Backend on {host}:{port}")
-    uvicorn.run(
-        "main:app",
-        host=host,
-        port=port,
-        reload=True,
-        log_level="info",
-    )
+    uvicorn.run("main:app", host=os.getenv("BACKEND_HOST", "0.0.0.0"), port=int(os.getenv("BACKEND_PORT", "8000")), reload=True, log_level="info")

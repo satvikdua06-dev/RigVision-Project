@@ -19,7 +19,7 @@ class LLMDiagnosticAgent:
         self.client = genai.Client(api_key=self.api_key)
         self.model_name = 'gemini-2.5-flash'
         
-        self.db_client = chromadb.HttpClient(host='localhost', port=8000)
+        self.db_client = chromadb.HttpClient(host='localhost', port=8100)
         self.collection = self.db_client.get_collection(name="device_manuals")
 
     def retrieve_manuals(self, graph_context: str) -> str:
@@ -61,7 +61,7 @@ class LLMDiagnosticAgent:
             "primary_diagnosis": "Name of the highest probability failure mode.",
             "confidence_score": 0-100,
             "reasoning": "A concise explanation of why this failure was chosen over others.",
-            "recommended_action": "The exact protocol to execute."
+            "recommended_action": "A highly detailed, step-by-step emergency response protocol and mitigation procedure. Include: 1) Immediate safety precautions (e.g., lock-out/tag-out, power isolation, evacuation thresholds), 2) Core repair instructions derived from the device manuals (e.g., lubricating bearings, inspecting for micro-fractures, replacing the specific component), and 3) Post-maintenance verification checks (e.g., monitoring temperature/vibration recovery, checking gas PPM levels)."
         }}
         """
         

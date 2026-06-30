@@ -33,6 +33,7 @@ export default function ZonePlane({ zoneId, zone, staticDef }) {
   const selectPerson  = useRigStore(s => s.selectPerson)
   const selectedZone  = useRigStore(s => s.selectedZone)
   const zoneSelectMode = useRigStore(s => s.zoneSelectMode)
+  const showDiagnosticsModal = useRigStore(s => s.showDiagnosticsModal)
   const isSelected    = selectedZone === zoneId
   
   const col = STATUS_COLORS[zone.status] || STATUS_COLORS.normal
@@ -81,23 +82,25 @@ export default function ZonePlane({ zoneId, zone, staticDef }) {
 
 
       {/* Zone label */}
-      <Html position={[0, 0.35, 0]} center distanceFactor={25}
-        style={{ pointerEvents: 'none' }}>
-        <div style={{
-          fontFamily: "'Barlow Condensed', sans-serif",
-          fontSize: 16, fontWeight: 700, letterSpacing: 3,
-          color: col.base, textTransform: 'uppercase',
-          textShadow: `0 0 14px ${col.base}`,
-          whiteSpace: 'nowrap',
-          opacity: hovered || isSelected ? 1 : 0.65,
-          transition: 'opacity 0.2s',
-        }}>
-          {zoneId.replace(/_/g, ' ').toUpperCase()} {/* Fallback to ID since label isn't in Redis */}
-        </div>
-      </Html>
+      {!showDiagnosticsModal && (
+        <Html position={[0, 0.35, 0]} center distanceFactor={25}
+          style={{ pointerEvents: 'none' }}>
+          <div style={{
+            fontFamily: "'Barlow Condensed', sans-serif",
+            fontSize: 16, fontWeight: 700, letterSpacing: 3,
+            color: col.base, textTransform: 'uppercase',
+            textShadow: `0 0 14px ${col.base}`,
+            whiteSpace: 'nowrap',
+            opacity: hovered || isSelected ? 1 : 0.65,
+            transition: 'opacity 0.2s',
+          }}>
+            {zoneId.replace(/_/g, ' ').toUpperCase()} {/* Fallback to ID since label isn't in Redis */}
+          </div>
+        </Html>
+      )}
 
       {/* Hover / selected sensor popup */}
-      {isSelected && (
+      {isSelected && !showDiagnosticsModal && (
         <Html position={[0, 1.2, 0]} center distanceFactor={25}
           style={{ pointerEvents: 'none', width: 195 }}>
           <div style={{

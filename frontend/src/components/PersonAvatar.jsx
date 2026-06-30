@@ -14,7 +14,11 @@ const POSTURE_COLORS = {
 }
 
 function ppeAlert(ppe) {
-  return !ppe.hardhat || !ppe.vest || !ppe.goggles
+  return ppe.hardhat === false || ppe.vest === false || ppe.goggles === false
+}
+
+function ppeUnknown(ppe) {
+  return ppe.hardhat == null || ppe.vest == null || ppe.goggles == null
 }
 
 export default function PersonAvatar({ person }) {
@@ -25,8 +29,10 @@ export default function PersonAvatar({ person }) {
   const [hovered, setHovered] = useState(false)
 
   const isSelected = selectedPerson === person.id
-  const hasAlert   = ppeAlert(person.ppe)
-  const bodyColor  = hasAlert ? '#ff3b3b' : POSTURE_COLORS[person.posture] || '#00b4ff'
+  const ppe = person.ppe || {}
+  const hasAlert   = ppeAlert(ppe)
+  const hasUnknown = ppeUnknown(ppe)
+  const bodyColor  = hasAlert ? '#ff3b3b' : hasUnknown ? '#5a8aaa' : POSTURE_COLORS[person.posture] || '#00b4ff'
 
   // Smooth lerp toward latest position from store
   useFrame((state , delta) => {
@@ -42,6 +48,8 @@ export default function PersonAvatar({ person }) {
       if (ring) ring.material.emissiveIntensity = 0.4 + 0.6 * Math.abs(Math.sin(t))
     }
   })
+
+  const showDiagnosticsModal = useRigStore(s => s.showDiagnosticsModal)
 
   return (
     <group 
@@ -73,7 +81,7 @@ export default function PersonAvatar({ person }) {
       </mesh>
 
       {/* Hard hat */}
-      {person.ppe.hardhat && (
+      {ppe.hardhat === true && (
         <mesh position={[0, 1.14, 0]} userData={{ isAvatar: true, personId: person.id }}>
           <cylinderGeometry args={[0.2, 0.18, 0.08, 12]} />
           <meshStandardMaterial color="#ffdd00" roughness={0.3} metalness={0.2} />
@@ -98,24 +106,26 @@ export default function PersonAvatar({ person }) {
       )}
 
       {/* Floating label */}
-      <Html 
-        position={[0, 1.8, 0]} // Pushed slightly higher above the head
-        center 
-        distanceFactor={22} // Increased from 6 so it stays readable and not too small
-        style={{ pointerEvents: 'none' }}
-      >
-        <div style={{
-          background: hasAlert ? 'rgba(180,20,20,0.92)' : 'rgba(0,20,40,0.88)',
-          border: `1px solid ${hasAlert ? '#ff3b3b' : '#00b4ff'}`,
-          borderRadius: 6, padding: '4px 10px',
-          fontFamily: "'Share Tech Mono', monospace",
-          fontSize: 13, // Slightly larger base font
-          color: '#fff', whiteSpace: 'nowrap',
-          boxShadow: `0 0 12px ${hasAlert ? '#ff3b3b55' : '#00b4ff33'}`,
-        }}>
-          P{person.id} {hasAlert ? '⚠' : '●'} {person.zone.replace(/_/g,' ').toUpperCase()}
-        </div>
-      </Html>
+      {!showDiagnosticsModal && (
+        <Html 
+          position={[0, 1.8, 0]} // Pushed slightly higher above the head
+          center 
+          distanceFactor={22} // Increased from 6 so it stays readable and not too small
+          style={{ pointerEvents: 'none' }}
+        >
+          <div style={{
+            background: hasAlert ? 'rgba(180,20,20,0.92)' : 'rgba(0,20,40,0.88)',
+            border: `1px solid ${hasAlert ? '#ff3b3b' : '#00b4ff'}`,
+            borderRadius: 6, padding: '4px 10px',
+            fontFamily: "'Share Tech Mono', monospace",
+            fontSize: 13, // Slightly larger base font
+            color: '#fff', whiteSpace: 'nowrap',
+            boxShadow: `0 0 12px ${hasAlert ? '#ff3b3b55' : '#00b4ff33'}`,
+          }}>
+            P{person.id} {hasAlert ? '⚠' : hasUnknown ? '?' : '●'} {person.zone.replace(/_/g,' ').toUpperCase()}
+          </div>
+        </Html>
+      )}
 
 
     </group>

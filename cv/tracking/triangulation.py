@@ -320,165 +320,146 @@ def ground_plane_intersection(
     return (float(position[0]), floor_y, float(position[2]))
 
 
-class ZoneAssigner:
-    """Determines which zone a 3D point belongs to.
-    
-    Loads zone bounding boxes from zone_definitions.json and checks
-    point-in-box containment.
+def load_zones(zone_definitions_path: str) -> Dict[str, Dict]:
+    """Load zone bounding boxes from zone_definitions.json.
+
+    Args:
+        zone_definitions_path: Path to cad/zone_definitions.json.
+
+    Returns:
+        Dict mapping zone_id → {"name", "min": (x,y,z), "max": (x,y,z)}.
     """
+    with open(zone_definitions_path, "r") as f:
+        data = json.load(f)
 
-    def __init__(self, zone_definitions_path: str) -> None:
-        """
-        Args:
-            zone_definitions_path: Path to cad/zone_definitions.json.
-        """
-        with open(zone_definitions_path, "r") as f:
-            data = json.load(f)
-        
-        self.zones: Dict[str, Dict] = {}
-        for zone_id, zone_data in data["zones"].items():
-            bounds = zone_data["bounds"]
-            self.zones[zone_id] = {
-                "name": zone_data["name"],
-                "min": (bounds["min"]["x"], bounds["min"]["y"], bounds["min"]["z"]),
-                "max": (bounds["max"]["x"], bounds["max"]["y"], bounds["max"]["z"]),
-            }
-        
-        print(f"[triangulation] Loaded {len(self.zones)} zones: {list(self.zones.keys())}")
+    zones: Dict[str, Dict] = {}
+    for zone_id, zone_data in data["zones"].items():
+        bounds = zone_data["bounds"]
+        zones[zone_id] = {
+            "name": zone_data["name"],
+            "min": (bounds["min"]["x"], bounds["min"]["y"], bounds["min"]["z"]),
+            "max": (bounds["max"]["x"], bounds["max"]["y"], bounds["max"]["z"]),
+        }
 
-    def assign(self, x: float, y: float, z: float) -> str:
-        """Determine which zone a 3D point is in.
-        
-        Checks axis-aligned bounding boxes. Returns "unknown" if the
-        point is outside all zones.
-        
-        Args:
-            x, y, z: 3D world coordinates in meters.
-        
-        Returns:
-            Zone ID string (e.g., "zone_a", "corridor", "zone_b", "unknown").
-        """
-        for zone_id, zone in self.zones.items():
-            mn = zone["min"]
-            mx = zone["max"]
-            if (mn[0] <= x <= mx[0] and
-                mn[1] <= y <= mx[1] and
-                mn[2] <= z <= mx[2]):
-                return zone_id
-        return "unknown"
+    print(f"[triangulation] Loaded {len(zones)} zones: {list(zones.keys())}")
+    return zones
 
 
-class Triangulator:
-    """Main triangulation engine.
-    
-    Takes MatchedPerson objects (from cross-camera matching) and
-    computes their 3D positions + zone assignments.
-    
-    Usage:
-        tri = Triangulator(
-            calibrations=load_calibrations("cv/calibration/configs"),
-            zone_definitions_path="cad/zone_definitions.json",
-        )
-        persons_3d = tri.triangulate_all(matched_persons)
+def assign_zone(zones: Dict[str, Dict], x: float, y: float, z: float) -> str:
+    """Determine which zone a 3D point is in.
+
+    Checks axis-aligned bounding boxes. Returns "unknown" if the
+    point is outside all zones.
+
+    Args:
+        zones: Zone dict from load_zones().
+        x, y, z: 3D world coordinates in meters.
+
+    Returns:
+        Zone ID string (e.g., "zone_a", "corridor", "zone_b", "unknown").
     """
+    for zone_id, zone in zones.items():
+        mn = zone["min"]
+        mx = zone["max"]
+        if (mn[0] <= x <= mx[0] and
+            mn[1] <= y <= mx[1] and
+            mn[2] <= z <= mx[2]):
+            return zone_id
+    return "unknown"
 
-    def __init__(
-        self,
-        calibrations: Dict[int, CameraCalibration],
-        zone_definitions_path: str,
-        reprojection_threshold: float = 15.0,
-    ) -> None:
-        """
-        Args:
-            calibrations: Dict of camera_id → CameraCalibration.
-            zone_definitions_path: Path to zone_definitions.json.
-            reprojection_threshold: Max acceptable reprojection error in pixels.
-                                    If DLT error exceeds this, fall back to ground-plane.
-        """
-        self.calibrations = calibrations
-        self.zone_assigner = ZoneAssigner(zone_definitions_path)
-        self.reprojection_threshold = reprojection_threshold
 
-    def triangulate_all(
-        self, matched_persons: List[MatchedPerson], floor_map: Optional[List[int]] = None
-    ) -> List[MatchedPerson]:
-        """Compute 3D positions and zone assignments for all matched persons.
-        
-        For each person:
-        - If seen by 2+ cameras with calibration: DLT triangulation
-        - If seen by 1 camera with calibration: ground-plane intersection
-        - If no calibration available: skip (position stays None)
-        
-        Modifies MatchedPerson objects in-place (sets position_3d and zone).
-        
-        Args:
-            matched_persons: List of MatchedPerson from cross-camera matching.
-            floor_map: Optional list mapping camera/video index to floor index.
-        
-        Returns:
-            Same list with position_3d and zone filled in.
-        """
-        for person in matched_persons:
-            cam_ids = list(person.per_camera.keys())
-            calibrated_cams = [c for c in cam_ids if c in self.calibrations]
+def _triangulate_person_dlt(
+    person: "MatchedPerson",
+    cam_a: int,
+    cam_b: int,
+    calibrations: Dict[int, CameraCalibration],
+    floor_map: Optional[List[int]] = None,
+    reprojection_threshold: float = 15.0,
+) -> None:
+    """Triangulate a single person using DLT from two cameras."""
+    cal_a = calibrations[cam_a]
+    cal_b = calibrations[cam_b]
+    track_a = person.per_camera[cam_a]
+    track_b = person.per_camera[cam_b]
 
-            if len(calibrated_cams) >= 2:
-                # DLT triangulation with first two calibrated cameras
-                self._triangulate_dlt(person, calibrated_cams[0], calibrated_cams[1], floor_map)
-            elif len(calibrated_cams) == 1:
-                # Ground-plane fallback with single camera
-                self._ground_plane(person, calibrated_cams[0], floor_map)
-            else:
-                # No calibration — can't determine 3D position
-                person.position_3d = None
-                person.zone = "unknown"
+    point_3d = triangulate_dlt(
+        track_a.foot_point, track_b.foot_point,
+        cal_a.P, cal_b.P,
+    )
 
-            # Assign zone from 3D position
-            if person.position_3d is not None:
-                x, y, z = person.position_3d
-                person.zone = self.zone_assigner.assign(x, y, z)
+    error_a = compute_reprojection_error(point_3d, track_a.foot_point, cal_a.P)
+    error_b = compute_reprojection_error(point_3d, track_b.foot_point, cal_b.P)
+    avg_error = (error_a + error_b) / 2
 
-        return matched_persons
+    if avg_error > reprojection_threshold:
+        better_cam = cam_a if error_a <= error_b else cam_b
+        _estimate_ground_plane(person, better_cam, calibrations, floor_map)
+    else:
+        person.position_3d = point_3d
 
-    def _triangulate_dlt(
-        self, person: MatchedPerson, cam_a: int, cam_b: int, floor_map: Optional[List[int]] = None
-    ) -> None:
-        """Triangulate using DLT from two cameras."""
-        cal_a = self.calibrations[cam_a]
-        cal_b = self.calibrations[cam_b]
-        track_a = person.per_camera[cam_a]
-        track_b = person.per_camera[cam_b]
 
-        point_3d = triangulate_dlt(
-            track_a.foot_point, track_b.foot_point,
-            cal_a.P, cal_b.P,
-        )
+def _estimate_ground_plane(
+    person: "MatchedPerson",
+    cam_id: int,
+    calibrations: Dict[int, CameraCalibration],
+    floor_map: Optional[List[int]] = None,
+) -> None:
+    """Estimate a person's position via ground-plane intersection."""
+    cal = calibrations[cam_id]
+    track = person.per_camera[cam_id]
 
-        # Check reprojection error
-        error_a = compute_reprojection_error(point_3d, track_a.foot_point, cal_a.P)
-        error_b = compute_reprojection_error(point_3d, track_b.foot_point, cal_b.P)
-        avg_error = (error_a + error_b) / 2
+    floor_y = 0.0
+    if floor_map is not None and cam_id < len(floor_map):
+        floor_y = floor_map[cam_id] * 3.0
 
-        if avg_error > self.reprojection_threshold:
-            # DLT result is unreliable — fall back to ground-plane
-            # using the camera with lower individual error
-            if error_a <= error_b:
-                self._ground_plane(person, cam_a, floor_map)
-            else:
-                self._ground_plane(person, cam_b, floor_map)
+    person.position_3d = ground_plane_intersection(
+        track.foot_point, cal.K, cal.R, cal.t, floor_y=floor_y
+    )
+
+
+def triangulate_all(
+    matched_persons: List["MatchedPerson"],
+    calibrations: Dict[int, CameraCalibration],
+    zones: Dict[str, Dict],
+    floor_map: Optional[List[int]] = None,
+    reprojection_threshold: float = 15.0,
+) -> List["MatchedPerson"]:
+    """Compute 3D positions and zone assignments for all matched persons.
+
+    For each person:
+    - If seen by 2+ cameras with calibration: DLT triangulation
+    - If seen by 1 camera with calibration: ground-plane intersection
+    - If no calibration available: skip (position stays None)
+
+    Modifies MatchedPerson objects in-place (sets position_3d and zone).
+
+    Args:
+        matched_persons: List of MatchedPerson from cross-camera matching.
+        calibrations: Dict of camera_id → CameraCalibration.
+        zones: Zone dict from load_zones().
+        floor_map: Optional list mapping camera/video index to floor index.
+        reprojection_threshold: Max acceptable reprojection error in pixels.
+
+    Returns:
+        Same list with position_3d and zone filled in.
+    """
+    for person in matched_persons:
+        cam_ids = list(person.per_camera.keys())
+        calibrated_cams = [c for c in cam_ids if c in calibrations]
+
+        if len(calibrated_cams) >= 2:
+            _triangulate_person_dlt(
+                person, calibrated_cams[0], calibrated_cams[1],
+                calibrations, floor_map, reprojection_threshold,
+            )
+        elif len(calibrated_cams) == 1:
+            _estimate_ground_plane(person, calibrated_cams[0], calibrations, floor_map)
         else:
-            person.position_3d = point_3d
+            person.position_3d = None
+            person.zone = "unknown"
 
-    def _ground_plane(self, person: MatchedPerson, cam_id: int, floor_map: Optional[List[int]] = None) -> None:
-        """Estimate position via ground-plane intersection."""
-        cal = self.calibrations[cam_id]
-        track = person.per_camera[cam_id]
+        if person.position_3d is not None:
+            x, y, z = person.position_3d
+            person.zone = assign_zone(zones, x, y, z)
 
-        floor_y = 0.0
-        if floor_map is not None and cam_id < len(floor_map):
-            floor_y = floor_map[cam_id] * 3.0
-
-        position = ground_plane_intersection(
-            track.foot_point, cal.K, cal.R, cal.t, floor_y=floor_y
-        )
-        person.position_3d = position
+    return matched_persons

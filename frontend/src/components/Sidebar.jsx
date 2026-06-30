@@ -207,7 +207,9 @@ function PersonsTab() {
         }}>No personnel found</div>
       ) : (
         filteredPersons.map(p => {
-          const hasAlert  = !p.ppe.hardhat || !p.ppe.vest || !p.ppe.goggles
+          const ppe = p.ppe || {}
+          const hasAlert  = ppe.hardhat === false || ppe.vest === false || ppe.goggles === false
+          const hasUnknown = ppe.hardhat == null || ppe.vest == null || ppe.goggles == null
           const isSelected = selectedPerson === p.id
           return (
             <div key={p.id} onClick={() => selectPerson(p.id)}
@@ -220,11 +222,15 @@ function PersonsTab() {
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
                 <span style={{ fontFamily:"'Barlow Condensed'", fontSize:16, fontWeight:700,
                   letterSpacing:1, color:'#e0f4ff' }}>PERSON #{p.id}</span>
-                {hasAlert && (
+                {hasAlert ? (
                   <span style={{ background:'#ff3b3b22', border:'1px solid #ff3b3b',
                     color:'#ff3b3b', fontFamily:"'Share Tech Mono'", fontSize:9,
                     padding:'2px 8px', borderRadius:4, letterSpacing:2 }}>ALERT</span>
-                )}
+                ) : hasUnknown ? (
+                  <span style={{ background:'rgba(90,138,170,0.1)', border:'1px solid #5a8aaa44',
+                    color:'#5a8aaa', fontFamily:"'Share Tech Mono'", fontSize:9,
+                    padding:'2px 8px', borderRadius:4, letterSpacing:2 }}>UNMONITORED</span>
+                ) : null}
               </div>
               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:4,
                 fontFamily:"'Share Tech Mono'", fontSize:10.5, marginBottom:8 }}>
@@ -240,19 +246,23 @@ function PersonsTab() {
               {/* PPE indicators */}
               <div style={{ display:'flex', gap:8, fontFamily:"'Share Tech Mono'", fontSize:10.5 }}>
                 {[
-                  { label:'🪖 Hat', ok: p.ppe.hardhat },
-                  { label:'🦺 Vest', ok: p.ppe.vest },
-                  { label:'🥽 Goggles', ok: p.ppe.goggles },
-                ].map(({ label, ok }) => (
-                  <span key={label} style={{
-                    padding:'2px 8px', borderRadius:4, fontSize:10,
-                    background: ok ? '#00e67611' : '#ff3b3b22',
-                    border:`1px solid ${ok ? '#00e67688' : '#ff3b3b88'}`,
-                    color: ok ? '#00e676' : '#ff3b3b',
-                  }}>
-                    {label} {ok ? '✓' : '✗'}
-                  </span>
-                ))}
+                  { label:'🪖 Hat', val: ppe.hardhat },
+                  { label:'🦺 Vest', val: ppe.vest },
+                  { label:'🥽 Goggles', val: ppe.goggles },
+                ].map(({ label, val }) => {
+                  const isUnknown = val == null
+                  const ok = val === true
+                  return (
+                    <span key={label} style={{
+                      padding:'2px 8px', borderRadius:4, fontSize:10,
+                      background: isUnknown ? 'rgba(90,138,170,0.08)' : ok ? '#00e67611' : '#ff3b3b22',
+                      border:`1px solid ${isUnknown ? '#5a8aaa44' : ok ? '#00e67688' : '#ff3b3b88'}`,
+                      color: isUnknown ? '#5a8aaa' : ok ? '#00e676' : '#ff3b3b',
+                    }}>
+                      {label} {isUnknown ? '?' : ok ? '✓' : '✗'}
+                    </span>
+                  )
+                })}
               </div>
             </div>
           )
@@ -306,13 +316,13 @@ function ViolationsTab() {
   )
 }
 
+
 export default function Sidebar() {
   const tab       = useRigStore(s => s.sidebarTab)
   const setTab    = useRigStore(s => s.setSidebarTab)
   const persons   = useRigStore(s => s.persons)
   const zones     = useRigStore(s => s.zones)
   const violations = useRigStore(s => s.violations)
-  
   const connected     = useRigStore(s => s.connected)
   const showAvatars   = useRigStore(s => s.showAvatars)
   const showSensors   = useRigStore(s => s.showSensors)
@@ -320,7 +330,7 @@ export default function Sidebar() {
   const toggleSensors = useRigStore(s => s.toggleSensors)
 
   const criticalCount = Object.values(zones).filter(z => z.status === 'critical').length
-  const alertPersons  = persons.filter(p => !p.ppe.hardhat || !p.ppe.vest || !p.ppe.goggles).length
+  const alertPersons  = persons.filter(p => p.ppe?.hardhat === false || p.ppe?.vest === false || p.ppe?.goggles === false).length
 
   const tabs = [
     { id:'zones',      label:'Zones',      badge: criticalCount, badgeColor:'#ff3b3b' },
@@ -357,7 +367,6 @@ export default function Sidebar() {
             {connected ? `CONNECTED · ${persons.length} TRACKED` : 'DISCONNECTED - RECONNECTING...'}
           </span>
         </div>
-        <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}`}</style>
         
         {/* Toggles */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
