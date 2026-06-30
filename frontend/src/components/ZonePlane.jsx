@@ -10,13 +10,29 @@ const STATUS_COLORS = {
   critical: { base: '#ff3b3b', emissive: '#ff0000', opacity: 0.22 },
 }
 
+function findAvatarInIntersections(intersections) {
+  if (!intersections) return null
+  for (const intersect of intersections) {
+    let curr = intersect.object
+    while (curr) {
+      if (curr.userData && curr.userData.isAvatar) {
+        return curr.userData.personId
+      }
+      curr = curr.parent
+    }
+  }
+  return null
+}
+
 export default function ZonePlane({ zoneId, zone, staticDef }) {
   const planeRef  = useRef()
   const borderRef = useRef()
   const [hovered, setHovered] = useState(false)
   
   const selectZone    = useRigStore(s => s.selectZone)
+  const selectPerson  = useRigStore(s => s.selectPerson)
   const selectedZone  = useRigStore(s => s.selectedZone)
+  const zoneSelectMode = useRigStore(s => s.zoneSelectMode)
   const isSelected    = selectedZone === zoneId
   
   const col = STATUS_COLORS[zone.status] || STATUS_COLORS.normal
@@ -37,10 +53,19 @@ export default function ZonePlane({ zoneId, zone, staticDef }) {
 
   return (
     <group
-      position={[px, 0.02, pz]}
-      onClick={(e) => { e.stopPropagation(); selectZone(zoneId) }}
-      onPointerOver={() => setHovered(true)}
-      onPointerOut={() => setHovered(false)}
+      position={[px, layout.center[1] - layout.size[1] / 2 + 0.02, pz]}
+      onClick={zoneSelectMode ? (e) => {
+        e.stopPropagation()
+        const clickedAvatarId = findAvatarInIntersections(e.intersections)
+        if (clickedAvatarId !== null) {
+          selectPerson(clickedAvatarId)
+        } else {
+          selectZone(zoneId)
+        }
+      } : undefined}
+      onPointerOver={zoneSelectMode ? () => setHovered(true) : undefined}
+      onPointerOut={zoneSelectMode ? () => setHovered(false) : undefined}
+      raycast={zoneSelectMode ? undefined : null}
     >
       {/* Filled floor tint */}
       <mesh ref={planeRef} rotation={[-Math.PI / 2, 0, 0]}>
@@ -53,14 +78,7 @@ export default function ZonePlane({ zoneId, zone, staticDef }) {
         />
       </mesh>
 
-      {/* Corner posts for zone boundary */}
-      {[[-sx/2,-sz/2],[sx/2,-sz/2],[sx/2,sz/2],[-sx/2,sz/2]].map(([cx,cz], i) => (
-        <mesh key={i} position={[cx, 0.15, cz]}>
-          <cylinderGeometry args={[0.08, 0.08, 0.5, 6]} />
-          <meshStandardMaterial color={col.base} emissive={col.base}
-            emissiveIntensity={0.6} />
-        </mesh>
-      ))}
+
 
       {/* Zone label */}
       <Html position={[0, 0.35, 0]} center distanceFactor={25}
@@ -74,13 +92,13 @@ export default function ZonePlane({ zoneId, zone, staticDef }) {
           opacity: hovered || isSelected ? 1 : 0.65,
           transition: 'opacity 0.2s',
         }}>
-          {zoneId.replace('_', ' ')} {/* Fallback to ID since label isn't in Redis */}
+          {zoneId.replace(/_/g, ' ').toUpperCase()} {/* Fallback to ID since label isn't in Redis */}
         </div>
       </Html>
 
       {/* Hover / selected sensor popup */}
-      {(hovered || isSelected) && (
-        <Html position={[sx * 0.45, 0.7, 0]} distanceFactor={25}
+      {isSelected && (
+        <Html position={[0, 1.2, 0]} center distanceFactor={25}
           style={{ pointerEvents: 'none', width: 195 }}>
           <div style={{
             background: 'rgba(4,12,22,0.97)',

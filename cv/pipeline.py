@@ -35,7 +35,27 @@ import queue
 import signal
 import sys
 import time
+import threading
 from typing import Dict, List, Optional, Tuple
+
+# Thread-safe clear tracking cache event
+clear_tracking_cache_event = threading.Event()
+
+def redis_command_listener(redis_client: redis.Redis) -> None:
+    pubsub = redis_client.pubsub()
+    try:
+        pubsub.subscribe("rigvision:commands")
+        print("[commands] Subscribed to Redis channel 'rigvision:commands'")
+        while RUNNING:
+            message = pubsub.get_message(ignore_subscribe_messages=True, timeout=0.5)
+            if message:
+                data = message.get("data")
+                if data == "clear_cache":
+                    print("[commands] Received clear_cache command from Redis")
+                    clear_tracking_cache_event.set()
+            time.sleep(0.1)
+    except Exception as e:
+        print(f"[commands] PubSub listener error: {e}")
 
 import numpy as np
 import redis
@@ -121,8 +141,12 @@ class DemoDataGenerator:
             x = 5.0 + 4.0 * math.sin(person["speed_x"] * t + person["phase_x"])
             # Z: 0.5 to 4.5 (room width with padding)
             z = 2.5 + 1.8 * math.sin(person["speed_z"] * t + person["phase_z"])
-            # Y: slightly above floor (foot position)
-            y = 0.05
+            
+            # Assign odd person IDs to Floor 1, even to Floor 0
+            if pid % 2 == 1:
+                y = 3.05
+            else:
+                y = 0.05
             
             # Clamp to room bounds
             x = max(0.3, min(9.7, x))
@@ -149,12 +173,15 @@ class DemoDataGenerator:
                     p=[0.7, 0.15, 0.1, 0.05]
                 )
             
+            floor = 1 if (zone and zone.endswith("_f1")) else 0
+            
             result.append({
                 "id": pid,
                 "x": round(x, 2),
                 "y": round(y, 2),
                 "z": round(z, 2),
                 "zone": zone,
+                "floor": floor,
                 "posture": person["posture"],
                 "ppe": {
                     "hardhat": person["has_hardhat"],
@@ -320,11 +347,12 @@ class ThreadedCamera:
     """
     def __init__(self, source: str) -> None:
         import cv2
-        is_usb_cam = False
+        self.source = source
+        self.is_usb_cam = False
         try:
             cam_index = int(source)
             self.cap = cv2.VideoCapture(cam_index)
-            is_usb_cam = True
+            self.is_usb_cam = True
         except ValueError:
             self.cap = cv2.VideoCapture(source)
             
@@ -335,7 +363,7 @@ class ThreadedCamera:
         self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         
         # Set resolution only for USB webcams to avoid breaking/reconnecting RTSP streams
-        if is_usb_cam:
+        if self.is_usb_cam:
             self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
             self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
         
@@ -349,6 +377,7 @@ class ThreadedCamera:
 
     def _update(self) -> None:
         import time
+        import cv2
         while self.running:
             ret, frame = self.cap.read()
             if ret:
@@ -356,7 +385,25 @@ class ThreadedCamera:
                     self.ret = ret
                     self.frame = frame.copy() if frame is not None else None
             else:
-                time.sleep(0.01)
+                with self.lock:
+                    self.ret = False
+                print(f"[WARN] Camera {self.source} disconnected, attempting reconnect...")
+                self.cap.release()
+                time.sleep(2.0)
+                if not self.running:
+                    break
+                try:
+                    if self.is_usb_cam:
+                        self.cap = cv2.VideoCapture(int(self.source))
+                        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                    else:
+                        self.cap = cv2.VideoCapture(self.source)
+                        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                except Exception as e:
+                    print(f"[ERROR] Failed to re-initialize camera {self.source}: {e}")
+                time.sleep(1.0)
 
     def read(self) -> Tuple[bool, Optional[np.ndarray]]:
         with self.lock:
@@ -406,6 +453,52 @@ def _draw_skeleton(frame: np.ndarray, keypoints: Optional[np.ndarray]) -> None:
         if pt != (0, 0):
             cv2.circle(frame, pt, 4, (0, 0, 255), -1)
 
+def _evict_stale_tracks(
+    per_camera_tracks: Dict[int, List[any]],
+    local_to_personnel_map: Dict[Tuple[int, int], int],
+    local_to_recognition_method: Dict[Tuple[int, int], str],
+    global_to_personnel_map: Dict[int, int],
+    global_to_recognition_method: Dict[int, str],
+    active_global_ids: set,
+    mapper: Optional[any],
+    frame_count: int
+) -> None:
+    # 1. Collect currently active (cam_id, track_id) pairs
+    active_local_tracks = set()
+    for cam_id, tracks in per_camera_tracks.items():
+        for track in tracks:
+            active_local_tracks.add((cam_id, track.track_id))
+            
+    # 2. Remove stale entries from local maps
+    stale_local_count = 0
+    for key in list(local_to_personnel_map.keys()):
+        if key not in active_local_tracks:
+            local_to_personnel_map.pop(key, None)
+            local_to_recognition_method.pop(key, None)
+            stale_local_count += 1
+            
+    # 3. Remove stale entries from global maps
+    stale_global_count = 0
+    for gid in list(global_to_personnel_map.keys()):
+        if gid not in active_global_ids:
+            global_to_personnel_map.pop(gid, None)
+            global_to_recognition_method.pop(gid, None)
+            stale_global_count += 1
+            
+    # 4. Remove stale entries from mapper.previous_matches
+    stale_mapper_count = 0
+    if mapper is not None:
+        for key in list(mapper.previous_matches.keys()):
+            if key not in active_local_tracks:
+                mapper.previous_matches.pop(key, None)
+                stale_mapper_count += 1
+                
+    # Log every 100 frames
+    if frame_count % 100 == 0:
+        total_evicted = stale_local_count + stale_global_count + stale_mapper_count
+        if total_evicted > 0:
+            print(f"  [cleanup] Evicted {total_evicted} stale track mappings (local: {stale_local_count}, global: {stale_global_count}, mapper: {stale_mapper_count}) at frame {frame_count}")
+
 
 # ─── Live Mode ──────────────────────────────────────────────
 
@@ -421,12 +514,19 @@ def run_live_mode(
     gmc: str = "sparseOptFlow",
     resize_width: Optional[int] = None,
     max_fps: Optional[float] = None,
+    floor_map: Optional[List[int]] = None,
 ) -> None:
     """Run the full CV pipeline with real cameras.
     
     This is the production pipeline:
     Camera -> Undistort -> YOLO -> BoT-SORT -> Cross-camera -> Triangulate -> Redis
     """
+    # Set up floor mapping
+    if floor_map is None:
+        floor_map = [0] * len(camera_sources)
+    else:
+        floor_map = floor_map + [0] * max(0, len(camera_sources) - len(floor_map))
+
     # Import heavy CV dependencies only when actually needed
     import cv2
     try:
@@ -531,8 +631,29 @@ def run_live_mode(
     local_to_recognition_method: Dict[Tuple[int, int], str] = {}
 
     frame_count = 0
+    vlm_gating_enabled = False
     
     while RUNNING:
+        # Thread-safe cache clear check
+        if clear_tracking_cache_event.is_set():
+            print("[*] Clearing tracking cache (triggered via Redis)...")
+            global_to_personnel_map.clear()
+            global_to_recognition_method.clear()
+            local_to_personnel_map.clear()
+            local_to_recognition_method.clear()
+            for tracker in trackers.values():
+                tracker.reset()
+            clear_tracking_cache_event.clear()
+
+        # VLM gating setting check (every 5 frames)
+        if frame_count % 5 == 0:
+            try:
+                vlm_gating_raw = redis_client.get("rigvision:settings:vlm_gating")
+                vlm_gating_enabled = (vlm_gating_raw == "true")
+            except Exception as e:
+                vlm_gating_enabled = False
+                print(f"[WARN] Failed to read VLM gating setting from Redis: {e}")
+
         t_start = time.time()
         
         # 1. Grab frames from all cameras
@@ -571,7 +692,7 @@ def run_live_mode(
         matched_persons = mapper.match(per_camera_tracks)
         
         # 5. Triangulate 3D positions + assign zones
-        matched_persons = triangulator.triangulate_all(matched_persons)
+        matched_persons = triangulator.triangulate_all(matched_persons, floor_map)
 
         # Update persistent face/QR recognition mappings and propagate across matched cameras
         for mp in matched_persons:
@@ -637,6 +758,7 @@ def run_live_mode(
                 "y": round(mp.position_3d[1], 2),
                 "z": round(mp.position_3d[2], 2),
                 "zone": mp.zone or "unknown",
+                "floor": 1 if (mp.zone and mp.zone.endswith("_f1")) else 0,
                 "posture": getattr(best_track, "posture", "standing"),
                 "ppe": ppe,
                 "confidence": round(best_track.confidence, 2),
@@ -659,6 +781,7 @@ def run_live_mode(
                     existing["y"] = person_dict["y"]
                     existing["z"] = person_dict["z"]
                     existing["zone"] = person_dict["zone"]
+                    existing["floor"] = person_dict["floor"]
                     existing["posture"] = person_dict["posture"]
                     existing["ppe"] = person_dict["ppe"]
                     existing["confidence"] = person_dict["confidence"]
@@ -673,8 +796,11 @@ def run_live_mode(
         zone_states = _generate_zone_states_from_persons(persons_json, zone_defs)
         
         # 8. Write to Redis
-        redis_client.set("rigvision:persons", json.dumps(persons_json))
-        redis_client.set("rigvision:zones", json.dumps(zone_states))
+        try:
+            redis_client.set("rigvision:persons", json.dumps(persons_json))
+            redis_client.set("rigvision:zones", json.dumps(zone_states))
+        except Exception as e:
+            print(f"[WARN] Failed to write telemetry to Redis: {e}")
         
         # Draw bounding boxes + upload to Redis
         for cam_id, frame in frames.items():
@@ -716,6 +842,19 @@ def run_live_mode(
         if show_preview:
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
+        
+        # Evict stale tracks to prevent memory leak
+        active_global_ids = {mp.global_id for mp in matched_persons}
+        _evict_stale_tracks(
+            per_camera_tracks=per_camera_tracks,
+            local_to_personnel_map=local_to_personnel_map,
+            local_to_recognition_method=local_to_recognition_method,
+            global_to_personnel_map=global_to_personnel_map,
+            global_to_recognition_method=global_to_recognition_method,
+            active_global_ids=active_global_ids,
+            mapper=mapper,
+            frame_count=frame_count
+        )
         
         frame_count += 1
         if frame_count % 30 == 0:  # Log every ~3 seconds
@@ -826,6 +965,8 @@ Examples:
                         help="Resize input frames to this width (maintaining aspect ratio) to increase performance.")
     parser.add_argument("--max-fps", type=float, default=None,
                         help="Maximum FPS for video mode processing. None/unlimited by default.")
+    parser.add_argument("--floor-map", nargs="+", type=int, default=None,
+                        help="Floor index mapping for each camera (0 or 1). Default is 0 for all.")
     
     args = parser.parse_args()
     
@@ -845,6 +986,14 @@ Examples:
     redis_client.ping()
     print("  [OK] Redis connected\n")
     
+    # Start Redis command listener thread
+    cmd_thread = threading.Thread(
+        target=redis_command_listener,
+        args=(redis_client,),
+        daemon=True
+    )
+    cmd_thread.start()
+    
     # Run the selected mode
     if args.mode == "demo":
         run_demo_mode(redis_client, zone_definitions_path)
@@ -861,6 +1010,7 @@ Examples:
             gmc=args.gmc,
             resize_width=args.resize_width,
             max_fps=args.max_fps,
+            floor_map=args.floor_map,
         )
     
     elif args.mode == "live":
@@ -876,6 +1026,7 @@ Examples:
             gmc=args.gmc,
             resize_width=args.resize_width,
             max_fps=args.max_fps,
+            floor_map=args.floor_map,
         )
 
 
@@ -892,6 +1043,7 @@ def run_video_mode(
     gmc: str = "sparseOptFlow",
     resize_width: Optional[int] = None,
     max_fps: Optional[float] = None,
+    floor_map: Optional[List[int]] = None,
 ) -> None:
     """Run detection + tracking on pre-recorded video files.
     
@@ -910,6 +1062,12 @@ def run_video_mode(
         python pipeline.py --mode video --cameras cam0.mp4 cam1.mp4 --show-preview
         python pipeline.py --mode video --cameras cam0.mp4 cam1.mp4 cam2.mp4
     """
+    # Set up floor mapping
+    if floor_map is None:
+        floor_map = [0] * len(video_paths)
+    else:
+        floor_map = floor_map + [0] * max(0, len(video_paths) - len(floor_map))
+
     if resize_width is None:
         resize_width = 640
 
@@ -1029,11 +1187,32 @@ def run_video_mode(
     local_to_recognition_method: Dict[Tuple[int, int], str] = {}
 
     frame_count = 0
+    vlm_gating_enabled = False
     global_id_offset = {}  # per-video ID offset to avoid collisions
     for i in range(len(video_paths)):
         global_id_offset[i] = i * 100  # video 0: IDs 100+, video 1: IDs 200+, etc.
     
     while RUNNING:
+        # Thread-safe cache clear check
+        if clear_tracking_cache_event.is_set():
+            print("[*] Clearing tracking cache (triggered via Redis)...")
+            global_to_personnel_map.clear()
+            global_to_recognition_method.clear()
+            local_to_personnel_map.clear()
+            local_to_recognition_method.clear()
+            for tracker in trackers.values():
+                tracker.reset()
+            clear_tracking_cache_event.clear()
+
+        # VLM gating setting check (every 5 frames)
+        if frame_count % 5 == 0:
+            try:
+                vlm_gating_raw = redis_client.get("rigvision:settings:vlm_gating")
+                vlm_gating_enabled = (vlm_gating_raw == "true")
+            except Exception as e:
+                vlm_gating_enabled = False
+                print(f"[WARN] Failed to read VLM gating setting from Redis: {e}")
+
         t_start = time.time()
         
         # 1. Read a frame from each video
@@ -1090,6 +1269,8 @@ def run_video_mode(
             
             # 4. Map pixel positions to room coordinates
             zone_id = video_zone_map[vid_id]
+            if floor_map[vid_id] == 1 and not zone_id.endswith("_f1"):
+                zone_id = f"{zone_id}_f1"
             zb = zone_bounds[zone_id]
             fw, fh = frame_sizes[vid_id]
             
@@ -1118,8 +1299,8 @@ def run_video_mode(
                 norm_y = foot_y / fh  # 0.0 (top) to 1.0 (bottom)
                 room_z = zb["max_z"] - norm_y * (zb["max_z"] - zb["min_z"])
                 
-                # Y is always floor level
-                room_y = 0.05
+                # Y is calculated based on floor mapping
+                room_y = floor_map[vid_id] * 3.0 + 0.05
                 
                 ppe = person.ppe or {"hardhat": False, "vest": False, "goggles": False}
                 
@@ -1183,6 +1364,7 @@ def run_video_mode(
                         "y": float(room_y),
                         "z": float(round(room_z, 2)),
                         "zone": zone_id,
+                        "floor": floor_map[vid_id],
                         "posture": getattr(person, "posture", "standing"),
                         "ppe": ppe,
                         "confidence": float(round(person.confidence, 2)),
@@ -1221,8 +1403,11 @@ def run_video_mode(
         zone_states = _generate_zone_states_from_persons(all_persons, zone_defs)
         
         # 6. Write to Redis
-        redis_client.set("rigvision:persons", json.dumps(all_persons))
-        redis_client.set("rigvision:zones", json.dumps(zone_states))
+        try:
+            redis_client.set("rigvision:persons", json.dumps(all_persons))
+            redis_client.set("rigvision:zones", json.dumps(zone_states))
+        except Exception as e:
+            print(f"[WARN] Failed to write telemetry to Redis: {e}")
         
         # Draw bounding boxes + upload to Redis
         for vid_id, frame in frames.items():
@@ -1265,6 +1450,19 @@ def run_video_mode(
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 print("\n[*] Quit by user")
                 break
+        
+        # Evict stale tracks to prevent memory leak
+        active_global_ids = set(fused_persons_dict.keys())
+        _evict_stale_tracks(
+            per_camera_tracks=per_video_tracks,
+            local_to_personnel_map=local_to_personnel_map,
+            local_to_recognition_method=local_to_recognition_method,
+            global_to_personnel_map=global_to_personnel_map,
+            global_to_recognition_method=global_to_recognition_method,
+            active_global_ids=active_global_ids,
+            mapper=None,
+            frame_count=frame_count
+        )
         
         frame_count += 1
         if frame_count % 30 == 0:

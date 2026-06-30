@@ -400,7 +400,7 @@ class Triangulator:
         self.reprojection_threshold = reprojection_threshold
 
     def triangulate_all(
-        self, matched_persons: List[MatchedPerson]
+        self, matched_persons: List[MatchedPerson], floor_map: Optional[List[int]] = None
     ) -> List[MatchedPerson]:
         """Compute 3D positions and zone assignments for all matched persons.
         
@@ -413,6 +413,7 @@ class Triangulator:
         
         Args:
             matched_persons: List of MatchedPerson from cross-camera matching.
+            floor_map: Optional list mapping camera/video index to floor index.
         
         Returns:
             Same list with position_3d and zone filled in.
@@ -423,10 +424,10 @@ class Triangulator:
 
             if len(calibrated_cams) >= 2:
                 # DLT triangulation with first two calibrated cameras
-                self._triangulate_dlt(person, calibrated_cams[0], calibrated_cams[1])
+                self._triangulate_dlt(person, calibrated_cams[0], calibrated_cams[1], floor_map)
             elif len(calibrated_cams) == 1:
                 # Ground-plane fallback with single camera
-                self._ground_plane(person, calibrated_cams[0])
+                self._ground_plane(person, calibrated_cams[0], floor_map)
             else:
                 # No calibration — can't determine 3D position
                 person.position_3d = None
@@ -440,7 +441,7 @@ class Triangulator:
         return matched_persons
 
     def _triangulate_dlt(
-        self, person: MatchedPerson, cam_a: int, cam_b: int
+        self, person: MatchedPerson, cam_a: int, cam_b: int, floor_map: Optional[List[int]] = None
     ) -> None:
         """Triangulate using DLT from two cameras."""
         cal_a = self.calibrations[cam_a]
@@ -462,18 +463,22 @@ class Triangulator:
             # DLT result is unreliable — fall back to ground-plane
             # using the camera with lower individual error
             if error_a <= error_b:
-                self._ground_plane(person, cam_a)
+                self._ground_plane(person, cam_a, floor_map)
             else:
-                self._ground_plane(person, cam_b)
+                self._ground_plane(person, cam_b, floor_map)
         else:
             person.position_3d = point_3d
 
-    def _ground_plane(self, person: MatchedPerson, cam_id: int) -> None:
+    def _ground_plane(self, person: MatchedPerson, cam_id: int, floor_map: Optional[List[int]] = None) -> None:
         """Estimate position via ground-plane intersection."""
         cal = self.calibrations[cam_id]
         track = person.per_camera[cam_id]
 
+        floor_y = 0.0
+        if floor_map is not None and cam_id < len(floor_map):
+            floor_y = floor_map[cam_id] * 3.0
+
         position = ground_plane_intersection(
-            track.foot_point, cal.K, cal.R, cal.t,
+            track.foot_point, cal.K, cal.R, cal.t, floor_y=floor_y
         )
         person.position_3d = position

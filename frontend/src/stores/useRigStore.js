@@ -9,7 +9,10 @@ export const useRigStore = create((set, get) => ({
   zones: {
     zone_a: { status: 'normal', temperature: 25, vibration: 0, noise: 40, gas_h2s: 0, pressure: 1, person_count: 0, ppe_violations: [], updated_at: Date.now() },
     corridor: { status: 'normal', temperature: 22, vibration: 0, noise: 35, gas_h2s: 0, pressure: 1, person_count: 0, ppe_violations: [], updated_at: Date.now() },
-    zone_b: { status: 'normal', temperature: 26, vibration: 0, noise: 45, gas_h2s: 0, pressure: 1, person_count: 0, ppe_violations: [], updated_at: Date.now() }
+    zone_b: { status: 'normal', temperature: 26, vibration: 0, noise: 45, gas_h2s: 0, pressure: 1, person_count: 0, ppe_violations: [], updated_at: Date.now() },
+    zone_a_f1: { status: 'normal', temperature: 25, vibration: 0, noise: 40, gas_h2s: 0, pressure: 1, person_count: 0, ppe_violations: [], updated_at: Date.now() },
+    corridor_f1: { status: 'normal', temperature: 22, vibration: 0, noise: 35, gas_h2s: 0, pressure: 1, person_count: 0, ppe_violations: [], updated_at: Date.now() },
+    zone_b_f1: { status: 'normal', temperature: 26, vibration: 0, noise: 45, gas_h2s: 0, pressure: 1, person_count: 0, ppe_violations: [], updated_at: Date.now() }
   },
   violations: [],
   connected: false,
@@ -21,13 +24,52 @@ export const useRigStore = create((set, get) => ({
   showSensors: true,
   showAvatars: true,
 
-  // ── WebSocket ──────────────────────────────────────────
+  // Stream controls
+  wallOpacity: 0.4,
+  fpsLimit: 30,
+  floorFilter: 'all',
+  vlmGating: false,
+  vlmPending: false,
+  zoneSelectMode: true,
+
+  // ── WebSocket & Rendering Decoupler ─────────────────────
   _ws: null,
   _reconnectTimer: null,
+  _renderTimer: null,
+  _latestRawData: null,
+
+  _startRenderLoop: () => {
+    const loop = () => {
+      const state = get();
+      const raw = state._latestRawData;
+      if (raw) {
+        set({
+          persons: raw.persons !== undefined ? raw.persons : state.persons,
+          zones: raw.zones !== undefined ? raw.zones : state.zones,
+          violations: raw.violations !== undefined ? raw.violations : state.violations,
+          _latestRawData: null, // consume raw buffer
+        });
+      }
+      const fps = get().fpsLimit;
+      const delay = 1000 / fps;
+      const timer = setTimeout(loop, delay);
+      set({ _renderTimer: timer });
+    };
+
+    if (get()._renderTimer) clearTimeout(get()._renderTimer);
+    loop();
+  },
+
+  _restartRenderLoop: () => {
+    if (get()._renderTimer) clearTimeout(get()._renderTimer);
+    get()._startRenderLoop();
+  },
 
   connectToBackend: () => {
     const state = get();
     if (state._ws) return; // Already connected
+
+    state._startRenderLoop();
 
     console.log('[ws] Connecting to', WS_URL);
     const ws = new WebSocket(WS_URL);
@@ -40,17 +82,35 @@ export const useRigStore = create((set, get) => ({
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
+        const state = get();
+        const nextState = {};
+
         if (data.type === 'realtime_update') {
-          // Keep existing keys if payload drops them
-          set((state) => ({
-            persons: data.persons || state.persons,
-            zones: data.zones || state.zones,
-            violations: data.violations || state.violations,
-          }));
+          nextState._latestRawData = {
+            persons: data.persons,
+            zones: data.zones,
+            violations: data.violations,
+          };
+          if (state.vlmPending) {
+            nextState.vlmPending = false;
+          }
+          set(nextState);
         } else {
-          if (data.type === 'rigvision:persons') set({ persons: data.payload })
-          if (data.type === 'rigvision:zones') set({ zones: data.payload })
-          if (data.type === 'rigvision:violations:latest') set({ violations: data.payload })
+          // old format fallback
+          const currentRaw = state._latestRawData || {
+            persons: state.persons,
+            zones: state.zones,
+            violations: state.violations,
+          };
+          if (data.type === 'rigvision:persons') currentRaw.persons = data.payload;
+          if (data.type === 'rigvision:zones') currentRaw.zones = data.payload;
+          if (data.type === 'rigvision:violations:latest') currentRaw.violations = data.payload;
+          
+          nextState._latestRawData = currentRaw;
+          if (state.vlmPending) {
+            nextState.vlmPending = false;
+          }
+          set(nextState);
         }
       } catch (err) {
         console.error('[ws] Parse error:', err);
@@ -60,6 +120,7 @@ export const useRigStore = create((set, get) => ({
     ws.onclose = () => {
       console.log('[ws] Disconnected. Reconnecting in 2s...');
       set({ connected: false, _ws: null });
+      if (get()._renderTimer) clearTimeout(get()._renderTimer);
 
       // Auto-reconnect after 2 seconds
       const timer = setTimeout(() => {
@@ -81,13 +142,52 @@ export const useRigStore = create((set, get) => ({
     if (state._reconnectTimer) {
       clearTimeout(state._reconnectTimer);
     }
+    if (state._renderTimer) {
+      clearTimeout(state._renderTimer);
+    }
     if (state._ws) {
       state._ws.close();
     }
-    set({ connected: false, _ws: null, _reconnectTimer: null });
+    set({ connected: false, _ws: null, _reconnectTimer: null, _renderTimer: null });
   },
 
   // ── UI Actions ─────────────────────────────────────────
+  setWallOpacity: (val) => set({ wallOpacity: val }),
+  setFpsLimit: (val) => {
+    set({ fpsLimit: val });
+    get()._restartRenderLoop();
+  },
+  setFloorFilter: (val) => set({ floorFilter: val }),
+  setZoneSelectMode: (val) => set({ zoneSelectMode: val }),
+  
+  toggleVlmGating: async () => {
+    const nextVal = !get().vlmGating;
+    set({ vlmPending: true, vlmGating: nextVal });
+    try {
+      const res = await fetch(`http://${host}:8000/api/control/vlm_gating?enabled=${nextVal}`, { method: 'POST' });
+      if (!res.ok) {
+        console.error('Failed to update VLM gating');
+        set({ vlmPending: false, vlmGating: !nextVal }); // rollback
+      }
+    } catch (err) {
+      console.error('Error updating VLM gating:', err);
+      set({ vlmPending: false, vlmGating: !nextVal }); // rollback
+    }
+  },
+
+  clearTrackingCache: async () => {
+    try {
+      const res = await fetch(`http://${host}:8000/api/control/clear_cache`, { method: 'POST' });
+      if (res.ok) {
+        console.log('Tracking cache cleared successfully');
+      } else {
+        console.error('Failed to clear tracking cache');
+      }
+    } catch (err) {
+      console.error('Error clearing tracking cache:', err);
+    }
+  },
+
   selectPerson: (id) => set({ selectedPerson: id, selectedZone: null }),
   selectZone: (id) => set({ selectedZone: id, selectedPerson: null }),
   clearSelection: () => set({ selectedPerson: null, selectedZone: null }),
