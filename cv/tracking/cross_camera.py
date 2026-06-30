@@ -1,35 +1,37 @@
 """
-RigVision-3D — Cross-Camera Matching
-======================================
+RigVision-3D — Cross-Camera Matching Utilities
+==============================================
 
-Matches the same person seen across different cameras.
+Pure utility functions for matching tracked persons across multiple cameras.
 
-THE PROBLEM:
+MATCHING STRATEGY:
+──────────────────
+1. ArUco Identity (strongest signal):
+   If two tracklets from different cameras see the same physical ArUco marker,
+   they are the same person globally.
+
+2. Epipolar Geometry (spatial constraint):
+   If two tracklets see points related by the fundamental matrix between cameras,
+   they are likely the same person.
+
+3. Appearance Similarity (visual signal):
+   If two tracklets look similar (ReID embeddings or aspect ratio),
+   they are more likely to be the same person.
+
+Output: Groups of tracklets matched across cameras as MatchedPerson records.
+
+CALLER OWNS:
 ────────────
-Camera 0 tracks "Person #3" in Room A.
-Camera 1 tracks "Person #1" in the Corridor.
-Are they the same physical person? If yes, we can triangulate their 3D position.
+- Fundamental matrices
+- Matching state (previous_matches, aruco_matches, next_global_id)
+- All orchestration and frame-to-frame logic
 
-THE SOLUTION — TWO MATCHING SIGNALS:
-─────────────────────────────────────
-1. EPIPOLAR GEOMETRY (spatial constraint):
-   If two cameras see the same 3D point, the corresponding 2D points must
-   satisfy a geometric relationship (the "epipolar constraint").
-   Points that violate this can't be the same person.
-
-2. APPEARANCE SIMILARITY (visual constraint):
-   How similar do the two detections look? Compare aspect ratios,
-   and optionally ReID embeddings (deep features of what the person looks like).
-
-We combine both into a cost matrix and use the Hungarian algorithm
-to find the optimal one-to-one matching.
-
-COST = 0.7 × epipolar_distance + 0.3 × appearance_distance
+This module contains only stateless utility functions.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -46,20 +48,27 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from tracking.tracker import TrackedPerson
 
 
-@dataclass
-class MatchedPerson:
+def MatchedPerson(
+    global_id: int,
+    per_camera: Dict[int, TrackedPerson],
+    position_3d: Optional[Tuple[float, float, float]] = None,
+    zone: Optional[str] = None,
+) -> SimpleNamespace:
     """A person matched across multiple cameras.
     
     Attributes:
-        global_id: Unique ID across all cameras.
+        global_id: Unique ID across all cameras. For ArUco matches, this is
+                   the physical marker ID; fallback IDs start at 100000.
         per_camera: Dict mapping camera_id → TrackedPerson from that camera.
         position_3d: Triangulated 3D position (x, y, z) in meters. None if not yet triangulated.
         zone: Which zone this person is in. None if not yet assigned.
     """
-    global_id: int
-    per_camera: Dict[int, TrackedPerson]
-    position_3d: Optional[Tuple[float, float, float]] = None
-    zone: Optional[str] = None
+    return SimpleNamespace(
+        global_id=global_id,
+        per_camera=per_camera,
+        position_3d=position_3d,
+        zone=zone,
+    )
 
 
 def compute_epipolar_distance(
@@ -114,219 +123,210 @@ def compute_appearance_distance(
     person_a: TrackedPerson,
     person_b: TrackedPerson,
 ) -> float:
-    """Compute appearance similarity between two tracked persons.
+    """Compute appearance distance (disabled).
     
-    Currently uses aspect ratio similarity as a basic appearance feature.
-    When ReID embeddings are available (via BoT-SORT), uses cosine distance.
+    Appearance-based matching (ReID, aspect ratio) is disabled.
+    Cross-camera matching relies solely on ArUco identity and epipolar geometry.
     
     Args:
         person_a: TrackedPerson from camera A.
         person_b: TrackedPerson from camera B.
     
     Returns:
-        Distance value between 0 and 1. Lower = more similar.
+        0.0 (no contribution to matching cost).
     """
-    # If we have ReID features, use cosine distance
-    if person_a.features is not None and person_b.features is not None:
-        # Cosine distance = 1 - cosine_similarity
-        dot = np.dot(person_a.features, person_b.features)
-        norm_a = np.linalg.norm(person_a.features)
-        norm_b = np.linalg.norm(person_b.features)
-        if norm_a > 0 and norm_b > 0:
-            cosine_sim = dot / (norm_a * norm_b)
-            return float(1.0 - cosine_sim)
-
-    # Fallback: aspect ratio similarity
-    # Two views of the same person should have similar aspect ratios
-    ar_a = person_a.aspect_ratio
-    ar_b = person_b.aspect_ratio
-    max_ar = max(ar_a, ar_b)
-    if max_ar > 0:
-        return abs(ar_a - ar_b) / max_ar
-    return 1.0
+    return 0.0
 
 
-class CrossCameraMapper:
-    """Matches tracked persons across multiple cameras.
-    
-    Usage:
-        mapper = CrossCameraMapper()
-        
-        # Each frame:
-        matched = mapper.match(
-            per_camera_tracks={
-                0: [TrackedPerson(...), ...],  # from camera 0
-                1: [TrackedPerson(...), ...],  # from camera 1
-                2: [TrackedPerson(...), ...],  # from camera 2
-            },
-            fundamental_matrices={
-                (0, 1): F_01,  # F matrix between cameras 0 and 1
-                (0, 2): F_02,
-                (1, 2): F_12,
-            }
+def match_cross_camera(
+    per_camera_tracks: Dict[int, List[TrackedPerson]],
+    matching_state: Dict,
+    fundamental_matrices: Optional[Dict[Tuple[int, int], np.ndarray]] = None,
+    epipolar_weight: float = 1.0,
+    appearance_weight: float = 0.0,
+    max_distance: float = 100.0,
+) -> List[MatchedPerson]:
+
+    if fundamental_matrices is None:
+        fundamental_matrices = {}
+
+    camera_ids = sorted(per_camera_tracks.keys())
+
+    if len(camera_ids) == 0:
+        return []
+
+    if len(camera_ids) == 1:
+        return _single_camera_output(
+            matching_state,
+            camera_ids[0],
+            per_camera_tracks[camera_ids[0]]
         )
-    """
 
-    def __init__(
-        self,
-        epipolar_weight: float = 0.7,
-        appearance_weight: float = 0.3,
-        max_distance: float = 100.0,
-    ) -> None:
-        """
-        Args:
-            epipolar_weight: Weight for epipolar distance in cost function.
-            appearance_weight: Weight for appearance distance.
-            max_distance: Maximum allowed cost for a valid match.
-        """
-        self.epipolar_weight = epipolar_weight
-        self.appearance_weight = appearance_weight
-        self.max_distance = max_distance
-        self.next_global_id = 1
-        self.previous_matches: Dict[Tuple[int, int], int] = {}  # (cam_id, track_id) → global_id
+    all_matched = []
+    used_tracks = {cam_id: set() for cam_id in camera_ids}
 
-    def match(
-        self,
-        per_camera_tracks: Dict[int, List[TrackedPerson]],
-        fundamental_matrices: Optional[Dict[Tuple[int, int], np.ndarray]] = None,
-    ) -> List[MatchedPerson]:
-        """Match persons across all cameras.
-        
-        Strategy:
-        1. For each pair of cameras, compute cost matrix
-        2. Use Hungarian algorithm for optimal matching
-        3. Merge matched pairs into MatchedPerson objects
-        4. Create single-camera MatchedPerson for unmatched tracks
-        
-        Args:
-            per_camera_tracks: Dict mapping camera_id → list of TrackedPerson.
-            fundamental_matrices: Optional dict mapping (cam_i, cam_j) → 3×3 F matrix.
-        
-        Returns:
-            List of MatchedPerson objects with global IDs.
-        """
-        if fundamental_matrices is None:
-            fundamental_matrices = {}
+    # ── Pass 1: ArUco identity ────────────────────────────────────────────────
+    # Build a simple dict: aruco_id → {cam_id: track}
+    # One track per camera per aruco_id — no duplicate handling needed.
 
-        camera_ids = sorted(per_camera_tracks.keys())
-        
-        if len(camera_ids) == 0:
-            return []
-        
-        if len(camera_ids) == 1:
-            # Single camera — no cross-camera matching needed
-            return self._single_camera_output(camera_ids[0], per_camera_tracks[camera_ids[0]])
+    aruco_groups = {}
+    for cam_id in camera_ids:
+        for track in per_camera_tracks[cam_id]:
+            if track.aruco_id is None:
+                continue
+            if track.aruco_id not in aruco_groups:
+                aruco_groups[track.aruco_id] = {}
+            aruco_groups[track.aruco_id][cam_id] = track
 
-        # Match across camera pairs
-        all_matched: List[MatchedPerson] = []
-        used_tracks: Dict[int, set] = {cid: set() for cid in camera_ids}  # cam_id → set of used track_ids
+    for aruco_id, per_camera in aruco_groups.items():
+        global_id = _get_or_create_aruco_global_id(matching_state, aruco_id, per_camera)
+        all_matched.append(MatchedPerson(global_id=global_id, per_camera=per_camera))
+        for cam_id, track in per_camera.items():
+            used_tracks[cam_id].add(track.track_id)
 
-        for i, cam_a in enumerate(camera_ids):
-            for cam_b in camera_ids[i + 1:]:
-                tracks_a = per_camera_tracks[cam_a]
-                tracks_b = per_camera_tracks[cam_b]
+    # ── Pass 2: Epipolar fallback ─────────────────────────────────────────────
+    # Only runs on tracks that were not matched by ArUco above.
+    # Only runs between camera pairs that have a fundamental matrix.
 
-                if not tracks_a or not tracks_b:
-                    continue
+    for i, cam_a in enumerate(camera_ids):
+        for cam_b in camera_ids[i + 1:]:
 
-                F = fundamental_matrices.get((cam_a, cam_b))
+            F = fundamental_matrices.get((cam_a, cam_b))
+            if F is None:
+                continue
 
-                matches = self._match_pair(
-                    cam_a, tracks_a,
-                    cam_b, tracks_b,
-                    F,
+            tracks_a = [t for t in per_camera_tracks[cam_a] if t.track_id not in used_tracks[cam_a]]
+            tracks_b = [t for t in per_camera_tracks[cam_b] if t.track_id not in used_tracks[cam_b]]
+
+            if not tracks_a or not tracks_b:
+                continue
+
+            matches = _match_pair(tracks_a, tracks_b, F, epipolar_weight, appearance_weight, max_distance)
+
+            for track_a, track_b in matches:
+                global_id = _get_or_create_global_id(
+                    matching_state, cam_a, track_a.track_id, cam_b, track_b.track_id
                 )
+                all_matched.append(MatchedPerson(
+                    global_id=global_id,
+                    per_camera={cam_a: track_a, cam_b: track_b},
+                ))
+                used_tracks[cam_a].add(track_a.track_id)
+                used_tracks[cam_b].add(track_b.track_id)
 
-                for person_a, person_b in matches:
-                    if person_a.track_id in used_tracks[cam_a] or person_b.track_id in used_tracks[cam_b]:
-                        continue
+    # ── Pass 3: Singletons ────────────────────────────────────────────────────
+    # Any track not matched in pass 1 or 2 gets its own global_id.
 
-                    # Try to reuse previous global ID
-                    global_id = self._get_or_create_global_id(cam_a, person_a.track_id, cam_b, person_b.track_id)
-
-                    matched = MatchedPerson(
-                        global_id=global_id,
-                        per_camera={cam_a: person_a, cam_b: person_b},
-                    )
-                    all_matched.append(matched)
-                    used_tracks[cam_a].add(person_a.track_id)
-                    used_tracks[cam_b].add(person_b.track_id)
-
-        # Add unmatched tracks as single-camera MatchedPerson
-        for cam_id in camera_ids:
-            for track in per_camera_tracks[cam_id]:
-                if track.track_id not in used_tracks[cam_id]:
-                    global_id = self._get_or_create_global_id(cam_id, track.track_id)
-                    matched = MatchedPerson(
-                        global_id=global_id,
-                        per_camera={cam_id: track},
-                    )
-                    all_matched.append(matched)
-
-        return all_matched
-
-    def _match_pair(
-        self,
-        cam_a: int, tracks_a: List[TrackedPerson],
-        cam_b: int, tracks_b: List[TrackedPerson],
-        F: Optional[np.ndarray],
-    ) -> List[Tuple[TrackedPerson, TrackedPerson]]:
-        """Match tracks between two cameras using cost matrix + Hungarian.
-        
-        Returns list of (track_from_a, track_from_b) matched pairs.
-        """
-        if not SCIPY_AVAILABLE:
-            return []  # Can't do optimal matching without scipy
-
-        n_a = len(tracks_a)
-        n_b = len(tracks_b)
-        cost_matrix = np.full((n_a, n_b), self.max_distance)
-
-        for i, ta in enumerate(tracks_a):
-            for j, tb in enumerate(tracks_b):
-                epi_dist = compute_epipolar_distance(ta.foot_point, tb.foot_point, F)
-                app_dist = compute_appearance_distance(ta, tb)
-
-                cost = (self.epipolar_weight * epi_dist +
-                        self.appearance_weight * app_dist)
-                cost_matrix[i][j] = cost
-
-        # Hungarian algorithm
-        row_idx, col_idx = linear_sum_assignment(cost_matrix)
-
-        matches = []
-        for r, c in zip(row_idx, col_idx):
-            if cost_matrix[r][c] < self.max_distance:
-                matches.append((tracks_a[r], tracks_b[c]))
-
-        return matches
-
-    def _single_camera_output(
-        self, cam_id: int, tracks: List[TrackedPerson]
-    ) -> List[MatchedPerson]:
-        """Convert single-camera tracks to MatchedPerson objects."""
-        result = []
-        for track in tracks:
-            global_id = self._get_or_create_global_id(cam_id, track.track_id)
-            result.append(MatchedPerson(
+    for cam_id in camera_ids:
+        for track in per_camera_tracks[cam_id]:
+            if track.track_id in used_tracks[cam_id]:
+                continue
+            if track.aruco_id is not None:
+                global_id = _get_or_create_aruco_global_id(
+                    matching_state, track.aruco_id, {cam_id: track}
+                )
+            else:
+                global_id = _get_or_create_global_id(
+                    matching_state, cam_id, track.track_id
+                )
+            all_matched.append(MatchedPerson(
                 global_id=global_id,
                 per_camera={cam_id: track},
             ))
-        return result
 
-    def _get_or_create_global_id(self, cam_id: int, track_id: int, cam_id2: Optional[int] = None, track_id2: Optional[int] = None) -> int:
-        """Get existing global ID or create a new one."""
-        key = (cam_id, track_id)
-        if key in self.previous_matches:
-            global_id = self.previous_matches[key]
-        elif cam_id2 is not None and (cam_id2, track_id2) in self.previous_matches:
-            global_id = self.previous_matches[(cam_id2, track_id2)]
-        else:
-            global_id = self.next_global_id
-            self.next_global_id += 1
+    return all_matched
 
-        self.previous_matches[(cam_id, track_id)] = global_id
-        if cam_id2 is not None and track_id2 is not None:
-            self.previous_matches[(cam_id2, track_id2)] = global_id
 
-        return global_id
+def _match_pair(
+    tracks_a: List[TrackedPerson],
+    tracks_b: List[TrackedPerson],
+    F: Optional[np.ndarray],
+    epipolar_weight: float = 0.7,
+    appearance_weight: float = 0.3,
+    max_distance: float = 100.0,
+) -> List[Tuple[TrackedPerson, TrackedPerson]]:
+    """Match unmatched tracks between two cameras using fallback cost + Hungarian."""
+    if not SCIPY_AVAILABLE:
+        return []
+
+    n_a = len(tracks_a)
+    n_b = len(tracks_b)
+    cost_matrix = np.full((n_a, n_b), max_distance)
+
+    for i, ta in enumerate(tracks_a):
+        for j, tb in enumerate(tracks_b):
+            epi_dist = compute_epipolar_distance(ta.foot_point, tb.foot_point, F)
+            app_dist = compute_appearance_distance(ta, tb)
+            cost_matrix[i][j] = (
+                epipolar_weight * epi_dist +
+                appearance_weight * app_dist
+            )
+
+    row_idx, col_idx = linear_sum_assignment(cost_matrix)
+
+    matches = []
+    for r, c in zip(row_idx, col_idx):
+        if cost_matrix[r][c] < max_distance:
+            matches.append((tracks_a[r], tracks_b[c]))
+
+    return matches
+
+
+def _single_camera_output(
+    matching_state: Dict,
+    cam_id: int,
+    tracks: List[TrackedPerson],
+) -> List[MatchedPerson]:
+    """Convert one-camera tracks to global records when no cross-camera match is possible."""
+    result = []
+    for track in tracks:
+        global_id = _get_or_create_global_id(matching_state, cam_id, track.track_id)
+        result.append(MatchedPerson(
+            global_id=global_id,
+            per_camera={cam_id: track},
+        ))
+    return result
+
+
+def _get_or_create_global_id(
+    matching_state: Dict,
+    cam_id: int,
+    track_id: int,
+    cam_id2: Optional[int] = None,
+    track_id2: Optional[int] = None,
+) -> int:
+    """Get or create a fallback global ID for tracks without ArUco identity."""
+    key = (cam_id, track_id)
+    previous_matches = matching_state.setdefault("previous_matches", {})
+    
+    if key in previous_matches:
+        global_id = previous_matches[key]
+    elif cam_id2 is not None and (cam_id2, track_id2) in previous_matches:
+        global_id = previous_matches[(cam_id2, track_id2)]
+    else:
+        global_id = matching_state.setdefault("next_global_id", 100000)
+        matching_state["next_global_id"] = global_id + 1
+
+    previous_matches[(cam_id, track_id)] = global_id
+    if cam_id2 is not None and track_id2 is not None:
+        previous_matches[(cam_id2, track_id2)] = global_id
+
+    return global_id
+
+
+def _get_or_create_aruco_global_id(
+    matching_state: Dict,
+    aruco_id: int,
+    per_camera: Dict[int, TrackedPerson],
+) -> int:
+    """Use the ArUco marker ID as the stable cross-camera global ID."""
+    global_id = int(aruco_id)
+    aruco_matches = matching_state.setdefault("aruco_matches", {})
+    aruco_matches[aruco_id] = global_id
+    
+    previous_matches = matching_state.setdefault("previous_matches", {})
+    for cam_id, track in per_camera.items():
+        previous_matches[(cam_id, track.track_id)] = global_id
+
+    return global_id
+
