@@ -294,6 +294,24 @@ async def get_mjpeg_stream(camera_id: str):
     )
 
 
+@app.post("/api/control/vlm_gating")
+async def post_vlm_gating(enabled: bool) -> Dict[str, str]:
+    """Enable or disable VLM gating setting in Redis."""
+    r = await get_redis()
+    val = "true" if enabled else "false"
+    await r.set("rigvision:settings:vlm_gating", val)
+    print(f"[control] VLM gating set to: {val}")
+    return {"status": "ok", "vlm_gating": val}
+
+@app.post("/api/control/clear_cache")
+async def post_clear_cache() -> Dict[str, str]:
+    """Publish a command to clear CV pipeline tracking cache."""
+    r = await get_redis()
+    await r.publish("rigvision:commands", "clear_cache")
+    print("[control] Published clear_cache command to Redis")
+    return {"status": "ok", "message": "clear_cache command published"}
+
+
 # ─── WebSocket Endpoint ────────────────────────────────────
 
 @app.websocket("/ws/realtime")

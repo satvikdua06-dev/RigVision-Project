@@ -9,6 +9,7 @@
 export const ZONES = {
   zone_a: {
     name: 'Room A',
+    floor: 0,
     center: [2, 1.5, 2.5],
     size: [4, 3, 5],
     min: [0, 0, 0],
@@ -30,6 +31,7 @@ export const ZONES = {
   },
   corridor: {
     name: 'Corridor',
+    floor: 0,
     center: [5, 1.5, 2.5],
     size: [2, 3, 2],
     min: [4, 0, 1.5],
@@ -46,6 +48,7 @@ export const ZONES = {
   },
   zone_b: {
     name: 'Room B',
+    floor: 0,
     center: [8, 1.5, 2.5],
     size: [4, 3, 5],
     min: [6, 0, 0],
@@ -65,6 +68,52 @@ export const ZONES = {
       { id: 'temp_b2', type: 'temperature', position: [8.5, 1.5, 3.5] },
       { id: 'pressure_b1', type: 'pressure', position: [7.5, 0.8, 1.0] },
       { id: 'pressure_b2', type: 'pressure', position: [8.5, 1.0, 3.5] }
+    ],
+  },
+  zone_a_f1: {
+    name: 'Room A - Floor 1',
+    floor: 1,
+    center: [2, 4.5, 2.5],
+    size: [4, 3, 5],
+    min: [0, 3, 0],
+    max: [4, 6, 5],
+    color: '#4488ff',
+    equipment: [
+      { id: 'pump_01_f1', name: 'Mud Pump #1 (F1)', position: [1.5, 3.5, 1.5], size: [1.2, 1.0, 0.8], color: '#667788' }
+    ],
+    camera: { id: 'cam0_f1', position: [0.5, 5.5, 0.5], lookAt: [3, 4, 3] },
+    sensors: [
+      { id: 'temp_a1_f1', type: 'temperature', position: [1.5, 5.0, 1.5] }
+    ],
+  },
+  corridor_f1: {
+    name: 'Corridor - Floor 1',
+    floor: 1,
+    center: [5, 4.5, 2.5],
+    size: [2, 3, 2],
+    min: [4, 3, 1.5],
+    max: [6, 6, 3.5],
+    color: '#44aaff',
+    equipment: [],
+    camera: { id: 'cam1_f1', position: [5.0, 5.5, 1.8], lookAt: [5.0, 4.0, 3.0] },
+    sensors: [
+      { id: 'gas_c1_f1', type: 'gas_h2s', position: [5.0, 3.3, 2.5] }
+    ],
+  },
+  zone_b_f1: {
+    name: 'Room B - Floor 1',
+    floor: 1,
+    center: [8, 4.5, 2.5],
+    size: [4, 3, 5],
+    min: [6, 3, 0],
+    max: [10, 6, 5],
+    color: '#44ff88',
+    equipment: [
+      { id: 'compressor_01_f1', name: 'Compressor (F1)', position: [7.5, 3.6, 1.0], size: [1.5, 1.2, 1.0], color: '#556677' }
+    ],
+    camera: { id: 'cam2_f1', position: [9.5, 5.5, 4.5], lookAt: [7.0, 4.0, 2.0] },
+    sensors: [
+      { id: 'temp_b1_f1', type: 'temperature', position: [7.5, 4.0, 1.0] }
     ],
   },
 };

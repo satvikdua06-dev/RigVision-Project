@@ -16,6 +16,7 @@
   "zones": {
     "zone_a": {
       "name": "Room A",
+      "floor": 0,
       "description": "Main work area with drilling equipment",
       "bounds": {
         "min": { "x": 0, "y": 0, "z": 0 },
@@ -69,6 +70,7 @@
 
     "corridor": {
       "name": "Corridor",
+      "floor": 0,
       "description": "Narrow connecting passage between Room A and Room B",
       "bounds": {
         "min": { "x": 4, "y": 0, "z": 1.5 },
@@ -101,6 +103,7 @@
 
     "zone_b": {
       "name": "Room B",
+      "floor": 0,
       "description": "Secondary area with compressor and wellhead equipment",
       "bounds": {
         "min": { "x": 6, "y": 0, "z": 0 },
@@ -151,6 +154,74 @@
         { "id": "temp_b2",     "type": "temperature", "unit": "°C",    "position": { "x": 8.5, "y": 1.5, "z": 3.5 }, "normal_range": [15, 40],  "warning": 50,  "critical": 65  },
         { "id": "pressure_b1", "type": "pressure",     "unit": "bar",   "position": { "x": 7.5, "y": 0.8, "z": 1.0 }, "normal_range": [5, 15],   "warning": 20,  "critical": 25  },
         { "id": "pressure_b2", "type": "pressure",     "unit": "bar",   "position": { "x": 8.5, "y": 1.0, "z": 3.5 }, "normal_range": [50, 100], "warning": 120, "critical": 140 }
+      ]
+    },
+
+    "zone_a_f1": {
+      "name": "Room A - Floor 1",
+      "floor": 1,
+      "description": "Drilling rig upper deck room A",
+      "bounds": {
+        "min": { "x": 0, "y": 3, "z": 0 },
+        "max": { "x": 4, "y": 6, "z": 5 }
+      },
+      "color": "#4488ff",
+      "max_occupancy": 3,
+      "equipment": [
+        {
+          "id": "pump_01_f1",
+          "name": "Mud Pump #1 (F1)",
+          "type": "pump",
+          "position": { "x": 1.5, "y": 3, "z": 1.5 },
+          "dimensions": { "x": 1.2, "y": 1.0, "z": 0.8 },
+          "color": "#667788",
+          "sensors": ["temp_a1_f1"]
+        }
+      ],
+      "sensors": [
+        { "id": "temp_a1_f1", "type": "temperature", "unit": "°C", "position": { "x": 1.5, "y": 5.0, "z": 1.5 }, "normal_range": [20, 40], "warning": 50, "critical": 65 }
+      ]
+    },
+
+    "corridor_f1": {
+      "name": "Corridor - Floor 1",
+      "floor": 1,
+      "description": "Connecting passage upper deck",
+      "bounds": {
+        "min": { "x": 4, "y": 3, "z": 1.5 },
+        "max": { "x": 6, "y": 6, "z": 3.5 }
+      },
+      "color": "#44aaff",
+      "max_occupancy": 2,
+      "equipment": [],
+      "sensors": [
+        { "id": "gas_c1_f1", "type": "gas_h2s", "unit": "ppm", "position": { "x": 5.0, "y": 3.3, "z": 2.5 }, "normal_range": [0, 5], "warning": 10, "critical": 15 }
+      ]
+    },
+
+    "zone_b_f1": {
+      "name": "Room B - Floor 1",
+      "floor": 1,
+      "description": "Secondary compressor upper deck room B",
+      "bounds": {
+        "min": { "x": 6, "y": 3, "z": 0 },
+        "max": { "x": 10, "y": 6, "z": 5 }
+      },
+      "color": "#44ff88",
+      "max_occupancy": 4,
+      "equipment": [
+        {
+          "id": "compressor_01_f1",
+          "name": "Compressor (F1)",
+          "type": "compressor",
+          "position": { "x": 7.5, "y": 3, "z": 1.0 },
+          "dimensions": { "x": 1.5, "y": 1.2, "z": 1.0 },
+          "color": "#556677",
+          "sensors": ["temp_b1_f1"]
+        }
+      ],
+      "sensors": [
+        { "id": "temp_b1_f1", "type": "temperature", "unit": "°C", "position": { "x": 7.5, "y": 4.0, "z": 1.0 }, "normal_range": [20, 45], "warning": 55, "critical": 70 }
       ]
     }
   }

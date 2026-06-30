@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useRigStore } from '../stores/useRigStore.js'
 
 const SEVERITY_COLOR = {
@@ -33,108 +34,230 @@ function SensorBar({ label, value, max, unit, warn, crit }) {
 }
 
 function ZonesTab() {
+  const [search, setSearch] = useState('')
   const zones      = useRigStore(s => s.zones)
   const selectZone = useRigStore(s => s.selectZone)
   const selectedZone = useRigStore(s => s.selectedZone)
 
+  const filteredZones = Object.entries(zones).filter(([id, zone]) => {
+    if (!search) return true
+    const term = search.toLowerCase()
+    const label = (zone.label || id.replace(/_/g, ' ')).toLowerCase()
+    const status = (zone.status || '').toLowerCase()
+    return label.includes(term) || status.includes(term)
+  })
+
   return (
     <div>
-      {Object.entries(zones).map(([id, zone]) => {
-        const sc = STATUS_COLOR[zone.status]
-        const isSelected = selectedZone === id
-        return (
-          <div key={id} onClick={() => selectZone(id)}
+      {/* Search Bar */}
+      <div style={{ marginBottom: 12, position: 'relative' }}>
+        <input
+          type="text"
+          placeholder="Search zone name, status..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{
+            width: '100%',
+            padding: '8px 12px',
+            background: 'rgba(255,255,255,0.04)',
+            border: '1px solid rgba(0,180,255,0.2)',
+            borderRadius: 6,
+            color: '#e0f4ff',
+            fontFamily: "'Share Tech Mono', monospace",
+            fontSize: 12,
+            outline: 'none',
+            boxSizing: 'border-box',
+            transition: 'border-color 0.2s',
+          }}
+          onFocus={(e) => e.target.style.borderColor = 'rgba(0,180,255,0.6)'}
+          onBlur={(e) => e.target.style.borderColor = 'rgba(0,180,255,0.2)'}
+        />
+        {search && (
+          <button
+            onClick={() => setSearch('')}
             style={{
-              background: isSelected ? 'rgba(0,180,255,0.08)' : 'rgba(255,255,255,0.02)',
-              border: `1px solid ${isSelected ? sc+'88' : 'rgba(255,255,255,0.06)'}`,
-              borderRadius: 10, padding: '12px 14px', marginBottom: 10, cursor:'pointer',
-              transition: 'all 0.2s',
-            }}>
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
-              <span style={{ fontFamily:"'Barlow Condensed'", fontSize:15, fontWeight:700,
-                letterSpacing:1, color:'#e0f4ff' }}>{zone.label}</span>
-              <span style={{
-                background: sc + '22', border:`1px solid ${sc}`, color: sc,
-                fontFamily:"'Share Tech Mono'", fontSize:9, padding:'2px 8px',
-                borderRadius:4, letterSpacing:2, textTransform:'uppercase',
-              }}>{zone.status}</span>
+              position: 'absolute',
+              right: 8,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              background: 'transparent',
+              border: 'none',
+              color: '#5a8aaa',
+              cursor: 'pointer',
+              fontSize: 14,
+              fontFamily: "'Share Tech Mono', monospace",
+            }}
+          >
+            ×
+          </button>
+        )}
+      </div>
+
+      {filteredZones.length === 0 ? (
+        <div style={{
+          textAlign: 'center', color: '#5a8aaa', fontFamily: "'Share Tech Mono', monospace",
+          fontSize: 12, padding: 20
+        }}>No zones found</div>
+      ) : (
+        filteredZones.map(([id, zone]) => {
+          const sc = STATUS_COLOR[zone.status]
+          const isSelected = selectedZone === id
+          return (
+            <div key={id} onClick={() => selectZone(id)}
+              style={{
+                background: isSelected ? 'rgba(0,180,255,0.08)' : 'rgba(255,255,255,0.02)',
+                border: `1px solid ${isSelected ? sc+'88' : 'rgba(255,255,255,0.06)'}`,
+                borderRadius: 10, padding: '12px 14px', marginBottom: 10, cursor:'pointer',
+                transition: 'all 0.2s',
+              }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
+                <span style={{ fontFamily:"'Barlow Condensed'", fontSize:15, fontWeight:700,
+                  letterSpacing:1, color:'#e0f4ff' }}>{zone.label || id.replace(/_/g, ' ').toUpperCase()}</span>
+                <span style={{
+                  background: sc + '22', border:`1px solid ${sc}`, color: sc,
+                  fontFamily:"'Share Tech Mono'", fontSize:9, padding:'2px 8px',
+                  borderRadius:4, letterSpacing:2, textTransform:'uppercase',
+                }}>{zone.status}</span>
+              </div>
+              <SensorBar label="Temperature" value={zone.temperature} max={100} unit="°C" warn={45} crit={70} />
+              <SensorBar label="H₂S"         value={zone.gas_h2s}    max={25}  unit="ppm" warn={10} crit={20} />
+              <SensorBar label="Vibration"   value={zone.vibration}  max={6}   unit="g"   warn={3}  crit={5}  />
+              <SensorBar label="Noise"       value={zone.noise}      max={120} unit="dB"  warn={85} crit={100}/>
+              <div style={{ display:'flex', justifyContent:'space-between', marginTop:8,
+                fontFamily:"'Share Tech Mono'", fontSize:10.5 }}>
+                <span style={{ color:'#5a8aaa' }}>👤 {zone.person_count} person{zone.person_count!==1?'s':''}</span>
+                {zone.ppe_violations.length > 0 && (
+                  <span style={{ color:'#ff7043' }}>⚠ {zone.ppe_violations.length} PPE</span>
+                )}
+              </div>
             </div>
-            <SensorBar label="Temperature" value={zone.temperature} max={100} unit="°C" warn={45} crit={70} />
-            <SensorBar label="H₂S"         value={zone.gas_h2s}    max={25}  unit="ppm" warn={10} crit={20} />
-            <SensorBar label="Vibration"   value={zone.vibration}  max={6}   unit="g"   warn={3}  crit={5}  />
-            <SensorBar label="Noise"       value={zone.noise}      max={120} unit="dB"  warn={85} crit={100}/>
-            <div style={{ display:'flex', justifyContent:'space-between', marginTop:8,
-              fontFamily:"'Share Tech Mono'", fontSize:10.5 }}>
-              <span style={{ color:'#5a8aaa' }}>👤 {zone.person_count} person{zone.person_count!==1?'s':''}</span>
-              {zone.ppe_violations.length > 0 && (
-                <span style={{ color:'#ff7043' }}>⚠ {zone.ppe_violations.length} PPE</span>
-              )}
-            </div>
-          </div>
-        )
-      })}
+          )
+        })
+      )}
     </div>
   )
 }
 
 function PersonsTab() {
+  const [search, setSearch] = useState('')
   const persons       = useRigStore(s => s.persons)
   const selectPerson  = useRigStore(s => s.selectPerson)
   const selectedPerson = useRigStore(s => s.selectedPerson)
 
+  const filteredPersons = persons.filter(p => {
+    if (!search) return true
+    const term = search.toLowerCase()
+    return (
+      p.id.toString().includes(term) ||
+      (p.zone && p.zone.toLowerCase().includes(term)) ||
+      (p.posture && p.posture.toLowerCase().includes(term))
+    )
+  })
+
   return (
     <div>
-      {persons.map(p => {
-        const hasAlert  = !p.ppe.hardhat || !p.ppe.vest || !p.ppe.goggles
-        const isSelected = selectedPerson === p.id
-        return (
-          <div key={p.id} onClick={() => selectPerson(p.id)}
+      {/* Search Bar */}
+      <div style={{ marginBottom: 12, position: 'relative' }}>
+        <input
+          type="text"
+          placeholder="Search ID, zone, posture..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{
+            width: '100%',
+            padding: '8px 12px',
+            background: 'rgba(255,255,255,0.04)',
+            border: '1px solid rgba(0,180,255,0.2)',
+            borderRadius: 6,
+            color: '#e0f4ff',
+            fontFamily: "'Share Tech Mono', monospace",
+            fontSize: 12,
+            outline: 'none',
+            boxSizing: 'border-box',
+            transition: 'border-color 0.2s',
+          }}
+          onFocus={(e) => e.target.style.borderColor = 'rgba(0,180,255,0.6)'}
+          onBlur={(e) => e.target.style.borderColor = 'rgba(0,180,255,0.2)'}
+        />
+        {search && (
+          <button
+            onClick={() => setSearch('')}
             style={{
-              background: isSelected ? 'rgba(0,180,255,0.08)' : 'rgba(255,255,255,0.02)',
-              border:`1px solid ${isSelected ? '#00b4ff55' : hasAlert ? '#ff3b3b33' : 'rgba(255,255,255,0.06)'}`,
-              borderRadius:10, padding:'12px 14px', marginBottom:10, cursor:'pointer',
-              transition:'all 0.2s',
-            }}>
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
-              <span style={{ fontFamily:"'Barlow Condensed'", fontSize:16, fontWeight:700,
-                letterSpacing:1, color:'#e0f4ff' }}>PERSON #{p.id}</span>
-              {hasAlert && (
-                <span style={{ background:'#ff3b3b22', border:'1px solid #ff3b3b',
-                  color:'#ff3b3b', fontFamily:"'Share Tech Mono'", fontSize:9,
-                  padding:'2px 8px', borderRadius:4, letterSpacing:2 }}>ALERT</span>
-              )}
+              position: 'absolute',
+              right: 8,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              background: 'transparent',
+              border: 'none',
+              color: '#5a8aaa',
+              cursor: 'pointer',
+              fontSize: 14,
+              fontFamily: "'Share Tech Mono', monospace",
+            }}
+          >
+            ×
+          </button>
+        )}
+      </div>
+
+      {filteredPersons.length === 0 ? (
+        <div style={{
+          textAlign: 'center', color: '#5a8aaa', fontFamily: "'Share Tech Mono', monospace",
+          fontSize: 12, padding: 20
+        }}>No personnel found</div>
+      ) : (
+        filteredPersons.map(p => {
+          const hasAlert  = !p.ppe.hardhat || !p.ppe.vest || !p.ppe.goggles
+          const isSelected = selectedPerson === p.id
+          return (
+            <div key={p.id} onClick={() => selectPerson(p.id)}
+              style={{
+                background: isSelected ? 'rgba(0,180,255,0.08)' : 'rgba(255,255,255,0.02)',
+                border:`1px solid ${isSelected ? '#00b4ff55' : hasAlert ? '#ff3b3b33' : 'rgba(255,255,255,0.06)'}`,
+                borderRadius:10, padding:'12px 14px', marginBottom:10, cursor:'pointer',
+                transition:'all 0.2s',
+              }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
+                <span style={{ fontFamily:"'Barlow Condensed'", fontSize:16, fontWeight:700,
+                  letterSpacing:1, color:'#e0f4ff' }}>PERSON #{p.id}</span>
+                {hasAlert && (
+                  <span style={{ background:'#ff3b3b22', border:'1px solid #ff3b3b',
+                    color:'#ff3b3b', fontFamily:"'Share Tech Mono'", fontSize:9,
+                    padding:'2px 8px', borderRadius:4, letterSpacing:2 }}>ALERT</span>
+                )}
+              </div>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:4,
+                fontFamily:"'Share Tech Mono'", fontSize:10.5, marginBottom:8 }}>
+                <div><span style={{color:'#5a8aaa'}}>Zone </span>
+                  <span style={{color:'#00b4ff'}}>{p.zone.replace(/_/g, ' ').toUpperCase()}</span></div>
+                <div><span style={{color:'#5a8aaa'}}>Posture </span>
+                  <span style={{color:'#00ffd5'}}>{p.posture}</span></div>
+                <div><span style={{color:'#5a8aaa'}}>Conf </span>
+                  <span style={{color:'#00e676'}}>{(p.confidence*100).toFixed(0)}%</span></div>
+                <div><span style={{color:'#5a8aaa'}}>Cams </span>
+                  <span>{p.cameras_visible}</span></div>
+              </div>
+              {/* PPE indicators */}
+              <div style={{ display:'flex', gap:8, fontFamily:"'Share Tech Mono'", fontSize:10.5 }}>
+                {[
+                  { label:'🪖 Hat', ok: p.ppe.hardhat },
+                  { label:'🦺 Vest', ok: p.ppe.vest },
+                  { label:'🥽 Goggles', ok: p.ppe.goggles },
+                ].map(({ label, ok }) => (
+                  <span key={label} style={{
+                    padding:'2px 8px', borderRadius:4, fontSize:10,
+                    background: ok ? '#00e67611' : '#ff3b3b22',
+                    border:`1px solid ${ok ? '#00e67688' : '#ff3b3b88'}`,
+                    color: ok ? '#00e676' : '#ff3b3b',
+                  }}>
+                    {label} {ok ? '✓' : '✗'}
+                  </span>
+                ))}
+              </div>
             </div>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:4,
-              fontFamily:"'Share Tech Mono'", fontSize:10.5, marginBottom:8 }}>
-              <div><span style={{color:'#5a8aaa'}}>Zone </span>
-                <span style={{color:'#00b4ff'}}>{p.zone.replace('_',' ')}</span></div>
-              <div><span style={{color:'#5a8aaa'}}>Posture </span>
-                <span style={{color:'#00ffd5'}}>{p.posture}</span></div>
-              <div><span style={{color:'#5a8aaa'}}>Conf </span>
-                <span style={{color:'#00e676'}}>{(p.confidence*100).toFixed(0)}%</span></div>
-              <div><span style={{color:'#5a8aaa'}}>Cams </span>
-                <span>{p.cameras_visible}</span></div>
-            </div>
-            {/* PPE indicators */}
-            <div style={{ display:'flex', gap:8, fontFamily:"'Share Tech Mono'", fontSize:10.5 }}>
-              {[
-                { label:'🪖 Hat', ok: p.ppe.hardhat },
-                { label:'🦺 Vest', ok: p.ppe.vest },
-                { label:'🥽 Goggles', ok: p.ppe.goggles },
-              ].map(({ label, ok }) => (
-                <span key={label} style={{
-                  padding:'2px 8px', borderRadius:4, fontSize:10,
-                  background: ok ? '#00e67611' : '#ff3b3b22',
-                  border:`1px solid ${ok ? '#00e67688' : '#ff3b3b88'}`,
-                  color: ok ? '#00e676' : '#ff3b3b',
-                }}>
-                  {label} {ok ? '✓' : '✗'}
-                </span>
-              ))}
-            </div>
-          </div>
-        )
-      })}
+          )
+        })
+      )}
     </div>
   )
 }
@@ -173,7 +296,7 @@ function ViolationsTab() {
             <div style={{ fontFamily:"'Rajdhani'", fontSize:13, fontWeight:500,
               color:'#e0f4ff', marginBottom:4 }}>{v.message}</div>
             <div style={{ fontFamily:"'Share Tech Mono'", fontSize:9.5, color:'#5a8aaa' }}>
-              {v.rule_id} · {v.zone.replace('_',' ')}
+              {v.rule_id} · {v.zone.replace(/_/g, ' ').toUpperCase()}
               {v.person_ids.length > 0 && ` · Person ${v.person_ids.map(i=>'#'+i).join(', ')}`}
             </div>
           </div>
