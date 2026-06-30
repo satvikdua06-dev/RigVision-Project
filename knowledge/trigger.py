@@ -1,4 +1,4 @@
-import paho.mqtt.client as mqtt
+from kafka import KafkaProducer
 import json
 import time
 
@@ -6,21 +6,22 @@ alert_payload = {
   "event_id": "anom_9b8c7d",
   "zone_id": "room_1",
   "severity": "CRITICAL",
-  "triggered_sensors": ["temperature", "vibration", "noise"], 
+  "triggered_sensors": ["temperature", "vibration", "noise"],
   "telemetry_snapshot": {"temperature_c": 82.5, "vibration_mm_s": 2.1}
 }
 
-client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-client.connect("localhost", 1883, 60)
+producer = KafkaProducer(
+    bootstrap_servers=['localhost:9092'],
+    value_serializer=lambda x: json.dumps(x).encode('utf-8')
+)
 
-
-client.loop_start()
-client.publish("rigvision/alerts", json.dumps(alert_payload))
+print("Publishing alert to Kafka...")
+producer.send('rigvision_alerts', alert_payload)
 print("Simulated alert queued...")
 
 time.sleep(0.5)
 
-print("Alert successfully fired off to the broker!")
+print("Alert successfully sent to Kafka broker!")
 
-client.disconnect()
-client.loop_stop()
+producer.flush()
+producer.close()

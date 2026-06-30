@@ -1,2 +1,2 @@
 neo4j
-paho-mqtt
+kafka-python>=3.0.0
