@@ -16,6 +16,8 @@ redis>=5.0.0
 # Object Detection — YOLOv8
 ultralytics>=8.0.0
 
+kafka-python==2.1.0
+
 # Tracking — BoT-SORT native (no boxmot wrapper)
 lap>=0.4.0                # Jonker-Volgenant linear assignment (fast)
 scipy>=1.11.0             # Fallback assignment + Kalman math + cosine distance

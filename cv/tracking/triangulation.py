@@ -45,421 +45,255 @@ Triangulation is the INVERSE: given pixels, find the 3D point.
 """
 
 from __future__ import annotations
-
 import json
 import os
+import signal
+import sys
+import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
-if TYPE_CHECKING:
-    from tracking.cross_camera import MatchedPerson
+from kafka import KafkaConsumer, KafkaProducer
+import cv2
+
+
+LOG_PREFIX = "[triangulation]"
 
 
 @dataclass
 class CameraCalibration:
-    """Calibration data for a single camera.
-    
-    Loaded from JSON files produced by calibrate_intrinsic.py and calibrate_extrinsic.py.
-    
-    Attributes:
-        camera_id: Integer camera identifier.
-        K: 3×3 intrinsic matrix (focal length + principal point).
-        dist_coeffs: Distortion coefficients (radial + tangential).
-        R: 3×3 rotation matrix (camera → world orientation).
-        t: 3×1 translation vector (camera position).
-        P: 3×4 projection matrix = K @ [R | t].
-        image_size: (width, height) of the camera image.
-    """
     camera_id: int
-    K: np.ndarray          # 3×3 intrinsic matrix
-    dist_coeffs: np.ndarray # distortion coefficients
-    R: np.ndarray          # 3×3 rotation matrix
-    t: np.ndarray          # 3×1 translation vector
-    P: np.ndarray          # 3×4 projection matrix
-    image_size: Tuple[int, int]  # (width, height)
-
-    @classmethod
-    def from_json(cls, filepath: str, camera_id: int) -> "CameraCalibration":
-        """Load calibration from a JSON file.
-        
-        Expected JSON format:
-        {
-            "camera_matrix": [[fx, 0, cx], [0, fy, cy], [0, 0, 1]],
-            "dist_coeffs": [k1, k2, p1, p2, k3],
-            "rotation_matrix": [[r11, r12, r13], ...],
-            "translation_vector": [tx, ty, tz],
-            "image_size": [width, height]
-        }
-        """
-        with open(filepath, "r") as f:
-            data = json.load(f)
-        
-        K = np.array(data["camera_matrix"], dtype=np.float64)
-        dist = np.array(data["dist_coeffs"], dtype=np.float64).flatten()
-        R = np.array(data["rotation_matrix"], dtype=np.float64)
-        t = np.array(data["translation_vector"], dtype=np.float64).reshape(3, 1)
-        image_size = tuple(data.get("image_size", [640, 480]))
-        
-        # Compute projection matrix: P = K @ [R | t]
-        Rt = np.hstack([R, t])  # 3×4
-        P = K @ Rt              # 3×4
-        
-        return cls(
-            camera_id=camera_id,
-            K=K,
-            dist_coeffs=dist,
-            R=R,
-            t=t,
-            P=P,
-            image_size=image_size,
-        )
+    K: np.ndarray
+    dist_coeffs: np.ndarray
+    R: np.ndarray
+    t: np.ndarray
+    P: np.ndarray
+    image_size: Tuple[int, int]
 
     @classmethod
     def create_default(cls, camera_id: int, image_size: Tuple[int, int] = (640, 480)) -> "CameraCalibration":
-        """Create a default calibration (no distortion, centered camera).
-        
-        Used for demo mode or when real calibration isn't available.
-        Places camera at the position defined in zone_definitions.json.
-        """
         w, h = image_size
-        # Approximate focal length: ~600px for a typical phone camera
         fx = fy = 600.0
-        cx, cy = w / 2, h / 2
-        
-        K = np.array([
-            [fx,  0, cx],
-            [ 0, fy, cy],
-            [ 0,  0,  1]
-        ], dtype=np.float64)
-        
+        cx, cy = w / 2.0, h / 2.0
+        K = np.array([[fx, 0.0, cx], [0.0, fy, cy], [0.0, 0.0, 1.0]], dtype=np.float64)
         dist = np.zeros(5, dtype=np.float64)
         R = np.eye(3, dtype=np.float64)
         t = np.zeros((3, 1), dtype=np.float64)
         P = K @ np.hstack([R, t])
-        
-        return cls(
-            camera_id=camera_id,
-            K=K,
-            dist_coeffs=dist,
-            R=R,
-            t=t,
-            P=P,
-            image_size=image_size,
-        )
+        return cls(camera_id, K, dist, R, t, P, image_size)
 
 
-def load_calibrations(configs_dir: str) -> Dict[int, CameraCalibration]:
-    """Load all camera calibrations from a directory.
-    
-    Expects files named camera_0.json, camera_1.json, etc.
-    
-    Args:
-        configs_dir: Path to directory containing calibration JSONs.
-    
-    Returns:
-        Dict mapping camera_id → CameraCalibration.
+def mock_calibrations() -> Dict[int, CameraCalibration]:
+    """Return a pair of mock calibrations for camera 0 and 1.
+
+    Camera 1 is translated slightly along X to provide parallax.
     """
-    calibrations: Dict[int, CameraCalibration] = {}
-    
-    if not os.path.exists(configs_dir):
-        print(f"[triangulation] Calibration dir not found: {configs_dir}")
-        return calibrations
-    
-    for filename in os.listdir(configs_dir):
-        if filename.startswith("camera_") and filename.endswith(".json"):
-            try:
-                cam_id = int(filename.replace("camera_", "").replace(".json", ""))
-                filepath = os.path.join(configs_dir, filename)
-                calibrations[cam_id] = CameraCalibration.from_json(filepath, cam_id)
-                print(f"[triangulation] Loaded calibration for camera {cam_id}")
-            except (ValueError, json.JSONDecodeError) as e:
-                print(f"[triangulation] Error loading {filename}: {e}")
-    
-    return calibrations
+    cal0 = CameraCalibration.create_default(0)
+    cal1 = CameraCalibration.create_default(1)
+    # Put camera 1 half a meter to the right (world coords)
+    cal1.t = np.array([[0.5], [0.0], [0.0]], dtype=np.float64)
+    cal1.P = cal1.K @ np.hstack([cal1.R, cal1.t])
+    return {0: cal0, 1: cal1}
 
 
-def triangulate_dlt(
-    pt1: Tuple[float, float],
-    pt2: Tuple[float, float],
-    P1: np.ndarray,
-    P2: np.ndarray,
-) -> Tuple[float, float, float]:
-    """Direct Linear Transform triangulation.
-    
-    Given a 2D point in camera 1 and a 2D point in camera 2, plus their
-    projection matrices, compute the 3D world point.
-    
-    HOW IT WORKS:
-    ─────────────
-    Each 2D point (u, v) and its projection matrix P give us 2 equations:
-      u = (P[0] @ X) / (P[2] @ X)
-      v = (P[1] @ X) / (P[2] @ X)
-    
-    Rearranging: (u * P[2] - P[0]) @ X = 0  and  (v * P[2] - P[1]) @ X = 0
-    
-    Two cameras → 4 equations, 3 unknowns → overdetermined system.
-    OpenCV solves this with SVD (Singular Value Decomposition).
-    
-    Args:
-        pt1: (x, y) foot point in pixels, camera 1.
-        pt2: (x, y) foot point in pixels, camera 2.
-        P1: 3×4 projection matrix for camera 1.
-        P2: 3×4 projection matrix for camera 2.
-    
-    Returns:
-        (x, y, z) 3D world coordinates in meters.
-    """
-    # OpenCV expects points as (2, 1) float64 arrays
+def triangulate_dlt(pt1: Tuple[float, float], pt2: Tuple[float, float], P1: np.ndarray, P2: np.ndarray) -> Tuple[float, float, float]:
     pts1 = np.array([[pt1[0]], [pt1[1]]], dtype=np.float64)
     pts2 = np.array([[pt2[0]], [pt2[1]]], dtype=np.float64)
-    
-    # Triangulate: returns 4D homogeneous coordinates
-    import cv2
     point_4d = cv2.triangulatePoints(P1, P2, pts1, pts2)
-    
-    # Convert from homogeneous: divide by w
+    if point_4d.shape[0] < 4 or abs(point_4d[3, 0]) < 1e-12:
+        raise RuntimeError("Degenerate triangulation result")
     point_3d = point_4d[:3, 0] / point_4d[3, 0]
-    
-    return (float(point_3d[0]), float(point_3d[1]), float(point_3d[2]))
+    return float(point_3d[0]), float(point_3d[1]), float(point_3d[2])
 
 
-def compute_reprojection_error(
-    point_3d: Tuple[float, float, float],
-    pixel: Tuple[float, float],
-    P: np.ndarray,
-) -> float:
-    """How far off is the triangulated point when projected back to 2D?
-    
-    A good triangulation should reproject very close to the original pixel.
-    Error > 10px usually means something went wrong.
-    
-    Args:
-        point_3d: Triangulated (x, y, z) in meters.
-        pixel: Original (u, v) detection in pixels.
-        P: 3×4 projection matrix.
-    
-    Returns:
-        Reprojection error in pixels.
-    """
-    X = np.array([point_3d[0], point_3d[1], point_3d[2], 1.0])
-    projected = P @ X
-    if abs(projected[2]) < 1e-10:
-        return float('inf')
-    
-    u = projected[0] / projected[2]
-    v = projected[1] / projected[2]
-    
-    error = np.sqrt((u - pixel[0])**2 + (v - pixel[1])**2)
-    return float(error)
+def compute_reprojection_avg(point_3d: Tuple[float, float, float], cam_a: CameraCalibration, cam_b: CameraCalibration, pt_a: Tuple[float, float], pt_b: Tuple[float, float]) -> float:
+    # Convert rotation matrices to rotation vectors
+    rvec_a, _ = cv2.Rodrigues(cam_a.R)
+    rvec_b, _ = cv2.Rodrigues(cam_b.R)
+    tvec_a = cam_a.t.reshape(3, 1)
+    tvec_b = cam_b.t.reshape(3, 1)
+
+    obj = np.array(point_3d, dtype=np.float64).reshape((1, 1, 3)) # converting to shape (1, 1, 3) for projectPoints
+
+    imgpts_a, _ = cv2.projectPoints(obj, rvec_a, tvec_a, cam_a.K, cam_a.dist_coeffs)
+    imgpts_b, _ = cv2.projectPoints(obj, rvec_b, tvec_b, cam_b.K, cam_b.dist_coeffs)
+
+    pa = imgpts_a.reshape(-1, 2)[0] # reshape to (N, 2) and take first point
+    pb = imgpts_b.reshape(-1, 2)[0]
+
+    err_a = float(np.linalg.norm(np.array(pt_a) - pa))
+    err_b = float(np.linalg.norm(np.array(pt_b) - pb))
+    return (err_a + err_b) / 2.0
 
 
-def ground_plane_intersection(
-    pixel: Tuple[float, float],
-    K: np.ndarray,
-    R: np.ndarray,
-    t: np.ndarray,
-    floor_y: float = 0.0,
-) -> Tuple[float, float, float]:
-    """Project a pixel onto the ground plane (Y = floor_y).
-    
-    Used when only one camera sees a person. Less accurate than DLT
-    but gives a reasonable estimate.
-    
-    HOW IT WORKS:
-    ─────────────
-    1. Convert pixel (u,v) to a ray in camera coordinates:
-       ray_cam = K^{-1} @ [u, v, 1]^T
-    
-    2. Transform ray to world coordinates:
-       ray_world = R^T @ ray_cam
-    
-    3. Camera position in world:
-       cam_pos = -R^T @ t
-    
-    4. Find where the ray hits Y = floor_y:
-       cam_pos.y + λ * ray_world.y = floor_y
-       λ = (floor_y - cam_pos.y) / ray_world.y
-    
-    5. 3D position = cam_pos + λ * ray_world
-    
-    Args:
-        pixel: (u, v) foot point in pixels.
-        K: 3×3 intrinsic matrix.
-        R: 3×3 rotation matrix.
-        t: 3×1 translation vector.
-        floor_y: Y-coordinate of the floor plane (default 0).
-    
-    Returns:
-        (x, y, z) estimated 3D position on the floor.
-    """
-    # Step 1: pixel → ray in camera frame
-    K_inv = np.linalg.inv(K)
-    pixel_h = np.array([pixel[0], pixel[1], 1.0])
-    ray_cam = K_inv @ pixel_h
-    
-    # Step 2: camera frame → world frame
-    R_T = R.T
-    ray_world = R_T @ ray_cam
-    
-    # Step 3: camera position in world
-    cam_pos = (-R_T @ t).flatten()
-    
-    # Step 4: intersect with floor plane Y = floor_y
-    if abs(ray_world[1]) < 1e-10:
-        # Ray is parallel to floor — can't intersect
-        # Return camera position projected onto floor
-        return (float(cam_pos[0]), floor_y, float(cam_pos[2]))
-    
-    lam = (floor_y - cam_pos[1]) / ray_world[1]
-    
-    # Step 5: 3D position
-    position = cam_pos + lam * ray_world
-    
-    return (float(position[0]), floor_y, float(position[2]))
+class TriangulationService:
+    def __init__(self, bootstrap_servers: Optional[List[str]] = None, topic_in: str = "ccm-matches", topic_out: str = "3d-locations"):
+        self.bootstrap_servers = bootstrap_servers or [os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")]
+        self.topic_in = topic_in
+        self.topic_out = topic_out
+        self.running = True
+        self.calibrations = mock_calibrations()
+        self.reproj_threshold = float(os.environ.get("REPROJ_THRESHOLD", "15.0"))
 
-
-def load_zones(zone_definitions_path: str) -> Dict[str, Dict]:
-    """Load zone bounding boxes from zone_definitions.json.
-
-    Args:
-        zone_definitions_path: Path to cad/zone_definitions.json.
-
-    Returns:
-        Dict mapping zone_id → {"name", "min": (x,y,z), "max": (x,y,z)}.
-    """
-    with open(zone_definitions_path, "r") as f:
-        data = json.load(f)
-
-    zones: Dict[str, Dict] = {}
-    for zone_id, zone_data in data["zones"].items():
-        bounds = zone_data["bounds"]
-        zones[zone_id] = {
-            "name": zone_data["name"],
-            "min": (bounds["min"]["x"], bounds["min"]["y"], bounds["min"]["z"]),
-            "max": (bounds["max"]["x"], bounds["max"]["y"], bounds["max"]["z"]),
-        }
-
-    print(f"[triangulation] Loaded {len(zones)} zones: {list(zones.keys())}")
-    return zones
-
-
-def assign_zone(zones: Dict[str, Dict], x: float, y: float, z: float) -> str:
-    """Determine which zone a 3D point is in.
-
-    Checks axis-aligned bounding boxes. Returns "unknown" if the
-    point is outside all zones.
-
-    Args:
-        zones: Zone dict from load_zones().
-        x, y, z: 3D world coordinates in meters.
-
-    Returns:
-        Zone ID string (e.g., "zone_a", "corridor", "zone_b", "unknown").
-    """
-    for zone_id, zone in zones.items():
-        mn = zone["min"]
-        mx = zone["max"]
-        if (mn[0] <= x <= mx[0] and
-            mn[1] <= y <= mx[1] and
-            mn[2] <= z <= mx[2]):
-            return zone_id
-    return "unknown"
-
-
-def _triangulate_person_dlt(
-    person: "MatchedPerson",
-    cam_a: int,
-    cam_b: int,
-    calibrations: Dict[int, CameraCalibration],
-    floor_map: Optional[List[int]] = None,
-    reprojection_threshold: float = 15.0,
-) -> None:
-    """Triangulate a single person using DLT from two cameras."""
-    cal_a = calibrations[cam_a]
-    cal_b = calibrations[cam_b]
-    track_a = person.per_camera[cam_a]
-    track_b = person.per_camera[cam_b]
-
-    point_3d = triangulate_dlt(
-        track_a.foot_point, track_b.foot_point,
-        cal_a.P, cal_b.P,
-    )
-
-    error_a = compute_reprojection_error(point_3d, track_a.foot_point, cal_a.P)
-    error_b = compute_reprojection_error(point_3d, track_b.foot_point, cal_b.P)
-    avg_error = (error_a + error_b) / 2
-
-    if avg_error > reprojection_threshold:
-        better_cam = cam_a if error_a <= error_b else cam_b
-        _estimate_ground_plane(person, better_cam, calibrations, floor_map)
-    else:
-        person.position_3d = point_3d
-
-
-def _estimate_ground_plane(
-    person: "MatchedPerson",
-    cam_id: int,
-    calibrations: Dict[int, CameraCalibration],
-    floor_map: Optional[List[int]] = None,
-) -> None:
-    """Estimate a person's position via ground-plane intersection."""
-    cal = calibrations[cam_id]
-    track = person.per_camera[cam_id]
-
-    floor_y = 0.0
-    if floor_map is not None and cam_id < len(floor_map):
-        floor_y = floor_map[cam_id] * 3.0
-
-    person.position_3d = ground_plane_intersection(
-        track.foot_point, cal.K, cal.R, cal.t, floor_y=floor_y
-    )
-
-
-def triangulate_all(
-    matched_persons: List["MatchedPerson"],
-    calibrations: Dict[int, CameraCalibration],
-    zones: Dict[str, Dict],
-    floor_map: Optional[List[int]] = None,
-    reprojection_threshold: float = 15.0,
-) -> List["MatchedPerson"]:
-    """Compute 3D positions and zone assignments for all matched persons.
-
-    For each person:
-    - If seen by 2+ cameras with calibration: DLT triangulation
-    - If seen by 1 camera with calibration: ground-plane intersection
-    - If no calibration available: skip (position stays None)
-
-    Modifies MatchedPerson objects in-place (sets position_3d and zone).
-
-    Args:
-        matched_persons: List of MatchedPerson from cross-camera matching.
-        calibrations: Dict of camera_id → CameraCalibration.
-        zones: Zone dict from load_zones().
-        floor_map: Optional list mapping camera/video index to floor index.
-        reprojection_threshold: Max acceptable reprojection error in pixels.
-
-    Returns:
-        Same list with position_3d and zone filled in.
-    """
-    for person in matched_persons:
-        cam_ids = list(person.per_camera.keys())
-        calibrated_cams = [c for c in cam_ids if c in calibrations]
-
-        if len(calibrated_cams) >= 2:
-            _triangulate_person_dlt(
-                person, calibrated_cams[0], calibrated_cams[1],
-                calibrations, floor_map, reprojection_threshold,
+        try:
+            self.consumer = KafkaConsumer(
+                self.topic_in,
+                bootstrap_servers=self.bootstrap_servers,
+                group_id="rigvision-3d-consumer-group",
+                auto_offset_reset="latest",
+                enable_auto_commit=True,
+                value_deserializer=lambda v: v.decode("utf-8") if isinstance(v, (bytes, bytearray)) else v,
+                consumer_timeout_ms=1000,
             )
-        elif len(calibrated_cams) == 1:
-            _estimate_ground_plane(person, calibrated_cams[0], calibrations, floor_map)
-        else:
-            person.position_3d = None
-            person.zone = "unknown"
 
-        if person.position_3d is not None:
-            x, y, z = person.position_3d
-            person.zone = assign_zone(zones, x, y, z)
+            self.producer = KafkaProducer(
+                bootstrap_servers=self.bootstrap_servers,
+                value_serializer=lambda v: json.dumps(v).encode("utf-8"),
+            )
+        except Exception as exc:
+            raise RuntimeError(
+                f"Kafka is not reachable at {', '.join(self.bootstrap_servers)}. "
+                "Start Kafka first, then rerun with KAFKA_BOOTSTRAP_SERVERS set correctly."
+            ) from exc
 
-    return matched_persons
+    def shutdown(self):
+        self.running = False
+        try:
+            self.consumer.close()
+        except Exception:
+            pass
+        try:
+            self.producer.close()
+        except Exception:
+            pass
+
+    def process_message(self, payload: dict) -> Optional[dict]:
+        # Validate schema
+        if not payload or "matched_persons" not in payload:
+            return None
+
+        out = {"timestamp": payload.get("timestamp", time.time()), "matched_persons": []}
+
+        for person in payload.get("matched_persons", []):
+            try:
+                per_camera = person.get("per_camera", {})
+                cams = sorted(per_camera.keys())
+                # need at least two cameras
+                if len(cams) < 2:
+                    # skip or attempt ground-plane fallback; here skip
+                    out_person = dict(person)
+                    out["matched_persons"].append(out_person)
+                    continue
+
+                # pick first two cameras
+                cam0_key, cam1_key = cams[0], cams[1]
+                cam0_id = int(cam0_key.replace("cam_", "")) if cam0_key.startswith("cam_") else int(cam0_key)
+                cam1_id = int(cam1_key.replace("cam_", "")) if cam1_key.startswith("cam_") else int(cam1_key)
+
+                cam0 = self.calibrations.get(cam0_id)
+                cam1 = self.calibrations.get(cam1_id)
+                if cam0 is None or cam1 is None:
+                    out_person = dict(person)
+                    out["matched_persons"].append(out_person)
+                    continue
+
+                pt0 = tuple(per_camera[cam0_key]["foot_point"])
+                pt1 = tuple(per_camera[cam1_key]["foot_point"])
+
+                # Triangulate
+                try:
+                    position_3d = triangulate_dlt(pt0, pt1, cam0.P, cam1.P)
+                except Exception as e:
+                    # drop this person silently
+                    out_person = dict(person)
+                    out["matched_persons"].append(out_person)
+                    continue
+
+                # Reprojection validation
+                try:
+                    avg_err = compute_reprojection_avg(position_3d, cam0, cam1, pt0, pt1)
+                except Exception:
+                    avg_err = float("inf")
+
+                if avg_err < self.reproj_threshold:
+                    out_person = dict(person)
+                    out_person["position_3d"] = [float(position_3d[0]), float(position_3d[1]), float(position_3d[2])]
+                    out_person["reprojection_error"] = float(avg_err)
+                    out["matched_persons"].append(out_person)
+                else:
+                    # drop the position for this person (per spec, silently)
+                    out_person = dict(person)
+                    out["matched_persons"].append(out_person)
+
+            except Exception:
+                out_person = dict(person)
+                out["matched_persons"].append(out_person)
+
+        return out
+
+    def run(self):
+        print(f"{LOG_PREFIX} Starting triangulation service; consuming {self.topic_in}")
+        while self.running:
+            try:
+                for msg in self.consumer:
+                    if not self.running:
+                        break
+                    raw = msg.value
+                    try:
+                        payload = json.loads(raw)
+                        print(f"{LOG_PREFIX} Received raw payload: {raw}")
+                    except Exception:
+                        # skip malformed JSON
+                        continue
+
+                    enriched = self.process_message(payload)
+                    if enriched is not None:
+                        try:
+                            self.producer.send(self.topic_out, enriched)
+                            self.producer.flush()
+                            print(f"{LOG_PREFIX} Published enriched payload to {self.topic_out}")
+                        except Exception:
+                            print(f"{LOG_PREFIX} Failed to publish enriched payload")
+                            # best-effort produce; continue
+                            pass
+
+                # consumer timed out without messages; sleep briefly
+                time.sleep(0.1)
+            except KeyboardInterrupt:
+                break
+            except Exception:
+                # keep service alive on unexpected exceptions
+                time.sleep(0.5)
+
+
+def main():
+    if cv2 is None:
+        print(f"{LOG_PREFIX} OpenCV not available. Exiting.")
+        sys.exit(1)
+
+    servers = os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+    bootstrap = [s.strip() for s in servers.split(",") if s.strip()]
+
+    try:
+        svc = TriangulationService(bootstrap_servers=bootstrap)
+    except RuntimeError as exc:
+        print(f"{LOG_PREFIX} {exc}")
+        sys.exit(1)
+
+    def _handle(sig, frame):
+        print(f"{LOG_PREFIX} Received signal {sig}, shutting down")
+        svc.shutdown()
+
+    signal.signal(signal.SIGTERM, _handle)
+    signal.signal(signal.SIGINT, _handle)
+
+    try:
+        svc.run()
+    finally:
+        svc.shutdown()
+
+
+if __name__ == "__main__":
+    main()
