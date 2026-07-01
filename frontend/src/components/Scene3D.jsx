@@ -268,9 +268,6 @@ function SettingsPanel() {
   const setFpsLimit = useRigStore(s => s.setFpsLimit)
   const floorFilter = useRigStore(s => s.floorFilter)
   const setFloorFilter = useRigStore(s => s.setFloorFilter)
-  const vlmGating = useRigStore(s => s.vlmGating)
-  const toggleVlmGating = useRigStore(s => s.toggleVlmGating)
-  const vlmPending = useRigStore(s => s.vlmPending)
   const clearTrackingCache = useRigStore(s => s.clearTrackingCache)
   const zoneSelectMode = useRigStore(s => s.zoneSelectMode)
   const setZoneSelectMode = useRigStore(s => s.setZoneSelectMode)
@@ -449,33 +446,6 @@ function SettingsPanel() {
 
           {/* Toggles and Buttons */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '4px' }}>
-            {/* VLM Gating Toggle */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span style={{ fontSize: '10px', color: '#5a8aaa' }}>VLM COMPLIANCE GATING</span>
-                <span style={{ fontSize: '9px', color: vlmPending ? '#ffb300' : (vlmGating ? '#00ffd5' : '#8892b0') }}>
-                  {vlmPending ? 'SYNCING FLAG...' : (vlmGating ? 'ACTIVE (FILTERING)' : 'INACTIVE')}
-                </span>
-              </div>
-              <button
-                onClick={toggleVlmGating}
-                disabled={vlmPending}
-                style={{
-                  background: vlmPending ? 'rgba(255, 179, 0, 0.2)' : (vlmGating ? '#00e67633' : 'rgba(10, 25, 47, 0.6)'),
-                  border: `1px solid ${vlmPending ? '#ffb300' : (vlmGating ? '#00e676' : 'rgba(0, 180, 255, 0.25)')}`,
-                  borderRadius: '4px',
-                  color: vlmPending ? '#ffb300' : (vlmGating ? '#fff' : '#8892b0'),
-                  padding: '6px 12px',
-                  fontSize: '11px',
-                  cursor: vlmPending ? 'not-allowed' : 'pointer',
-                  transition: 'all 0.15s',
-                  animation: vlmPending ? 'pulse 1.5s infinite' : 'none',
-                }}
-              >
-                {vlmPending ? 'PENDING' : (vlmGating ? 'ON' : 'OFF')}
-              </button>
-            </div>
-
             {/* Clear Tracking Cache Button */}
             <button
               onClick={handleClearCache}

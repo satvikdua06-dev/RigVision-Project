@@ -94,7 +94,7 @@ export default function ZonePlane({ zoneId, zone, staticDef }) {
             opacity: hovered || isSelected ? 1 : 0.65,
             transition: 'opacity 0.2s',
           }}>
-            {zoneId.replace(/_/g, ' ').toUpperCase()} {/* Fallback to ID since label isn't in Redis */}
+            {zone.label || zoneId.replace(/_/g, ' ').toUpperCase()}
           </div>
         </Html>
       )}
@@ -122,15 +122,16 @@ export default function ZonePlane({ zoneId, zone, staticDef }) {
               </span>
             </div>
             {[
-              ['🌡', 'Temp', zone.temperature, '°C'],
-              ['💨', 'H₂S',  zone.gas_h2s,    'ppm'],
-              ['📳', 'Vibr', zone.vibration,  'g'],
-              ['🔊', 'Noise',zone.noise,       'dB'],
-              ['⚙',  'Pres', zone.pressure,    'bar'],
-            ].map(([icon, lbl, val, unit]) => (
+              ['🌡', 'Temp', 'temperature', zone.temperature, '°C'],
+              ['💨', 'H₂S',  'gas_h2s',     zone.gas_h2s,    'ppm'],
+              ['📳', 'Vibr', 'vibration',   zone.vibration,  'g'],
+              ['🔊', 'Noise','noise',       zone.noise,       'dB'],
+              ['⚙',  'Pres', 'pressure',    zone.pressure,    'bar'],
+            ].filter(([, , type]) => (zone.sensor_types || ['temperature','gas_h2s','vibration','noise']).includes(type))
+             .map(([icon, lbl, , val, unit]) => (
               <div key={lbl} style={{ display:'flex', justifyContent:'space-between' }}>
                 <span style={{ color:'#5a8aaa' }}>{icon} {lbl}</span>
-                <span>{val} {unit}</span>
+                <span>{val != null ? `${val} ${unit}` : '—'}</span>
               </div>
             ))}
           </div>

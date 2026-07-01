@@ -110,7 +110,7 @@ export default function PersonAvatar({ person }) {
         <Html 
           position={[0, 1.8, 0]} // Pushed slightly higher above the head
           center 
-          distanceFactor={22} // Increased from 6 so it stays readable and not too small
+          distanceFactor={22} // stays readable and not too small
           style={{ pointerEvents: 'none' }}
         >
           <div style={{
@@ -121,8 +121,12 @@ export default function PersonAvatar({ person }) {
             fontSize: 13, // Slightly larger base font
             color: '#fff', whiteSpace: 'nowrap',
             boxShadow: `0 0 12px ${hasAlert ? '#ff3b3b55' : '#00b4ff33'}`,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '2px',
+            alignItems: 'center'
           }}>
-            P{person.id} {hasAlert ? '⚠' : hasUnknown ? '?' : '●'} {person.zone.replace(/_/g,' ').toUpperCase()}
+            <span>P{person.id} {hasAlert ? '⚠' : hasUnknown ? '?' : '●'} {person.zone.replace(/_/g,' ').toUpperCase()}</span>
           </div>
         </Html>
       )}

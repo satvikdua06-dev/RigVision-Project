@@ -1,17 +1,30 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import Scene3D from './components/Scene3D.jsx'
 import Sidebar from './components/Sidebar.jsx'
 import TopBar from './components/TopBar.jsx'
 import { useRigStore } from './stores/useRigStore.js'
 import CameraFeeds from './components/CameraFeeds.jsx'
 import DiagnosticsModal from './components/DiagnosticsModal.jsx'
+import SensorConsole from './components/SensorConsole.jsx'
 
 export default function App() {
   const connectToBackend = useRigStore(s => s.connectToBackend)
+  const [route, setRoute] = useState(window.location.hash)
+
+  useEffect(() => {
+    const onHash = () => setRoute(window.location.hash)
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
+  }, [])
 
   useEffect(() => {
     connectToBackend()
   }, [connectToBackend])
+
+  // Routing: the sensor console is served on its own dev port (5174) so it can sit
+  // on a second screen alongside the 3D dashboard (5173). Hash route still works too.
+  const isConsolePort = window.location.port === '5174'
+  if (isConsolePort || route === '#/sensors') return <SensorConsole />
 
   return (
     <div style={{ width:'100vw', height:'100vh', display:'flex', flexDirection:'column', overflow:'hidden' }}>

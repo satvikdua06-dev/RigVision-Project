@@ -17,6 +17,13 @@ clear_tracking_cache_event = threading.Event()
 DEFAULT_PPE = {"hardhat": None, "vest": None, "goggles": None}
 PERSON_UPDATE_FIELDS = ("x", "y", "z", "zone", "floor", "posture", "ppe", "confidence")
 
+# Sensor fusion: canonical types surfaced in zone state, and how long a reading
+# stays valid before it's treated as "unknown" (sensor offline / disconnected).
+CANONICAL_SENSOR_TYPES = ("temperature", "vibration", "noise", "gas_h2s", "pressure")
+SENSOR_STALE_SECONDS = float(os.getenv("SENSOR_STALE_SECONDS", "10"))
+SENSORS_KEY = "rigvision:sensors:latest"
+_SEVERITY = {"normal": 0, "warning": 1, "critical": 2}
+
 def signal_handler(sig: int, frame: object) -> None:
     shutdown_event.set()
 
@@ -128,7 +135,8 @@ def _merge_person_observation(existing: dict, candidate: dict) -> None:
 
     if candidate_is_better:
         for key in PERSON_UPDATE_FIELDS:
-            existing[key] = candidate[key]
+            if key in candidate:
+                existing[key] = candidate[key]
 
     if candidate.get("recognition_method") and not existing.get("recognition_method"):
         existing["recognition_method"] = candidate["recognition_method"]
@@ -186,6 +194,7 @@ def build_fused_persons(
             continue
         best = max(mp.per_camera.values(), key=lambda t: t.confidence)
         pid = global_to_personnel_map.get(mp.global_id, mp.global_id)
+        posture = getattr(best, "posture", "standing")
         p_dict = {
             "id": pid,
             "x": round(mp.position_3d[0], 2),
@@ -193,7 +202,7 @@ def build_fused_persons(
             "z": round(mp.position_3d[2], 2),
             "zone": mp.zone or "unknown",
             "floor": 1 if (mp.zone and mp.zone.endswith("_f1")) else 0,
-            "posture": getattr(best, "posture", "standing"),
+            "posture": posture,
             "ppe": _ppe_or_unknown(best.ppe),
             "confidence": round(best.confidence, 2),
             "cameras_visible": len(mp.per_camera),
@@ -240,7 +249,25 @@ def _evict_stale_tracks(
             if k not in active_local:
                 mapper.previous_matches.pop(k, None)
 
-def _generate_zone_states_from_persons(persons: list[dict], zone_defs: dict) -> dict:
+def _read_sensor_readings(redis_client: redis.Redis) -> dict:
+    """Read the sensor seam (rigvision:sensors:latest). Source-agnostic: the
+    manual dashboard writes it today, an MQTT bridge will write it tomorrow."""
+    try:
+        raw = redis_client.get(SENSORS_KEY)
+        return json.loads(raw) if raw else {}
+    except Exception as e:
+        print(f"[sensors] read error: {e}")
+        return {}
+
+def build_zone_states(persons: list[dict], sensor_readings: dict, zone_defs: dict) -> dict:
+    """Fuse live sensor readings + person occupancy/PPE into per-zone state.
+
+    Sensor values come from `sensor_readings` (keyed by sensor_id). Each reading is
+    validated for freshness (SENSOR_STALE_SECONDS); stale/missing → treated as unknown
+    (None). Multiple sensors of the same type in a zone are aggregated worst-case (max).
+    Zone status escalates from sensor thresholds, PPE violations, and occupancy.
+    """
+    now = time.time()
     states = {}
     for zid, zdef in zone_defs["zones"].items():
         z_pers = [p for p in persons if p["zone"] == zid]
@@ -249,14 +276,50 @@ def _generate_zone_states_from_persons(persons: list[dict], zone_defs: dict) -> 
             ppe = p.get("ppe", {})
             if ppe.get("hardhat") is False: ppe_viol.append(f"Person #{p['id']} missing hard hat")
             if ppe.get("vest") is False: ppe_viol.append(f"Person #{p['id']} missing vest")
-        status = "warning" if ppe_viol else "normal"
-        reason = f"{len(ppe_viol)} PPE violation(s)" if ppe_viol else None
+
+        by_type: dict[str, list[float]] = {t: [] for t in CANONICAL_SENSOR_TYPES}
+        status, reason = "normal", None
+
+        for s in zdef.get("sensors", []):
+            reading = sensor_readings.get(s["id"])
+            value = None
+            if reading is not None:
+                v = reading.get("value")
+                if v is not None:
+                    # Manual set-points persist until changed; live sensors (mqtt/sim)
+                    # expire after SENSOR_STALE_SECONDS so a disconnect shows as unknown.
+                    is_manual = reading.get("source") == "manual"
+                    fresh = is_manual or (now - reading.get("updated_at", 0)) <= SENSOR_STALE_SECONDS
+                    if fresh:
+                        value = float(v)
+            if value is None:
+                continue  # missing or stale → unknown, skip
+
+            stype = s["type"]
+            if stype in by_type:
+                by_type[stype].append(value)
+
+            crit, warn, unit = s.get("critical"), s.get("warning"), s.get("unit", "")
+            if crit is not None and value >= crit and _SEVERITY["critical"] > _SEVERITY[status]:
+                status, reason = "critical", f"{stype} {value:.1f}{unit} >= critical ({crit}) [{s['id']}]"
+            elif warn is not None and value >= warn and _SEVERITY["warning"] > _SEVERITY[status]:
+                status, reason = "warning", f"{stype} {value:.1f}{unit} >= warning ({warn}) [{s['id']}]"
+
+        if ppe_viol and _SEVERITY["warning"] > _SEVERITY[status]:
+            status, reason = "warning", f"{len(ppe_viol)} PPE violation(s)"
         max_occ = zdef.get("max_occupancy", 99)
-        if len(z_pers) > max_occ:
+        if len(z_pers) > max_occ and _SEVERITY["critical"] > _SEVERITY[status]:
             status, reason = "critical", f"Overcrowded: {len(z_pers)}/{max_occ} persons"
+
+        agg = {t: (round(max(by_type[t]), 2) if by_type[t] else None) for t in CANONICAL_SENSOR_TYPES}
+        present_types = sorted({s["type"] for s in zdef.get("sensors", [])})
         states[zid] = {
             "status": status, "warning_reason": reason,
-            "temperature": 28.0, "vibration": 1.2, "noise": 72.0, "gas_h2s": 0.5, "pressure": 12.0,
+            "label": zdef.get("name", zid),
+            "floor": zdef.get("floor", 0),
+            "sensor_types": present_types,
+            "temperature": agg["temperature"], "vibration": agg["vibration"],
+            "noise": agg["noise"], "gas_h2s": agg["gas_h2s"], "pressure": agg["pressure"],
             "person_count": len(z_pers), "ppe_violations": ppe_viol, "updated_at": int(time.time()),
         }
     return states
@@ -291,7 +354,8 @@ def _track_frames(frames: dict[int, np.ndarray], detector, trackers: dict[int, o
     }
 
 def _write_realtime_state(redis_client: redis.Redis, persons: list[dict], zone_defs: dict) -> dict:
-    zone_states = _generate_zone_states_from_persons(persons, zone_defs)
+    sensor_readings = _read_sensor_readings(redis_client)
+    zone_states = build_zone_states(persons, sensor_readings, zone_defs)
     try:
         redis_client.set("rigvision:persons", json.dumps(persons))
         redis_client.set("rigvision:zones", json.dumps(zone_states))
@@ -395,52 +459,16 @@ class DemoDataGenerator:
             })
         return res
 
-    def generate_zone_states(self, persons: list[dict]) -> dict:
-        t = time.time() - self.start_time
-        states = {}
-        for zid, zdef in self.zone_defs["zones"].items():
-            z_pers = [p for p in persons if p["zone"] == zid]
-            ppe_viol = []
-            for p in z_pers:
-                if not p["ppe"]["hardhat"]: ppe_viol.append(f"Person #{p['id']} missing hard hat")
-                if not p["ppe"]["vest"]: ppe_viol.append(f"Person #{p['id']} missing vest")
-            temp = 28.0 + 3.0 * math.sin(0.05 * t) + np.random.normal(0, 0.5)
-            if zid == "zone_a" and int(t) % 60 > 50: temp += 15.0
-            vib = max(0.1, 1.5 + 0.5 * math.sin(0.1 * t) + np.random.normal(0, 0.2))
-            noise = 70.0 + 5.0 * math.sin(0.08 * t) + np.random.normal(0, 2)
-            gas = max(0.0, 1.0 + 0.5 * abs(math.sin(0.02 * t)) + np.random.normal(0, 0.3))
-            press = 12.0 + 2.0 * math.sin(0.03 * t) + np.random.normal(0, 0.5)
-            status = "normal"
-            reason = None
-            for s in zdef.get("sensors", []):
-                val = {"temperature": temp, "vibration": vib, "noise": noise, "gas_h2s": gas, "pressure": press}.get(s["type"], 0)
-                if val >= s.get("critical", float('inf')):
-                    status, reason = "critical", f"{s['type']} = {val:.1f} exceeds critical ({s.get('critical')})"
-                    break
-                elif val >= s.get("warning", float('inf')) and status != "critical":
-                    status, reason = "warning", f"{s['type']} = {val:.1f} exceeds warning ({s.get('warning')})"
-            if ppe_viol and status == "normal":
-                status, reason = "warning", f"{len(ppe_viol)} PPE violation(s)"
-            max_occ = zdef.get("max_occupancy", 99)
-            if len(z_pers) > max_occ:
-                status = "warning" if status != "critical" else status
-                reason = f"Overcrowded: {len(z_pers)}/{max_occ} persons"
-            states[zid] = {
-                "status": status, "warning_reason": reason,
-                "temperature": float(round(temp, 1)), "vibration": float(round(vib, 2)),
-                "noise": float(round(noise, 1)), "gas_h2s": float(round(gas, 2)), "pressure": float(round(press, 1)),
-                "person_count": len(z_pers), "ppe_violations": ppe_viol, "updated_at": int(time.time()),
-            }
-        return states
-
 def run_demo_mode(redis_client: redis.Redis, zone_definitions_path: str) -> None:
-    print("[*] Starting DEMO mode... Press Ctrl+C to stop")
+    print("[*] Starting DEMO mode (simulated people, real sensor feed)... Press Ctrl+C to stop")
     generator = DemoDataGenerator(zone_definitions_path, num_persons=4)
+    zone_defs = load_zone_definitions(zone_definitions_path)
     frame_count = 0
     while not shutdown_event.is_set():
         t_start = time.time()
         persons = generator.generate_persons()
-        zone_states = generator.generate_zone_states(persons)
+        sensor_readings = _read_sensor_readings(redis_client)
+        zone_states = build_zone_states(persons, sensor_readings, zone_defs)
         redis_client.set("rigvision:persons", json.dumps(persons))
         redis_client.set("rigvision:zones", json.dumps(zone_states))
         frame_count += 1
@@ -558,8 +586,14 @@ def run_live_mode(
         matched_persons = mapper.match(per_camera_tracks)
         matched_persons = triangulate_all(matched_persons, calibrations, tri_zones, floor_map)
         propagate_recognition(matched_persons, global_to_personnel_map, global_to_recognition_method, local_to_personnel_map, local_to_recognition_method)
-        persons_json = build_fused_persons(matched_persons, global_to_personnel_map, global_to_recognition_method)
+
+        persons_json = build_fused_persons(
+            matched_persons,
+            global_to_personnel_map,
+            global_to_recognition_method,
+        )
         _write_realtime_state(redis_client, persons_json, zone_defs)
+
         _publish_annotated_frames(
             frames,
             per_camera_tracks,
@@ -652,6 +686,7 @@ def run_video_mode(
         if not frames: break
 
         per_video_tracks = _track_frames(frames, detector, trackers)
+
         fused_persons_dict, person_matched_info, anchor_hists, active_global_ids = {}, {}, {}, set()
         for vid_id in sorted(frames.keys()):
             tracked = per_video_tracks[vid_id]
@@ -700,10 +735,13 @@ def run_video_mode(
 
                 redis_id = global_to_personnel_map.get(final_id, final_id)
                 rec_method = global_to_recognition_method.get(final_id) if final_id in global_to_personnel_map else None
+                posture = getattr(p, "posture", "standing")
+
                 person_observation = {
                     "id": redis_id, "x": float(round(room_x, 2)), "y": float(room_y), "z": float(round(room_z, 2)),
-                    "zone": zone_id, "floor": floor_map[vid_id], "posture": getattr(p, "posture", "standing"),
-                    "ppe": _ppe_or_unknown(p.ppe), "confidence": float(round(p.confidence, 2)),
+                    "zone": zone_id, "floor": floor_map[vid_id], "posture": posture,
+                    "ppe": _ppe_or_unknown(p.ppe),
+                    "confidence": float(round(p.confidence, 2)),
                     "cameras_visible": 1, "camera_ids": [int(vid_id)], "recognition_method": rec_method,
                 }
 
@@ -729,6 +767,7 @@ def run_video_mode(
                 label_cache[(vid_id, p.track_id)] = lbl
 
         _write_realtime_state(redis_client, all_persons, zone_defs)
+
         _publish_annotated_frames(
             frames,
             per_video_tracks,

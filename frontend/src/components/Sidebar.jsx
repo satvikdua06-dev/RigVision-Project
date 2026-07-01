@@ -1,32 +1,36 @@
 import { useState } from 'react'
 import { useRigStore } from '../stores/useRigStore.js'
 
-const SEVERITY_COLOR = {
-  LOW:      '#00e676',
-  MEDIUM:   '#ffb300',
-  HIGH:     '#ff7043',
-  CRITICAL: '#ff3b3b',
-}
-
 const STATUS_COLOR = {
   normal:   '#00e676',
   warning:  '#ffb300',
   critical: '#ff3b3b',
 }
 
+// Display config per sensor type. A zone only renders bars for the types it
+// actually has (zone.sensor_types), so absent sensors don't show as "NO DATA".
+const SENSOR_BAR_CONFIG = [
+  { type: 'temperature', label: 'Temperature', max: 100, unit: '°C',  warn: 45, crit: 70 },
+  { type: 'gas_h2s',     label: 'H₂S',         max: 25,  unit: 'ppm', warn: 10, crit: 20 },
+  { type: 'vibration',   label: 'Vibration',   max: 6,   unit: 'g',   warn: 3,  crit: 5 },
+  { type: 'noise',       label: 'Noise',       max: 120, unit: 'dB',  warn: 85, crit: 100 },
+  { type: 'pressure',    label: 'Pressure',    max: 150, unit: 'bar', warn: 20, crit: 25 },
+]
+
 function SensorBar({ label, value, max, unit, warn, crit }) {
-  const pct = Math.min(100, (value / max) * 100)
-  const color = value >= crit ? '#ff3b3b' : value >= warn ? '#ffb300' : '#00e676'
+  const known = value != null && !Number.isNaN(value)
+  const pct = known ? Math.min(100, (value / max) * 100) : 0
+  const color = !known ? '#3a5a6a' : value >= crit ? '#ff3b3b' : value >= warn ? '#ffb300' : '#00e676'
   return (
     <div style={{ marginBottom: 8 }}>
       <div style={{ display:'flex', justifyContent:'space-between', marginBottom:3,
         fontFamily:"'Share Tech Mono',monospace", fontSize:10.5 }}>
         <span style={{ color:'#5a8aaa' }}>{label}</span>
-        <span style={{ color }}>{value} {unit}</span>
+        <span style={{ color }}>{known ? `${value} ${unit}` : 'NO DATA'}</span>
       </div>
       <div style={{ height:4, background:'rgba(255,255,255,0.07)', borderRadius:2, overflow:'hidden' }}>
         <div style={{ height:'100%', width:`${pct}%`, background: color,
-          borderRadius:2, boxShadow:`0 0 6px ${color}88`,
+          borderRadius:2, boxShadow: known ? `0 0 6px ${color}88` : 'none',
           transition:'width 0.6s ease' }} />
       </div>
     </div>
@@ -119,10 +123,15 @@ function ZonesTab() {
                   borderRadius:4, letterSpacing:2, textTransform:'uppercase',
                 }}>{zone.status}</span>
               </div>
-              <SensorBar label="Temperature" value={zone.temperature} max={100} unit="°C" warn={45} crit={70} />
-              <SensorBar label="H₂S"         value={zone.gas_h2s}    max={25}  unit="ppm" warn={10} crit={20} />
-              <SensorBar label="Vibration"   value={zone.vibration}  max={6}   unit="g"   warn={3}  crit={5}  />
-              <SensorBar label="Noise"       value={zone.noise}      max={120} unit="dB"  warn={85} crit={100}/>
+              {(() => {
+                const types = zone.sensor_types || ['temperature', 'gas_h2s', 'vibration', 'noise']
+                return SENSOR_BAR_CONFIG
+                  .filter(c => types.includes(c.type))
+                  .map(c => (
+                    <SensorBar key={c.type} label={c.label} value={zone[c.type]}
+                      max={c.max} unit={c.unit} warn={c.warn} crit={c.crit} />
+                  ))
+              })()}
               <div style={{ display:'flex', justifyContent:'space-between', marginTop:8,
                 fontFamily:"'Share Tech Mono'", fontSize:10.5 }}>
                 <span style={{ color:'#5a8aaa' }}>👤 {zone.person_count} person{zone.person_count!==1?'s':''}</span>
@@ -221,7 +230,7 @@ function PersonsTab() {
               }}>
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
                 <span style={{ fontFamily:"'Barlow Condensed'", fontSize:16, fontWeight:700,
-                  letterSpacing:1, color:'#e0f4ff' }}>PERSON #{p.id}</span>
+                    letterSpacing:1, color:'#e0f4ff' }}>PERSON #{p.id}</span>
                 {hasAlert ? (
                   <span style={{ background:'#ff3b3b22', border:'1px solid #ff3b3b',
                     color:'#ff3b3b', fontFamily:"'Share Tech Mono'", fontSize:9,
@@ -272,57 +281,11 @@ function PersonsTab() {
   )
 }
 
-function ViolationsTab() {
-  const violations = useRigStore(s => s.violations)
-
-  function timeAgo(ts) {
-    const s = Math.floor((Date.now() - ts) / 1000)
-    if (s < 60) return `${s}s ago`
-    return `${Math.floor(s/60)}m ago`
-  }
-
-  return (
-    <div>
-      {violations.length === 0 && (
-        <div style={{ textAlign:'center', color:'#5a8aaa', fontFamily:"'Share Tech Mono'",
-          fontSize:12, padding:30 }}>No violations detected</div>
-      )}
-      {violations.map(v => {
-        const sc = SEVERITY_COLOR[v.severity]
-        return (
-          <div key={v.id} style={{
-            background:'rgba(255,255,255,0.02)',
-            border:`1px solid ${sc}33`,
-            borderLeft:`3px solid ${sc}`,
-            borderRadius:8, padding:'10px 14px', marginBottom:10,
-          }}>
-            <div style={{ display:'flex', justifyContent:'space-between', marginBottom:5 }}>
-              <span style={{ fontFamily:"'Share Tech Mono'", fontSize:10, color: sc,
-                letterSpacing:1 }}>{v.severity}</span>
-              <span style={{ fontFamily:"'Share Tech Mono'", fontSize:10, color:'#5a8aaa' }}>
-                {timeAgo(v.timestamp)}
-              </span>
-            </div>
-            <div style={{ fontFamily:"'Rajdhani'", fontSize:13, fontWeight:500,
-              color:'#e0f4ff', marginBottom:4 }}>{v.message}</div>
-            <div style={{ fontFamily:"'Share Tech Mono'", fontSize:9.5, color:'#5a8aaa' }}>
-              {v.rule_id} · {v.zone.replace(/_/g, ' ').toUpperCase()}
-              {v.person_ids.length > 0 && ` · Person ${v.person_ids.map(i=>'#'+i).join(', ')}`}
-            </div>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-
 export default function Sidebar() {
   const tab       = useRigStore(s => s.sidebarTab)
   const setTab    = useRigStore(s => s.setSidebarTab)
   const persons   = useRigStore(s => s.persons)
   const zones     = useRigStore(s => s.zones)
-  const violations = useRigStore(s => s.violations)
   const connected     = useRigStore(s => s.connected)
   const showAvatars   = useRigStore(s => s.showAvatars)
   const showSensors   = useRigStore(s => s.showSensors)
@@ -335,7 +298,6 @@ export default function Sidebar() {
   const tabs = [
     { id:'zones',      label:'Zones',      badge: criticalCount, badgeColor:'#ff3b3b' },
     { id:'persons',    label:'Personnel',  badge: alertPersons,  badgeColor:'#ff7043' },
-    { id:'violations', label:'Violations', badge: violations.length, badgeColor:'#ffb300' },
   ]
 
   return (
@@ -417,9 +379,8 @@ export default function Sidebar() {
 
       {/* Scrollable content */}
       <div style={{ flex:1, overflowY:'auto', padding:'0 14px 14px' }}>
-        {tab === 'zones'      && <ZonesTab />}
-        {tab === 'persons'    && <PersonsTab />}
-        {tab === 'violations' && <ViolationsTab />}
+        {tab === 'zones'   && <ZonesTab />}
+        {tab === 'persons' && <PersonsTab />}
       </div>
 
       {/* Footer */}
