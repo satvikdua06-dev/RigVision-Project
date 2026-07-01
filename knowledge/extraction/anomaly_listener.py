@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import sys
+import time
 from kafka import KafkaConsumer, KafkaProducer
 
 # Path hack to import from sibling directory 'agent_layer'
@@ -68,6 +69,21 @@ def process_anomaly_message(payload_str):
                 graph_context=llm_context
             )
 
+            # Make the diagnostic self-describing: stamp the source alert's identity onto
+            # it so multiple concurrent zone alerts don't get mis-correlated downstream.
+            try:
+                report = json.loads(diagnostic_report_json)
+                report["event_id"] = full_telemetry_data.get("event_id")
+                # Prefer the rig-facing zone id (zone_a/zone_b/...) for display.
+                report["zone_id"] = full_telemetry_data.get("rig_zone_id") or full_telemetry_data.get("zone_id")
+                report["severity"] = full_telemetry_data.get("severity")
+                report["triggered_sensors"] = full_telemetry_data.get("triggered_sensors")
+                report["telemetry_snapshot"] = full_telemetry_data.get("telemetry_snapshot")
+                report["timestamp"] = int(time.time() * 1000)
+                diagnostic_report_json = json.dumps(report)
+            except (json.JSONDecodeError, TypeError):
+                pass  # if the model returned non-JSON, pass it through unchanged
+
             return diagnostic_report_json
 
         finally:
@@ -96,8 +112,8 @@ def main():
     consumer = KafkaConsumer(
         KAFKA_TOPIC_ALERTS,
         bootstrap_servers=[bootstrap_servers],
-        group_id='anomaly_listener',
-        auto_offset_reset='earliest',
+        group_id='anomaly_listener_v2',   # fresh group → ignores the old backlog offsets
+        auto_offset_reset='latest',        # only react to NEW alerts, not replay the backlog
         value_deserializer=lambda x: x.decode('utf-8'),
         session_timeout_ms=30000
     )

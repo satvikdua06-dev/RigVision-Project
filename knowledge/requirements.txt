@@ -1,2 +1,6 @@
 neo4j
 kafka-python>=3.0.0
+requests
+google-genai
+chromadb
+python-dotenv

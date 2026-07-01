@@ -38,7 +38,7 @@
           "position": { "x": 1.5, "y": 0, "z": 1.5 },
           "dimensions": { "x": 1.2, "y": 1.0, "z": 0.8 },
           "color": "#667788",
-          "sensors": ["temp_a1", "vib_a1"]
+          "sensors": ["temp_a", "vib_a"]
         },
         {
           "id": "panel_01",
@@ -47,7 +47,7 @@
           "position": { "x": 3.0, "y": 0, "z": 4.0 },
           "dimensions": { "x": 0.8, "y": 1.8, "z": 0.4 },
           "color": "#445566",
-          "sensors": ["temp_a2"]
+          "sensors": ["pressure_a"]
         },
         {
           "id": "pipe_rack_01",
@@ -60,11 +60,11 @@
         }
       ],
       "sensors": [
-        { "id": "temp_a1",  "type": "temperature", "unit": "°C",    "position": { "x": 1.5, "y": 2.0, "z": 1.5 }, "normal_range": [20, 40], "warning": 50, "critical": 65 },
-        { "id": "vib_a1",   "type": "vibration",   "unit": "g_rms", "position": { "x": 1.5, "y": 0.5, "z": 1.5 }, "normal_range": [0, 2],   "warning": 4,  "critical": 7  },
-        { "id": "noise_a1", "type": "noise",        "unit": "dB",    "position": { "x": 2.0, "y": 2.5, "z": 2.5 }, "normal_range": [40, 80], "warning": 90, "critical": 100 },
-        { "id": "gas_a1",   "type": "gas_h2s",      "unit": "ppm",   "position": { "x": 2.0, "y": 0.3, "z": 2.5 }, "normal_range": [0, 5],   "warning": 10, "critical": 15 },
-        { "id": "temp_a2",  "type": "temperature", "unit": "°C",    "position": { "x": 3.0, "y": 1.5, "z": 4.0 }, "normal_range": [18, 35], "warning": 45, "critical": 60 }
+        { "id": "temp_a",     "type": "temperature", "unit": "°C",    "position": { "x": 1.5, "y": 2.0, "z": 1.5 }, "normal_range": [20, 45], "warning": 50, "critical": 65 },
+        { "id": "gas_a",      "type": "gas_h2s",     "unit": "ppm",   "position": { "x": 2.0, "y": 0.3, "z": 2.5 }, "normal_range": [0, 5],   "warning": 10, "critical": 15 },
+        { "id": "vib_a",      "type": "vibration",   "unit": "g_rms", "position": { "x": 1.5, "y": 0.5, "z": 1.5 }, "normal_range": [0, 2.5], "warning": 5,  "critical": 8 },
+        { "id": "noise_a",    "type": "noise",       "unit": "dB",    "position": { "x": 2.0, "y": 2.5, "z": 2.5 }, "normal_range": [40, 85], "warning": 95, "critical": 105 },
+        { "id": "pressure_a", "type": "pressure",    "unit": "bar",   "position": { "x": 3.0, "y": 1.0, "z": 4.0 }, "normal_range": [5, 15],  "warning": 20, "critical": 25 }
       ]
     },
 
@@ -96,8 +96,11 @@
         }
       ],
       "sensors": [
-        { "id": "gas_c1",   "type": "gas_h2s",     "unit": "ppm", "position": { "x": 5.0, "y": 0.3, "z": 2.5 }, "normal_range": [0, 5], "warning": 10, "critical": 15 },
-        { "id": "noise_c1", "type": "noise",        "unit": "dB",  "position": { "x": 5.0, "y": 2.5, "z": 2.5 }, "normal_range": [30, 70], "warning": 85, "critical": 95 }
+        { "id": "temp_cor",     "type": "temperature", "unit": "°C",    "position": { "x": 5.0, "y": 2.0, "z": 2.5 }, "normal_range": [20, 45], "warning": 50, "critical": 65 },
+        { "id": "gas_cor",      "type": "gas_h2s",     "unit": "ppm",   "position": { "x": 5.0, "y": 0.3, "z": 2.5 }, "normal_range": [0, 5],   "warning": 10, "critical": 15 },
+        { "id": "vib_cor",      "type": "vibration",   "unit": "g_rms", "position": { "x": 4.5, "y": 0.5, "z": 2.0 }, "normal_range": [0, 2.5], "warning": 5,  "critical": 8 },
+        { "id": "noise_cor",    "type": "noise",       "unit": "dB",    "position": { "x": 5.0, "y": 2.5, "z": 2.5 }, "normal_range": [40, 85], "warning": 95, "critical": 105 },
+        { "id": "pressure_cor", "type": "pressure",    "unit": "bar",   "position": { "x": 5.5, "y": 1.0, "z": 3.0 }, "normal_range": [5, 15],  "warning": 20, "critical": 25 }
       ]
     },
 
@@ -125,7 +128,7 @@
           "position": { "x": 7.5, "y": 0, "z": 1.0 },
           "dimensions": { "x": 1.5, "y": 1.2, "z": 1.0 },
           "color": "#556677",
-          "sensors": ["temp_b1", "vib_b1", "pressure_b1"]
+          "sensors": ["temp_b", "vib_b", "pressure_b"]
         },
         {
           "id": "wellhead_01",
@@ -134,7 +137,7 @@
           "position": { "x": 8.5, "y": 0, "z": 3.5 },
           "dimensions": { "x": 0.8, "y": 2.5, "z": 0.8 },
           "color": "#998877",
-          "sensors": ["temp_b2", "gas_b1", "pressure_b2"]
+          "sensors": ["gas_b", "noise_b"]
         },
         {
           "id": "tool_cabinet_01",
@@ -147,13 +150,11 @@
         }
       ],
       "sensors": [
-        { "id": "temp_b1",     "type": "temperature", "unit": "°C",    "position": { "x": 7.5, "y": 1.0, "z": 1.0 }, "normal_range": [20, 45],  "warning": 55,  "critical": 70  },
-        { "id": "vib_b1",      "type": "vibration",   "unit": "g_rms", "position": { "x": 7.5, "y": 0.5, "z": 1.0 }, "normal_range": [0, 2.5],  "warning": 5,   "critical": 8   },
-        { "id": "noise_b1",    "type": "noise",        "unit": "dB",    "position": { "x": 8.0, "y": 2.5, "z": 2.5 }, "normal_range": [40, 85],  "warning": 95,  "critical": 105 },
-        { "id": "gas_b1",      "type": "gas_h2s",      "unit": "ppm",   "position": { "x": 8.5, "y": 0.3, "z": 3.5 }, "normal_range": [0, 5],    "warning": 10,  "critical": 15  },
-        { "id": "temp_b2",     "type": "temperature", "unit": "°C",    "position": { "x": 8.5, "y": 1.5, "z": 3.5 }, "normal_range": [15, 40],  "warning": 50,  "critical": 65  },
-        { "id": "pressure_b1", "type": "pressure",     "unit": "bar",   "position": { "x": 7.5, "y": 0.8, "z": 1.0 }, "normal_range": [5, 15],   "warning": 20,  "critical": 25  },
-        { "id": "pressure_b2", "type": "pressure",     "unit": "bar",   "position": { "x": 8.5, "y": 1.0, "z": 3.5 }, "normal_range": [50, 100], "warning": 120, "critical": 140 }
+        { "id": "temp_b",     "type": "temperature", "unit": "°C",    "position": { "x": 7.5, "y": 1.0, "z": 1.0 }, "normal_range": [20, 45], "warning": 50, "critical": 65 },
+        { "id": "gas_b",      "type": "gas_h2s",     "unit": "ppm",   "position": { "x": 8.5, "y": 0.3, "z": 3.5 }, "normal_range": [0, 5],   "warning": 10, "critical": 15 },
+        { "id": "vib_b",      "type": "vibration",   "unit": "g_rms", "position": { "x": 7.5, "y": 0.5, "z": 1.0 }, "normal_range": [0, 2.5], "warning": 5,  "critical": 8 },
+        { "id": "noise_b",    "type": "noise",       "unit": "dB",    "position": { "x": 8.0, "y": 2.5, "z": 2.5 }, "normal_range": [40, 85], "warning": 95, "critical": 105 },
+        { "id": "pressure_b", "type": "pressure",    "unit": "bar",   "position": { "x": 7.5, "y": 0.8, "z": 1.0 }, "normal_range": [5, 15],  "warning": 20, "critical": 25 }
       ]
     },
 
@@ -175,11 +176,15 @@
           "position": { "x": 1.5, "y": 3, "z": 1.5 },
           "dimensions": { "x": 1.2, "y": 1.0, "z": 0.8 },
           "color": "#667788",
-          "sensors": ["temp_a1_f1"]
+          "sensors": ["temp_a_f1", "vib_a_f1"]
         }
       ],
       "sensors": [
-        { "id": "temp_a1_f1", "type": "temperature", "unit": "°C", "position": { "x": 1.5, "y": 5.0, "z": 1.5 }, "normal_range": [20, 40], "warning": 50, "critical": 65 }
+        { "id": "temp_a_f1",     "type": "temperature", "unit": "°C",    "position": { "x": 1.5, "y": 5.0, "z": 1.5 }, "normal_range": [20, 45], "warning": 50, "critical": 65 },
+        { "id": "gas_a_f1",      "type": "gas_h2s",     "unit": "ppm",   "position": { "x": 2.0, "y": 3.3, "z": 2.5 }, "normal_range": [0, 5],   "warning": 10, "critical": 15 },
+        { "id": "vib_a_f1",      "type": "vibration",   "unit": "g_rms", "position": { "x": 1.5, "y": 3.5, "z": 1.5 }, "normal_range": [0, 2.5], "warning": 5,  "critical": 8 },
+        { "id": "noise_a_f1",    "type": "noise",       "unit": "dB",    "position": { "x": 2.0, "y": 5.5, "z": 2.5 }, "normal_range": [40, 85], "warning": 95, "critical": 105 },
+        { "id": "pressure_a_f1", "type": "pressure",    "unit": "bar",   "position": { "x": 3.0, "y": 4.0, "z": 4.0 }, "normal_range": [5, 15],  "warning": 20, "critical": 25 }
       ]
     },
 
@@ -195,7 +200,11 @@
       "max_occupancy": 2,
       "equipment": [],
       "sensors": [
-        { "id": "gas_c1_f1", "type": "gas_h2s", "unit": "ppm", "position": { "x": 5.0, "y": 3.3, "z": 2.5 }, "normal_range": [0, 5], "warning": 10, "critical": 15 }
+        { "id": "temp_cor_f1",     "type": "temperature", "unit": "°C",    "position": { "x": 5.0, "y": 5.0, "z": 2.5 }, "normal_range": [20, 45], "warning": 50, "critical": 65 },
+        { "id": "gas_cor_f1",      "type": "gas_h2s",     "unit": "ppm",   "position": { "x": 5.0, "y": 3.3, "z": 2.5 }, "normal_range": [0, 5],   "warning": 10, "critical": 15 },
+        { "id": "vib_cor_f1",      "type": "vibration",   "unit": "g_rms", "position": { "x": 4.5, "y": 3.5, "z": 2.0 }, "normal_range": [0, 2.5], "warning": 5,  "critical": 8 },
+        { "id": "noise_cor_f1",    "type": "noise",       "unit": "dB",    "position": { "x": 5.0, "y": 5.5, "z": 2.5 }, "normal_range": [40, 85], "warning": 95, "critical": 105 },
+        { "id": "pressure_cor_f1", "type": "pressure",    "unit": "bar",   "position": { "x": 5.5, "y": 4.0, "z": 3.0 }, "normal_range": [5, 15],  "warning": 20, "critical": 25 }
       ]
     },
 
@@ -217,11 +226,15 @@
           "position": { "x": 7.5, "y": 3, "z": 1.0 },
           "dimensions": { "x": 1.5, "y": 1.2, "z": 1.0 },
           "color": "#556677",
-          "sensors": ["temp_b1_f1"]
+          "sensors": ["temp_b_f1", "vib_b_f1", "pressure_b_f1"]
         }
       ],
       "sensors": [
-        { "id": "temp_b1_f1", "type": "temperature", "unit": "°C", "position": { "x": 7.5, "y": 4.0, "z": 1.0 }, "normal_range": [20, 45], "warning": 55, "critical": 70 }
+        { "id": "temp_b_f1",     "type": "temperature", "unit": "°C",    "position": { "x": 7.5, "y": 4.0, "z": 1.0 }, "normal_range": [20, 45], "warning": 50, "critical": 65 },
+        { "id": "gas_b_f1",      "type": "gas_h2s",     "unit": "ppm",   "position": { "x": 8.5, "y": 3.3, "z": 3.5 }, "normal_range": [0, 5],   "warning": 10, "critical": 15 },
+        { "id": "vib_b_f1",      "type": "vibration",   "unit": "g_rms", "position": { "x": 7.5, "y": 3.5, "z": 1.0 }, "normal_range": [0, 2.5], "warning": 5,  "critical": 8 },
+        { "id": "noise_b_f1",    "type": "noise",       "unit": "dB",    "position": { "x": 8.0, "y": 5.5, "z": 2.5 }, "normal_range": [40, 85], "warning": 95, "critical": 105 },
+        { "id": "pressure_b_f1", "type": "pressure",    "unit": "bar",   "position": { "x": 7.5, "y": 3.8, "z": 1.0 }, "normal_range": [5, 15],  "warning": 20, "critical": 25 }
       ]
     }
   }

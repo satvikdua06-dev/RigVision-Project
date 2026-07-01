@@ -40,11 +40,14 @@
       "properties": {
         "status":           { "type": "string", "enum": ["normal", "warning", "critical"], "description": "Overall zone safety status" },
         "warning_reason":   { "type": ["string", "null"], "description": "Human-readable reason for warning/critical status" },
-        "temperature":      { "type": "number", "description": "Temperature in °C" },
-        "vibration":        { "type": "number", "description": "Vibration in g RMS" },
-        "noise":            { "type": "number", "description": "Noise level in dB" },
-        "gas_h2s":          { "type": "number", "description": "H₂S concentration in ppm" },
-        "pressure":         { "type": "number", "description": "Pressure in bar" },
+        "label":            { "type": "string", "description": "Human-readable zone name from zone_definitions.json (e.g. 'Room A - Floor 1')" },
+        "floor":            { "type": "integer", "description": "Floor index this zone is on" },
+        "sensor_types":     { "type": "array", "items": { "type": "string" }, "description": "Sensor types physically present in this zone. UI only renders these." },
+        "temperature":      { "type": ["number", "null"], "description": "Temperature in °C (null = no fresh sensor of this type)" },
+        "vibration":        { "type": ["number", "null"], "description": "Vibration in g RMS (null = no fresh sensor)" },
+        "noise":            { "type": ["number", "null"], "description": "Noise level in dB (null = no fresh sensor)" },
+        "gas_h2s":          { "type": ["number", "null"], "description": "H₂S concentration in ppm (null = no fresh sensor)" },
+        "pressure":         { "type": ["number", "null"], "description": "Pressure in bar (null = no fresh sensor)" },
         "person_count":     { "type": "integer", "minimum": 0, "description": "Number of persons currently in zone" },
         "ppe_violations":   {
           "type": "array",
@@ -56,19 +59,34 @@
       "required": ["status", "warning_reason", "temperature", "vibration", "noise", "gas_h2s", "pressure", "person_count", "ppe_violations", "updated_at"]
     },
 
-    "violation": {
+    "sensor_reading": {
       "type": "object",
-      "description": "A single compliance violation event",
+      "description": "A single sensor's latest reading. Keyed by sensor_id (matching cad/zone_definitions.json).",
       "properties": {
-        "id":           { "type": "string", "description": "Unique violation ID (e.g., v-001)" },
-        "rule_id":      { "type": "string", "description": "Rule that was violated (e.g., PPE-001)" },
-        "zone":         { "type": "string", "enum": ["zone_a", "corridor", "zone_b"], "description": "Zone where violation occurred" },
-        "severity":     { "type": "string", "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"], "description": "Violation severity level" },
-        "message":      { "type": "string", "description": "Human-readable violation description" },
-        "person_ids":   { "type": "array", "items": { "type": "integer" }, "description": "IDs of persons involved" },
-        "timestamp":    { "type": "integer", "description": "Unix timestamp when violation was detected" }
+        "value":      { "type": ["number", "null"], "description": "Latest measured value in the sensor's native unit. null = no data yet." },
+        "updated_at": { "type": "integer", "description": "Unix timestamp (seconds) when this value was written" },
+        "source":     { "type": "string", "enum": ["manual", "mqtt", "sim"], "description": "Which adapter produced this reading" }
       },
-      "required": ["id", "rule_id", "zone", "severity", "message", "person_ids", "timestamp"]
+      "required": ["value", "updated_at", "source"]
+    },
+
+    "diagnostic": {
+      "type": "object",
+      "description": "An LLM diagnostic report for one zone, produced on-demand. Self-describing (carries its source alert's identity).",
+      "properties": {
+        "event_id":          { "type": "string", "description": "Source alert id, e.g. anom_<ts>_zone_a" },
+        "zone_id":           { "type": "string", "description": "Rig zone id (zone_a/zone_b/corridor/...)" },
+        "severity":          { "type": "string", "enum": ["HIGH", "CRITICAL"], "description": "Severity of the breach" },
+        "anomaly_detected":  { "type": "boolean", "description": "False ⇒ 'No issue detected' (anti-hallucination flag)" },
+        "primary_diagnosis": { "type": "string", "description": "Failure mode, or 'No issue detected'" },
+        "confidence_score":  { "type": "number", "description": "0-100" },
+        "reasoning":         { "type": "string", "description": "Negative-reasoning explanation" },
+        "recommended_action":{ "type": "string", "description": "Mitigation protocol, or 'No action required.'" },
+        "triggered_sensors": { "type": "array", "items": { "type": "string" }, "description": "Sensor types that breached a threshold" },
+        "telemetry_snapshot":{ "type": "object", "description": "Sensor type → value at trigger time" },
+        "timestamp":         { "type": "integer", "description": "Unix ms when the diagnostic was produced" }
+      },
+      "required": ["zone_id", "anomaly_detected", "primary_diagnosis", "confidence_score", "reasoning", "recommended_action"]
     }
   },
 
@@ -90,10 +108,16 @@
       "required": ["zone_a", "corridor", "zone_b"]
     },
 
-    "rigvision:violations:latest": {
-      "description": "Written by compliance engine. Array of recent violations.",
+    "rigvision:diagnostics": {
+      "description": "On-demand LLM diagnostics. Written by anomaly_listener (via Kafka → backend). Newest first, capped at 50.",
       "type": "array",
-      "items": { "$ref": "#/definitions/violation" }
+      "items": { "$ref": "#/definitions/diagnostic" }
+    },
+
+    "rigvision:sensors:latest": {
+      "description": "THE SENSOR SEAM. Written by any sensor adapter (manual dashboard now, MQTT bridge later). Read by the CV pipeline to build zone states. Object keyed by sensor_id from cad/zone_definitions.json.",
+      "type": "object",
+      "additionalProperties": { "$ref": "#/definitions/sensor_reading" }
     }
   }
 }

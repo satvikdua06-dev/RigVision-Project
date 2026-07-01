@@ -16,10 +16,8 @@ export const useRigStore = create((set, get) => ({
     corridor_f1: { status: 'normal', temperature: 22, vibration: 0, noise: 35, gas_h2s: 0, pressure: 1, person_count: 0, ppe_violations: [], updated_at: Date.now() },
     zone_b_f1: { status: 'normal', temperature: 26, vibration: 0, noise: 45, gas_h2s: 0, pressure: 1, person_count: 0, ppe_violations: [], updated_at: Date.now() }
   },
-  violations: [],
   diagnostics: [],
   connected: false,
-  
   // Selection & UI State
   selectedPerson: null,
   selectedZone: null,
@@ -32,8 +30,6 @@ export const useRigStore = create((set, get) => ({
   wallOpacity: 0.4,
   fpsLimit: 30,
   floorFilter: 'all',
-  vlmGating: false,
-  vlmPending: false,
   zoneSelectMode: true,
 
   // ── WebSocket & Rendering Decoupler ─────────────────────
@@ -53,7 +49,6 @@ export const useRigStore = create((set, get) => ({
           set({
             persons: raw.persons !== undefined ? raw.persons : state.persons,
             zones: raw.zones !== undefined ? raw.zones : state.zones,
-            violations: raw.violations !== undefined ? raw.violations : state.violations,
             diagnostics: raw.diagnostics !== undefined ? raw.diagnostics : state.diagnostics,
             _latestRawData: null,
             _lastRenderTime: now,
@@ -96,30 +91,21 @@ export const useRigStore = create((set, get) => ({
           nextState._latestRawData = {
             persons: data.persons,
             zones: data.zones,
-            violations: data.violations,
             diagnostics: data.diagnostics,
           };
-          if (state.vlmPending) {
-            nextState.vlmPending = false;
-          }
           set(nextState);
         } else {
           // old format fallback
           const currentRaw = state._latestRawData || {
             persons: state.persons,
             zones: state.zones,
-            violations: state.violations,
             diagnostics: state.diagnostics,
           };
           if (data.type === 'rigvision:persons') currentRaw.persons = data.payload;
           if (data.type === 'rigvision:zones') currentRaw.zones = data.payload;
-          if (data.type === 'rigvision:violations:latest') currentRaw.violations = data.payload;
           if (data.type === 'rigvision:diagnostics') currentRaw.diagnostics = data.payload;
           
           nextState._latestRawData = currentRaw;
-          if (state.vlmPending) {
-            nextState.vlmPending = false;
-          }
           set(nextState);
         }
       } catch (err) {
@@ -170,25 +156,6 @@ export const useRigStore = create((set, get) => ({
   setFloorFilter: (val) => set({ floorFilter: val }),
   setZoneSelectMode: (val) => set({ zoneSelectMode: val }),
   
-  toggleVlmGating: async () => {
-    const nextVal = !get().vlmGating;
-    set({ vlmPending: true, vlmGating: nextVal });
-    try {
-      const res = await fetch(`${API_BASE}/control/vlm_gating`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled: nextVal }),
-      });
-      if (!res.ok) {
-        console.error('Failed to update VLM gating');
-        set({ vlmPending: false, vlmGating: !nextVal }); // rollback
-      }
-    } catch (err) {
-      console.error('Error updating VLM gating:', err);
-      set({ vlmPending: false, vlmGating: !nextVal }); // rollback
-    }
-  },
-
   clearTrackingCache: async () => {
     try {
       const res = await fetch(`${API_BASE}/control/clear_cache`, { method: 'POST' });

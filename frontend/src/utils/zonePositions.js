@@ -22,11 +22,11 @@ export const ZONES = {
     ],
     camera: { id: 'cam0', position: [0.5, 2.5, 0.5], lookAt: [3, 1, 3] },
     sensors: [
-      { id: 'temp_a1', type: 'temperature', position: [1.5, 2.0, 1.5] },
-      { id: 'vib_a1', type: 'vibration', position: [1.5, 0.5, 1.5] },
-      { id: 'noise_a1', type: 'noise', position: [2.0, 2.5, 2.5] },
-      { id: 'gas_a1', type: 'gas_h2s', position: [2.0, 0.3, 2.5] },
-      { id: 'temp_a2', type: 'temperature', position: [3.0, 1.5, 4.0] }
+      { id: 'temp_a', type: 'temperature', position: [1.5, 2.0, 1.5] },
+      { id: 'gas_a', type: 'gas_h2s', position: [2.0, 0.3, 2.5] },
+      { id: 'vib_a', type: 'vibration', position: [1.5, 0.5, 1.5] },
+      { id: 'noise_a', type: 'noise', position: [2.0, 2.5, 2.5] },
+      { id: 'pressure_a', type: 'pressure', position: [3.0, 1.0, 4.0] }
     ],
   },
   corridor: {
@@ -42,8 +42,11 @@ export const ZONES = {
     ],
     camera: { id: 'cam1', position: [5.0, 2.5, 1.8], lookAt: [5.0, 1.0, 3.0] },
     sensors: [
-      { id: 'gas_c1', type: 'gas_h2s', position: [5.0, 0.3, 2.5] },
-      { id: 'noise_c1', type: 'noise', position: [5.0, 2.5, 2.5] }
+      { id: 'temp_cor', type: 'temperature', position: [5.0, 2.0, 2.5] },
+      { id: 'gas_cor', type: 'gas_h2s', position: [5.0, 0.3, 2.5] },
+      { id: 'vib_cor', type: 'vibration', position: [4.5, 0.5, 2.0] },
+      { id: 'noise_cor', type: 'noise', position: [5.0, 2.5, 2.5] },
+      { id: 'pressure_cor', type: 'pressure', position: [5.5, 1.0, 3.0] }
     ],
   },
   zone_b: {
@@ -61,13 +64,11 @@ export const ZONES = {
     ],
     camera: { id: 'cam2', position: [9.5, 2.5, 4.5], lookAt: [7.0, 1.0, 2.0] },
     sensors: [
-      { id: 'temp_b1', type: 'temperature', position: [7.5, 1.0, 1.0] },
-      { id: 'vib_b1', type: 'vibration', position: [7.5, 0.5, 1.0] },
-      { id: 'noise_b1', type: 'noise', position: [8.0, 2.5, 2.5] },
-      { id: 'gas_b1', type: 'gas_h2s', position: [8.5, 0.3, 3.5] },
-      { id: 'temp_b2', type: 'temperature', position: [8.5, 1.5, 3.5] },
-      { id: 'pressure_b1', type: 'pressure', position: [7.5, 0.8, 1.0] },
-      { id: 'pressure_b2', type: 'pressure', position: [8.5, 1.0, 3.5] }
+      { id: 'temp_b', type: 'temperature', position: [7.5, 1.0, 1.0] },
+      { id: 'gas_b', type: 'gas_h2s', position: [8.5, 0.3, 3.5] },
+      { id: 'vib_b', type: 'vibration', position: [7.5, 0.5, 1.0] },
+      { id: 'noise_b', type: 'noise', position: [8.0, 2.5, 2.5] },
+      { id: 'pressure_b', type: 'pressure', position: [7.5, 0.8, 1.0] }
     ],
   },
   zone_a_f1: {
@@ -83,7 +84,11 @@ export const ZONES = {
     ],
     camera: { id: 'cam0_f1', position: [0.5, 5.5, 0.5], lookAt: [3, 4, 3] },
     sensors: [
-      { id: 'temp_a1_f1', type: 'temperature', position: [1.5, 5.0, 1.5] }
+      { id: 'temp_a_f1', type: 'temperature', position: [1.5, 5.0, 1.5] },
+      { id: 'gas_a_f1', type: 'gas_h2s', position: [2.0, 3.3, 2.5] },
+      { id: 'vib_a_f1', type: 'vibration', position: [1.5, 3.5, 1.5] },
+      { id: 'noise_a_f1', type: 'noise', position: [2.0, 5.5, 2.5] },
+      { id: 'pressure_a_f1', type: 'pressure', position: [3.0, 4.0, 4.0] }
     ],
   },
   corridor_f1: {
@@ -97,7 +102,11 @@ export const ZONES = {
     equipment: [],
     camera: { id: 'cam1_f1', position: [5.0, 5.5, 1.8], lookAt: [5.0, 4.0, 3.0] },
     sensors: [
-      { id: 'gas_c1_f1', type: 'gas_h2s', position: [5.0, 3.3, 2.5] }
+      { id: 'temp_cor_f1', type: 'temperature', position: [5.0, 5.0, 2.5] },
+      { id: 'gas_cor_f1', type: 'gas_h2s', position: [5.0, 3.3, 2.5] },
+      { id: 'vib_cor_f1', type: 'vibration', position: [4.5, 3.5, 2.0] },
+      { id: 'noise_cor_f1', type: 'noise', position: [5.0, 5.5, 2.5] },
+      { id: 'pressure_cor_f1', type: 'pressure', position: [5.5, 4.0, 3.0] }
     ],
   },
   zone_b_f1: {
@@ -113,7 +122,11 @@ export const ZONES = {
     ],
     camera: { id: 'cam2_f1', position: [9.5, 5.5, 4.5], lookAt: [7.0, 4.0, 2.0] },
     sensors: [
-      { id: 'temp_b1_f1', type: 'temperature', position: [7.5, 4.0, 1.0] }
+      { id: 'temp_b_f1', type: 'temperature', position: [7.5, 4.0, 1.0] },
+      { id: 'gas_b_f1', type: 'gas_h2s', position: [8.5, 3.3, 3.5] },
+      { id: 'vib_b_f1', type: 'vibration', position: [7.5, 3.5, 1.0] },
+      { id: 'noise_b_f1', type: 'noise', position: [8.0, 5.5, 2.5] },
+      { id: 'pressure_b_f1', type: 'pressure', position: [7.5, 3.8, 1.0] }
     ],
   },
 };

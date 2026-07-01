@@ -3,7 +3,6 @@ import { useState, useEffect } from 'react'
 
 export default function TopBar() {
   const zones      = useRigStore(s => s.zones)
-  const violations = useRigStore(s => s.violations)
   const persons    = useRigStore(s => s.persons)
   const diagnostics = useRigStore(s => s.diagnostics) || []
   const setShowDiagnosticsModal = useRigStore(s => s.setShowDiagnosticsModal)
@@ -11,7 +10,6 @@ export default function TopBar() {
   const criticalZones  = Object.values(zones).filter(z => z.status === 'critical').length
   const warningZones   = Object.values(zones).filter(z => z.status === 'warning').length
   const alertPersons   = persons.filter(p => !p.ppe.hardhat || !p.ppe.vest || !p.ppe.goggles).length
-  const criticalViol   = violations.filter(v => v.severity === 'CRITICAL').length
 
   const stats = [
     { label:'Zones', value: Object.keys(zones).length, color:'#00b4ff' },
@@ -19,7 +17,6 @@ export default function TopBar() {
     { label:'Warnings', value: warningZones, color: warningZones > 0 ? '#ffb300' : '#00e676' },
     { label:'Personnel', value: persons.length, color:'#00ffd5' },
     { label:'PPE Alerts', value: alertPersons, color: alertPersons > 0 ? '#ff7043' : '#00e676' },
-    { label:'Violations', value: violations.length, color: criticalViol > 0 ? '#ff3b3b' : '#ffb300' },
   ]
 
   // Clean clock implementation that updates every second
@@ -69,8 +66,34 @@ export default function TopBar() {
           </div>
         ))}
 
+        {/* Sensor Console Link */}
+        <a
+          href="#/sensors"
+          style={{
+            background: 'rgba(0, 180, 255, 0.04)',
+            border: '1px solid rgba(0, 180, 255, 0.2)',
+            borderRadius: 6,
+            padding: '4px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            textDecoration: 'none',
+            marginRight: 12,
+            height: 38,
+            boxSizing: 'border-box',
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'rgba(0, 180, 255, 0.5)' }}
+          onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'rgba(0, 180, 255, 0.2)' }}
+        >
+          <div style={{ textAlign: 'left' }}>
+            <div style={{ fontSize: 8.5, color: '#5a8aaa', letterSpacing: 1.5, lineHeight: 1, marginBottom: 2, fontFamily: "'Share Tech Mono'" }}>SENSOR INPUT</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#00b4ff', fontFamily: "'Barlow Condensed'", lineHeight: 1, letterSpacing: 1 }}>
+              CONSOLE
+            </div>
+          </div>
+        </a>
+
         {/* AI Diagnostics Button */}
-        <button 
+        <button
           onClick={() => setShowDiagnosticsModal(true)}
           style={{
             background: 'rgba(0, 255, 213, 0.04)',
