@@ -1,13 +1,14 @@
 import { useRef, useState } from 'react'
-import { useFrame } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
 import * as THREE from 'three'
 import { useRigStore } from '../stores/useRigStore.js'
 
+// Status tints use the Industrial Slate accent palette (hex, since Three.js materials
+// need real colors). Kept subtle — a flat floor wash, no neon bloom.
 const STATUS_COLORS = {
-  normal:   { base: '#00e676', emissive: '#00e676', opacity: 0.10 },
-  warning:  { base: '#ffb300', emissive: '#ffb300', opacity: 0.16 },
-  critical: { base: '#ff3b3b', emissive: '#ff0000', opacity: 0.22 },
+  normal:   { base: '#46b17f', opacity: 0.07 },
+  warning:  { base: '#d9a64e', opacity: 0.13 },
+  critical: { base: '#e06054', opacity: 0.18 },
 }
 
 function findAvatarInIntersections(intersections) {
@@ -26,31 +27,21 @@ function findAvatarInIntersections(intersections) {
 
 export default function ZonePlane({ zoneId, zone, staticDef }) {
   const planeRef  = useRef()
-  const borderRef = useRef()
   const [hovered, setHovered] = useState(false)
-  
+
   const selectZone    = useRigStore(s => s.selectZone)
   const selectPerson  = useRigStore(s => s.selectPerson)
   const selectedZone  = useRigStore(s => s.selectedZone)
   const zoneSelectMode = useRigStore(s => s.zoneSelectMode)
   const showDiagnosticsModal = useRigStore(s => s.showDiagnosticsModal)
   const isSelected    = selectedZone === zoneId
-  
+
   const col = STATUS_COLORS[zone.status] || STATUS_COLORS.normal
-  
+
   // Use static physical layout from ZONES if provided, otherwise default fallback
   const layout = staticDef || { center: [0, 0, 0], size: [5, 3, 5] }
   const [px, , pz] = layout.center
   const [sx, , sz] = layout.size
-
-  useFrame(() => {
-    if (!planeRef.current) return
-    if (zone.status === 'critical') {
-      const t = Date.now() * 0.003
-      planeRef.current.material.opacity = col.opacity + 0.1 * Math.abs(Math.sin(t))
-      planeRef.current.material.emissiveIntensity = 0.3 + 0.3 * Math.abs(Math.sin(t))
-    }
-  })
 
   return (
     <group
@@ -68,56 +59,59 @@ export default function ZonePlane({ zoneId, zone, staticDef }) {
       onPointerOut={zoneSelectMode ? () => setHovered(false) : undefined}
       raycast={zoneSelectMode ? undefined : null}
     >
-      {/* Filled floor tint */}
+      {/* Filled floor tint — flat, low emissive (no glow bloom) */}
       <mesh ref={planeRef} rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[sx, sz]} />
         <meshStandardMaterial
-          color={col.base} emissive={col.emissive}
-          emissiveIntensity={isSelected || hovered ? 0.5 : 0.25}
+          color={col.base} emissive={col.base}
+          emissiveIntensity={isSelected || hovered ? 0.18 : 0.08}
           transparent opacity={col.opacity} depthWrite={false}
           side={THREE.DoubleSide}
         />
       </mesh>
 
-
-
-      {/* Zone label */}
+      {/* Zone label — flat type, no neon text-shadow */}
       {!showDiagnosticsModal && (
         <Html position={[0, 0.35, 0]} center distanceFactor={25}
           style={{ pointerEvents: 'none' }}>
           <div style={{
-            fontFamily: "'Barlow Condensed', sans-serif",
-            fontSize: 16, fontWeight: 700, letterSpacing: 3,
-            color: col.base, textTransform: 'uppercase',
-            textShadow: `0 0 14px ${col.base}`,
+            display: 'flex', alignItems: 'center', gap: 7,
+            background: 'rgba(18, 22, 29, 0.5)',
+            backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
+            border: '1px solid rgba(255,255,255,0.1)',
+            borderRadius: 999, padding: '4px 12px',
+            fontFamily: 'var(--font-ui)',
+            fontSize: 13, fontWeight: 500, letterSpacing: 0.4,
+            color: 'rgba(230,233,239,0.95)', textTransform: 'uppercase',
             whiteSpace: 'nowrap',
-            opacity: hovered || isSelected ? 1 : 0.65,
+            opacity: hovered || isSelected ? 1 : 0.82,
             transition: 'opacity 0.2s',
           }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: col.base, flexShrink: 0 }} />
             {zone.label || zoneId.replace(/_/g, ' ').toUpperCase()}
           </div>
         </Html>
       )}
 
-      {/* Hover / selected sensor popup */}
+      {/* Hover / selected sensor popup — flat steel card, sharp border */}
       {isSelected && !showDiagnosticsModal && (
         <Html position={[0, 1.2, 0]} center distanceFactor={25}
           style={{ pointerEvents: 'none', width: 195 }}>
           <div style={{
-            background: 'rgba(4,12,22,0.97)',
-            border: `1px solid ${col.base}55`,
-            borderRadius: 10, padding: '10px 13px',
-            fontFamily: "'Share Tech Mono', monospace",
-            fontSize: 11, color: '#e0f4ff', lineHeight: 1.85,
-            boxShadow: `0 0 24px ${col.base}18, 0 4px 20px rgba(0,0,0,0.7)`,
+            background: 'var(--bg-panel)',
+            border: '1px solid var(--border)',
+            borderLeft: `2px solid ${col.base}`,
+            borderRadius: 6, padding: '10px 13px',
+            fontFamily: 'var(--font-mono)',
+            fontSize: 11, color: 'var(--text-primary)', lineHeight: 1.85,
           }}>
             <div style={{
-              fontFamily: "'Barlow Condensed'", fontSize: 15, fontWeight: 700,
-              letterSpacing: 2, color: col.base, marginBottom: 7,
+              fontFamily: 'var(--font-ui)', fontSize: 14, fontWeight: 600,
+              letterSpacing: 0.5, color: col.base, marginBottom: 7,
               display: 'flex', justifyContent: 'space-between',
             }}>
               {zone.status.toUpperCase()}
-              <span style={{ fontSize: 10, color: '#5a8aaa', letterSpacing: 1 }}>
+              <span style={{ fontSize: 10, color: 'var(--text-muted)', letterSpacing: 1 }}>
                 {zone.person_count}p
               </span>
             </div>
@@ -130,7 +124,7 @@ export default function ZonePlane({ zoneId, zone, staticDef }) {
             ].filter(([, , type]) => (zone.sensor_types || ['temperature','gas_h2s','vibration','noise']).includes(type))
              .map(([icon, lbl, , val, unit]) => (
               <div key={lbl} style={{ display:'flex', justifyContent:'space-between' }}>
-                <span style={{ color:'#5a8aaa' }}>{icon} {lbl}</span>
+                <span style={{ color:'var(--text-muted)' }}>{icon} {lbl}</span>
                 <span>{val != null ? `${val} ${unit}` : '—'}</span>
               </div>
             ))}

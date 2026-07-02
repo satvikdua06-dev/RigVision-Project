@@ -49,11 +49,10 @@ ZONE_DEFS_PATH = os.path.join(
 )
 _zone_defs_cache: Optional[dict] = None
 
-# Maps rig zone ids → Neo4j knowledge-graph Zone ids (seed_graph.py uses room_1/room_2/corridor).
-# Floor-1 variants reuse their ground-floor room's KG topology.
+# Maps rig zone ids → Neo4j knowledge-graph Zone ids (seed_graph.py uses room_1/room_2).
+# Layout is two stacked rooms: zone_a = Room A (floor 0), zone_b = Room B (floor 1).
 ZONE_TO_KG = {
-    "zone_a": "room_1", "zone_b": "room_2", "corridor": "corridor",
-    "zone_a_f1": "room_1", "zone_b_f1": "room_2", "corridor_f1": "corridor",
+    "zone_a": "room_1", "zone_b": "room_2",
 }
 
 from services.anomaly_evaluator import evaluate as evaluate_threshold

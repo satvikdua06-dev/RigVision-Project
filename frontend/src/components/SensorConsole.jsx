@@ -34,16 +34,15 @@ function sliderBounds(sensor) {
 }
 
 function valueColor(sensor, v) {
-  if (v == null) return '#5a8aaa'
-  if (sensor.critical != null && v >= sensor.critical) return '#ff3b3b'
-  if (sensor.warning != null && v >= sensor.warning) return '#ffb300'
-  return '#00e676'
+  if (v == null) return 'var(--text-muted)'
+  if (sensor.critical != null && v >= sensor.critical) return 'var(--accent-red)'
+  if (sensor.warning != null && v >= sensor.warning) return 'var(--accent-amber)'
+  return 'var(--accent-green)'
 }
 
 function SensorSlider({ sensor, value, onChange }) {
   const { min, max, step } = sliderBounds(sensor)
   const color = valueColor(sensor, value)
-  const pct = ((value - min) / (max - min)) * 100
   const warnPct = sensor.warning != null ? ((sensor.warning - min) / (max - min)) * 100 : null
   const critPct = sensor.critical != null ? ((sensor.critical - min) / (max - min)) * 100 : null
 
@@ -52,29 +51,29 @@ function SensorSlider({ sensor, value, onChange }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
         <span
           title={sensor.threshold_source ? sensor.threshold_source.reason : undefined}
-          style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 12, color: '#e0f4ff' }}
+          style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-primary)' }}
         >
           {sensor.id}
-          <span style={{ color: '#5a8aaa', fontSize: 10, marginLeft: 8 }}>{sensor.type}</span>
+          <span style={{ color: 'var(--text-muted)', fontSize: 10, marginLeft: 8 }}>{sensor.type}</span>
           {sensor.threshold_source?.level === 'device_manual' && (
-            <span style={{ color: '#00bcd4', fontSize: 9, marginLeft: 6 }}>⚙ {sensor.threshold_source.device}</span>
+            <span style={{ color: 'var(--accent-cobalt)', fontSize: 9, marginLeft: 6 }}>⚙ {sensor.threshold_source.device}</span>
           )}
           {sensor.threshold_source?.level === 'zone_environmental' && (
-            <span style={{ color: '#8a7bd8', fontSize: 9, marginLeft: 6 }}>⛨ HSE area limit</span>
+            <span style={{ color: 'var(--text-muted)', fontSize: 9, marginLeft: 6 }}>⛨ HSE area limit</span>
           )}
         </span>
-        <span style={{ fontFamily: "'Barlow Condensed'", fontSize: 18, fontWeight: 700, color, minWidth: 70, textAlign: 'right' }}>
-          {Number(value).toFixed(step < 1 ? 1 : 0)} <span style={{ fontSize: 11, color: '#5a8aaa' }}>{sensor.unit}</span>
+        <span style={{ fontFamily: "var(--font-ui)", fontSize: 18, fontWeight: 600, color, minWidth: 70, textAlign: 'right' }}>
+          {Number(value).toFixed(step < 1 ? 1 : 0)} <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{sensor.unit}</span>
         </span>
       </div>
 
       {/* track with warning/critical markers */}
       <div style={{ position: 'relative' }}>
         {warnPct != null && (
-          <div title={`warning ${sensor.warning}`} style={{ position: 'absolute', left: `${warnPct}%`, top: -3, width: 2, height: 14, background: '#ffb300aa', zIndex: 2 }} />
+          <div title={`warning ${sensor.warning}`} style={{ position: 'absolute', left: `${warnPct}%`, top: -3, width: 2, height: 14, background: 'var(--accent-amber)', zIndex: 2 }} />
         )}
         {critPct != null && (
-          <div title={`critical ${sensor.critical}`} style={{ position: 'absolute', left: `${critPct}%`, top: -3, width: 2, height: 14, background: '#ff3b3baa', zIndex: 2 }} />
+          <div title={`critical ${sensor.critical}`} style={{ position: 'absolute', left: `${critPct}%`, top: -3, width: 2, height: 14, background: 'var(--accent-red)', zIndex: 2 }} />
         )}
         <input
           type="range"
@@ -86,7 +85,7 @@ function SensorSlider({ sensor, value, onChange }) {
           style={{ width: '100%', accentColor: color, cursor: 'pointer' }}
         />
       </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: "'Share Tech Mono'", fontSize: 8.5, color: '#3a5a6a' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'var(--font-mono)', fontSize: 8.5, color: 'var(--text-dim)' }}>
         <span>{min}</span>
         <span>{max.toFixed(0)} {sensor.unit}</span>
       </div>
@@ -194,47 +193,45 @@ export default function SensorConsole() {
   }
 
   return (
-    <div style={{ width: '100vw', height: '100vh', overflowY: 'auto', background: 'radial-gradient(circle at 30% 0%, #0a1828 0%, #050a14 60%)', color: '#e0f4ff' }}>
+    <div style={{ width: '100vw', height: '100vh', overflowY: 'auto', background: 'var(--bg-deep)', color: 'var(--text-primary)' }}>
       {/* Header */}
       <div style={{
         position: 'sticky', top: 0, zIndex: 10, height: 56, display: 'flex', alignItems: 'center',
-        padding: '0 24px', background: 'rgba(5,10,20,0.96)', borderBottom: '1px solid rgba(0,180,255,0.15)',
-        backdropFilter: 'blur(20px)',
+        padding: '0 24px', background: 'var(--bg-panel)', borderBottom: '1px solid var(--border)',
       }}>
-        <span style={{ fontFamily: "'Barlow Condensed'", fontWeight: 700, fontSize: 20, color: '#00b4ff', letterSpacing: 3, textTransform: 'uppercase' }}>
-          RIG<span style={{ color: '#00ffd5' }}>VISION</span>
+        <span style={{ fontFamily: 'var(--font-ui)', fontWeight: 700, fontSize: 18, color: 'var(--text-primary)', letterSpacing: 0.5 }}>
+          RIG<span style={{ color: 'var(--accent-cobalt)' }}>VISION</span>
         </span>
-        <span style={{ fontFamily: "'Share Tech Mono'", fontSize: 11, color: '#5a8aaa', marginLeft: 14, letterSpacing: 2 }}>
-          SENSOR CONSOLE
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)', marginLeft: 14, letterSpacing: 1, textTransform: 'uppercase' }}>
+          Sensor Console
         </span>
         <span style={{
-          marginLeft: 14, fontFamily: "'Share Tech Mono'", fontSize: 9, letterSpacing: 1,
-          color: '#ffb300', border: '1px solid #ffb30055', borderRadius: 4, padding: '2px 8px',
+          marginLeft: 14, fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: 1,
+          color: 'var(--accent-amber)', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 8px',
         }}>
           MANUAL INPUT
         </span>
         {/* Dirty indicator + Send/Diagnostics buttons */}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 14 }}>
           {diagResult && (
-            <span style={{ fontFamily: "'Share Tech Mono'", fontSize: 10, color: diagResult.startsWith('⚠') ? '#ffb300' : diagResult.startsWith('✓') ? '#00e676' : '#ff3b3b' }}>{diagResult}</span>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: diagResult.startsWith('⚠') ? 'var(--accent-amber)' : diagResult.startsWith('✓') ? 'var(--accent-green)' : 'var(--accent-red)' }}>{diagResult}</span>
           )}
           {lastAction && (
-            <span style={{ fontFamily: "'Share Tech Mono'", fontSize: 10, color: '#5a8aaa' }}>{lastAction}</span>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)' }}>{lastAction}</span>
           )}
-          <span style={{ fontFamily: "'Share Tech Mono'", fontSize: 10, letterSpacing: 1, color: dirty ? '#ffb300' : '#00e676' }}>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: 1, color: dirty ? 'var(--accent-amber)' : 'var(--accent-green)' }}>
             {dirty ? '● UNSAVED CHANGES' : '✓ SYNCED'}
           </span>
           <button
             onClick={sendToRedis}
             disabled={status !== 'ready'}
             style={{
-              fontFamily: "'Barlow Condensed'", fontSize: 14, fontWeight: 700, letterSpacing: 1,
+              fontFamily: 'var(--font-ui)', fontSize: 13, fontWeight: 600, letterSpacing: 0.3,
               cursor: status === 'ready' ? 'pointer' : 'not-allowed',
-              background: dirty ? '#00e676' : 'rgba(0,230,118,0.12)',
-              color: dirty ? '#04121e' : '#00e676',
-              border: `1px solid ${dirty ? '#00e676' : 'rgba(0,230,118,0.4)'}`,
+              background: dirty ? 'var(--accent-green)' : 'var(--bg-card)',
+              color: dirty ? 'var(--bg-deep)' : 'var(--accent-green)',
+              border: `1px solid ${dirty ? 'var(--accent-green)' : 'var(--border)'}`,
               borderRadius: 6, padding: '7px 18px',
-              boxShadow: dirty ? '0 0 14px rgba(0,230,118,0.4)' : 'none',
               transition: 'all 0.15s',
             }}
           >
@@ -245,11 +242,11 @@ export default function SensorConsole() {
             disabled={status !== 'ready' || diagRunning}
             title="Threshold-check all zones; LLM diagnoses flagged ones"
             style={{
-              fontFamily: "'Barlow Condensed'", fontSize: 14, fontWeight: 700, letterSpacing: 1,
+              fontFamily: 'var(--font-ui)', fontSize: 13, fontWeight: 600, letterSpacing: 0.3,
               cursor: (status === 'ready' && !diagRunning) ? 'pointer' : 'not-allowed',
-              background: diagRunning ? 'rgba(255,179,0,0.15)' : 'rgba(0,180,255,0.12)',
-              color: diagRunning ? '#ffb300' : '#00b4ff',
-              border: `1px solid ${diagRunning ? '#ffb300' : 'rgba(0,180,255,0.5)'}`,
+              background: 'var(--bg-card)',
+              color: diagRunning ? 'var(--accent-amber)' : 'var(--accent-cobalt)',
+              border: `1px solid ${diagRunning ? 'var(--accent-amber)' : 'var(--border-bright)'}`,
               borderRadius: 6, padding: '7px 18px',
               transition: 'all 0.15s',
             }}
@@ -257,32 +254,32 @@ export default function SensorConsole() {
             {diagRunning ? 'RUNNING…' : 'RUN DIAGNOSTICS'}
           </button>
           <a href={DASHBOARD_URL} style={{
-            fontFamily: "'Share Tech Mono'", fontSize: 11, color: '#00ffd5',
-            textDecoration: 'none', border: '1px solid rgba(0,255,213,0.3)', borderRadius: 6, padding: '6px 14px',
+            fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)',
+            textDecoration: 'none', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 14px',
           }}>← 3D DASHBOARD</a>
         </div>
       </div>
 
-      {status === 'loading' && <div style={{ padding: 40, fontFamily: "'Share Tech Mono'", color: '#5a8aaa' }}>Loading manifest…</div>}
-      {status === 'error' && <div style={{ padding: 40, fontFamily: "'Share Tech Mono'", color: '#ff3b3b' }}>Failed to reach backend at {API_BASE}. Is it running?</div>}
+      {status === 'loading' && <div style={{ padding: 40, fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>Loading manifest…</div>}
+      {status === 'error' && <div style={{ padding: 40, fontFamily: 'var(--font-mono)', color: 'var(--accent-red)' }}>Failed to reach backend at {API_BASE}. Is it running?</div>}
 
       {status === 'ready' && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 18, padding: 24 }}>
           {Object.entries(zones).map(([zid, zone]) => (
             <div key={zid} style={{
-              background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(0,180,255,0.12)',
-              borderRadius: 12, padding: '16px 18px',
+              background: 'var(--bg-card)', border: '1px solid var(--border)',
+              borderRadius: 10, padding: '16px 18px',
             }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 14, paddingBottom: 10, borderBottom: '1px solid rgba(0,180,255,0.1)' }}>
-                <span style={{ fontFamily: "'Barlow Condensed'", fontSize: 18, fontWeight: 700, letterSpacing: 1, color: '#e0f4ff' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 14, paddingBottom: 10, borderBottom: '1px solid var(--border)' }}>
+                <span style={{ fontFamily: 'var(--font-ui)', fontSize: 17, fontWeight: 600, letterSpacing: 0.3, color: 'var(--text-primary)' }}>
                   {zone.name}
                 </span>
-                <span style={{ fontFamily: "'Share Tech Mono'", fontSize: 9, color: '#5a8aaa', letterSpacing: 1 }}>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--text-muted)', letterSpacing: 1 }}>
                   {zid} · FLOOR {zone.floor} · {zone.sensors.length} SENSORS
                 </span>
               </div>
               {zone.sensors.length === 0 ? (
-                <div style={{ fontFamily: "'Share Tech Mono'", fontSize: 11, color: '#5a8aaa', padding: '8px 0' }}>No sensors defined</div>
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)', padding: '8px 0' }}>No sensors defined</div>
               ) : (
                 zone.sensors.map((s) => (
                   <SensorSlider key={s.id} sensor={s} value={values[s.id] ?? 0} onChange={(v) => setValue(s.id, v)} />

@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { useRigStore } from '../stores/useRigStore.js'
 
+// Status → accent variable (Industrial Slate palette). Standalone color values only,
+// so they slot straight into `color`/`borderColor` without alpha concatenation.
 const STATUS_COLOR = {
-  normal:   '#00e676',
-  warning:  '#ffb300',
-  critical: '#ff3b3b',
+  normal:   'var(--accent-green)',
+  warning:  'var(--accent-amber)',
+  critical: 'var(--accent-red)',
 }
 
 // Labels per sensor type. Thresholds + bar bounds come from the zone's sensor_meta
@@ -22,10 +24,10 @@ function SensorBar({ label, value, meta }) {
   const { min = 0, max = 100, warning, critical, unit = '', threshold_source } = meta || {}
   // Same scale as the Sensor Console: fill across [min, max] (max = critical*1.2).
   const pct = known ? Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100)) : 0
-  const color = !known ? '#3a5a6a'
-    : (critical != null && value >= critical) ? '#ff3b3b'
-    : (warning != null && value >= warning) ? '#ffb300'
-    : '#00e676'
+  const color = !known ? 'var(--text-dim)'
+    : (critical != null && value >= critical) ? 'var(--accent-red)'
+    : (warning != null && value >= warning) ? 'var(--accent-amber)'
+    : 'var(--accent-green)'
 
   const level = threshold_source?.level
   const sourceIcon = level === 'device_manual' ? ' ⚙' : level === 'zone_environmental' ? ' ⛨' : ''
@@ -34,27 +36,41 @@ function SensorBar({ label, value, meta }) {
   return (
     <div style={{ marginBottom: 8 }} title={tooltip}>
       <div style={{ display:'flex', justifyContent:'space-between', marginBottom:3,
-        fontFamily:"'Share Tech Mono',monospace", fontSize:10.5 }}>
-        <span style={{ color:'#5a8aaa' }}>
+        fontFamily:'var(--font-mono)', fontSize:10.5 }}>
+        <span style={{ color:'var(--text-muted)' }}>
           {label}
-          <span style={{ color: level === 'device_manual' ? '#00bcd4' : level === 'zone_environmental' ? '#8a7bd8' : '#3a5a6a', fontSize: 9 }}>
+          <span style={{ color: level === 'device_manual' ? 'var(--accent-cobalt)' : 'var(--text-muted)', fontSize: 9 }}>
             {sourceIcon}
           </span>
           {(warning != null || critical != null) && (
-            <span style={{ fontSize: 8.5, color: '#3a5a6a', marginLeft: 4 }}>
+            <span style={{ fontSize: 8.5, color: 'var(--text-dim)', marginLeft: 4 }}>
               ({warning != null ? `w:${warning}` : '—'}/{critical != null ? `c:${critical}` : '—'})
             </span>
           )}
         </span>
         <span style={{ color }}>{known ? `${value} ${unit}` : 'NO DATA'}</span>
       </div>
-      <div style={{ height:4, background:'rgba(255,255,255,0.07)', borderRadius:2, overflow:'hidden' }}>
+      <div style={{ height:4, background:'var(--border)', borderRadius:2, overflow:'hidden' }}>
         <div style={{ height:'100%', width:`${pct}%`, background: color,
-          borderRadius:2, boxShadow: known ? `0 0 6px ${color}88` : 'none',
-          transition:'width 0.6s ease' }} />
+          borderRadius:2, transition:'width 0.6s ease' }} />
       </div>
     </div>
   )
+}
+
+// Shared search input styling (flat steel field, sharp focus border).
+const searchInputStyle = {
+  width: '100%',
+  padding: '8px 12px',
+  background: 'var(--bg-card)',
+  border: '1px solid var(--border)',
+  borderRadius: 6,
+  color: 'var(--text-primary)',
+  fontFamily: 'var(--font-mono)',
+  fontSize: 12,
+  outline: 'none',
+  boxSizing: 'border-box',
+  transition: 'border-color 0.15s',
 }
 
 function ZonesTab() {
@@ -80,36 +96,17 @@ function ZonesTab() {
           placeholder="Search zone name, status..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          style={{
-            width: '100%',
-            padding: '8px 12px',
-            background: 'rgba(255,255,255,0.04)',
-            border: '1px solid rgba(0,180,255,0.2)',
-            borderRadius: 6,
-            color: '#e0f4ff',
-            fontFamily: "'Share Tech Mono', monospace",
-            fontSize: 12,
-            outline: 'none',
-            boxSizing: 'border-box',
-            transition: 'border-color 0.2s',
-          }}
-          onFocus={(e) => e.target.style.borderColor = 'rgba(0,180,255,0.6)'}
-          onBlur={(e) => e.target.style.borderColor = 'rgba(0,180,255,0.2)'}
+          style={searchInputStyle}
+          onFocus={(e) => e.target.style.borderColor = 'var(--border-bright)'}
+          onBlur={(e) => e.target.style.borderColor = 'var(--border)'}
         />
         {search && (
           <button
             onClick={() => setSearch('')}
             style={{
-              position: 'absolute',
-              right: 8,
-              top: '50%',
-              transform: 'translateY(-50%)',
-              background: 'transparent',
-              border: 'none',
-              color: '#5a8aaa',
-              cursor: 'pointer',
-              fontSize: 14,
-              fontFamily: "'Share Tech Mono', monospace",
+              position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+              background: 'transparent', border: 'none', color: 'var(--text-muted)',
+              cursor: 'pointer', fontSize: 14, fontFamily: 'var(--font-mono)',
             }}
           >
             ×
@@ -119,7 +116,7 @@ function ZonesTab() {
 
       {filteredZones.length === 0 ? (
         <div style={{
-          textAlign: 'center', color: '#5a8aaa', fontFamily: "'Share Tech Mono', monospace",
+          textAlign: 'center', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)',
           fontSize: 12, padding: 20
         }}>No zones found</div>
       ) : (
@@ -129,19 +126,24 @@ function ZonesTab() {
           return (
             <div key={id} onClick={() => selectZone(id)}
               style={{
-                background: isSelected ? 'rgba(0,180,255,0.08)' : 'rgba(255,255,255,0.02)',
-                border: `1px solid ${isSelected ? sc+'88' : 'rgba(255,255,255,0.06)'}`,
-                borderRadius: 10, padding: '12px 14px', marginBottom: 10, cursor:'pointer',
-                transition: 'all 0.2s',
+                background: isSelected ? 'var(--bg-elev)' : 'var(--glass-card)',
+                border: `1px solid ${isSelected ? 'var(--border-bright)' : 'var(--border)'}`,
+                borderLeft: `2px solid ${sc}`,
+                borderRadius: 'var(--radius-sm)', padding: '15px 16px', marginBottom: 12, cursor:'pointer',
+                boxShadow: 'var(--shadow-card)',
+                transition: 'border-color 0.15s, background 0.15s',
               }}>
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
-                <span style={{ fontFamily:"'Barlow Condensed'", fontSize:15, fontWeight:700,
-                  letterSpacing:1, color:'#e0f4ff' }}>{zone.label || id.replace(/_/g, ' ').toUpperCase()}</span>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
+                <span style={{ fontFamily:'var(--font-ui)', fontSize:14.5, fontWeight:600,
+                  letterSpacing:-0.01, color:'var(--text-primary)' }}>{zone.label || id.replace(/_/g, ' ').toUpperCase()}</span>
                 <span style={{
-                  background: sc + '22', border:`1px solid ${sc}`, color: sc,
-                  fontFamily:"'Share Tech Mono'", fontSize:9, padding:'2px 8px',
-                  borderRadius:4, letterSpacing:2, textTransform:'uppercase',
-                }}>{zone.status}</span>
+                  display:'inline-flex', alignItems:'center', gap:5,
+                  color: sc, fontFamily:'var(--font-mono)', fontSize:9.5,
+                  letterSpacing:0.5, textTransform:'uppercase', fontWeight:500,
+                }}>
+                  <span style={{ width:6, height:6, borderRadius:'50%', background:sc, display:'inline-block' }} />
+                  {zone.status}
+                </span>
               </div>
               {(() => {
                 const types = zone.sensor_types || ['temperature', 'gas_h2s', 'vibration', 'noise', 'pressure']
@@ -151,10 +153,10 @@ function ZonesTab() {
                 ))
               })()}
               <div style={{ display:'flex', justifyContent:'space-between', marginTop:8,
-                fontFamily:"'Share Tech Mono'", fontSize:10.5 }}>
-                <span style={{ color:'#5a8aaa' }}>👤 {zone.person_count} person{zone.person_count!==1?'s':''}</span>
+                fontFamily:'var(--font-mono)', fontSize:10.5 }}>
+                <span style={{ color:'var(--text-muted)' }}>👤 {zone.person_count} person{zone.person_count!==1?'s':''}</span>
                 {zone.ppe_violations.length > 0 && (
-                  <span style={{ color:'#ff7043' }}>⚠ {zone.ppe_violations.length} PPE</span>
+                  <span style={{ color:'var(--accent-red)' }}>⚠ {zone.ppe_violations.length} PPE</span>
                 )}
               </div>
             </div>
@@ -190,36 +192,17 @@ function PersonsTab() {
           placeholder="Search ID, zone, posture..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          style={{
-            width: '100%',
-            padding: '8px 12px',
-            background: 'rgba(255,255,255,0.04)',
-            border: '1px solid rgba(0,180,255,0.2)',
-            borderRadius: 6,
-            color: '#e0f4ff',
-            fontFamily: "'Share Tech Mono', monospace",
-            fontSize: 12,
-            outline: 'none',
-            boxSizing: 'border-box',
-            transition: 'border-color 0.2s',
-          }}
-          onFocus={(e) => e.target.style.borderColor = 'rgba(0,180,255,0.6)'}
-          onBlur={(e) => e.target.style.borderColor = 'rgba(0,180,255,0.2)'}
+          style={searchInputStyle}
+          onFocus={(e) => e.target.style.borderColor = 'var(--border-bright)'}
+          onBlur={(e) => e.target.style.borderColor = 'var(--border)'}
         />
         {search && (
           <button
             onClick={() => setSearch('')}
             style={{
-              position: 'absolute',
-              right: 8,
-              top: '50%',
-              transform: 'translateY(-50%)',
-              background: 'transparent',
-              border: 'none',
-              color: '#5a8aaa',
-              cursor: 'pointer',
-              fontSize: 14,
-              fontFamily: "'Share Tech Mono', monospace",
+              position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+              background: 'transparent', border: 'none', color: 'var(--text-muted)',
+              cursor: 'pointer', fontSize: 14, fontFamily: 'var(--font-mono)',
             }}
           >
             ×
@@ -229,7 +212,7 @@ function PersonsTab() {
 
       {filteredPersons.length === 0 ? (
         <div style={{
-          textAlign: 'center', color: '#5a8aaa', fontFamily: "'Share Tech Mono', monospace",
+          textAlign: 'center', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)',
           fontSize: 12, padding: 20
         }}>No personnel found</div>
       ) : (
@@ -238,40 +221,43 @@ function PersonsTab() {
           const hasAlert  = ppe.hardhat === false || ppe.vest === false || ppe.goggles === false
           const hasUnknown = ppe.hardhat == null || ppe.vest == null || ppe.goggles == null
           const isSelected = selectedPerson === p.id
+          const accent = isSelected ? 'var(--accent-cobalt)' : hasAlert ? 'var(--accent-red)' : 'var(--border-bright)'
           return (
             <div key={p.id} onClick={() => selectPerson(p.id)}
               style={{
-                background: isSelected ? 'rgba(0,180,255,0.08)' : 'rgba(255,255,255,0.02)',
-                border:`1px solid ${isSelected ? '#00b4ff55' : hasAlert ? '#ff3b3b33' : 'rgba(255,255,255,0.06)'}`,
-                borderRadius:10, padding:'12px 14px', marginBottom:10, cursor:'pointer',
-                transition:'all 0.2s',
+                background: isSelected ? 'var(--bg-elev)' : 'var(--glass-card)',
+                border:`1px solid ${isSelected ? 'var(--border-bright)' : 'var(--border)'}`,
+                borderLeft:`2px solid ${accent}`,
+                borderRadius:'var(--radius-sm)', padding:'15px 16px', marginBottom:12, cursor:'pointer',
+                boxShadow:'var(--shadow-card)',
+                transition:'border-color 0.15s, background 0.15s',
               }}>
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
-                <span style={{ fontFamily:"'Barlow Condensed'", fontSize:16, fontWeight:700,
-                    letterSpacing:1, color:'#e0f4ff' }}>PERSON #{p.id}</span>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
+                <span style={{ fontFamily:'var(--font-ui)', fontSize:14.5, fontWeight:600,
+                    letterSpacing:-0.01, color:'var(--text-primary)' }}>PERSON #{p.id}</span>
                 {hasAlert ? (
-                  <span style={{ background:'#ff3b3b22', border:'1px solid #ff3b3b',
-                    color:'#ff3b3b', fontFamily:"'Share Tech Mono'", fontSize:9,
-                    padding:'2px 8px', borderRadius:4, letterSpacing:2 }}>ALERT</span>
+                  <span style={{ background:'var(--bg-card)', border:'1px solid var(--accent-red)',
+                    color:'var(--accent-red)', fontFamily:'var(--font-mono)', fontSize:9,
+                    padding:'2px 8px', borderRadius:4, letterSpacing:1 }}>ALERT</span>
                 ) : hasUnknown ? (
-                  <span style={{ background:'rgba(90,138,170,0.1)', border:'1px solid #5a8aaa44',
-                    color:'#5a8aaa', fontFamily:"'Share Tech Mono'", fontSize:9,
-                    padding:'2px 8px', borderRadius:4, letterSpacing:2 }}>UNMONITORED</span>
+                  <span style={{ background:'var(--bg-card)', border:'1px solid var(--border-bright)',
+                    color:'var(--text-muted)', fontFamily:'var(--font-mono)', fontSize:9,
+                    padding:'2px 8px', borderRadius:4, letterSpacing:1 }}>UNMONITORED</span>
                 ) : null}
               </div>
               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:4,
-                fontFamily:"'Share Tech Mono'", fontSize:10.5, marginBottom:8 }}>
-                <div><span style={{color:'#5a8aaa'}}>Zone </span>
-                  <span style={{color:'#00b4ff'}}>{p.zone.replace(/_/g, ' ').toUpperCase()}</span></div>
-                <div><span style={{color:'#5a8aaa'}}>Posture </span>
-                  <span style={{color:'#00ffd5'}}>{p.posture}</span></div>
-                <div><span style={{color:'#5a8aaa'}}>Conf </span>
-                  <span style={{color:'#00e676'}}>{(p.confidence*100).toFixed(0)}%</span></div>
-                <div><span style={{color:'#5a8aaa'}}>Cams </span>
-                  <span>{p.cameras_visible}</span></div>
+                fontFamily:'var(--font-mono)', fontSize:10.5, marginBottom:8 }}>
+                <div><span style={{color:'var(--text-muted)'}}>Zone </span>
+                  <span style={{color:'var(--accent-cobalt)'}}>{p.zone.replace(/_/g, ' ').toUpperCase()}</span></div>
+                <div><span style={{color:'var(--text-muted)'}}>Posture </span>
+                  <span style={{color:'var(--text-primary)'}}>{p.posture}</span></div>
+                <div><span style={{color:'var(--text-muted)'}}>Conf </span>
+                  <span style={{color:'var(--accent-green)'}}>{(p.confidence*100).toFixed(0)}%</span></div>
+                <div><span style={{color:'var(--text-muted)'}}>Cams </span>
+                  <span style={{color:'var(--text-primary)'}}>{p.cameras_visible}</span></div>
               </div>
               {/* PPE indicators */}
-              <div style={{ display:'flex', gap:8, fontFamily:"'Share Tech Mono'", fontSize:10.5 }}>
+              <div style={{ display:'flex', gap:8, fontFamily:'var(--font-mono)', fontSize:10.5 }}>
                 {[
                   { label:'🪖 Hat', val: ppe.hardhat },
                   { label:'🦺 Vest', val: ppe.vest },
@@ -279,12 +265,13 @@ function PersonsTab() {
                 ].map(({ label, val }) => {
                   const isUnknown = val == null
                   const ok = val === true
+                  const tone = isUnknown ? 'var(--text-muted)' : ok ? 'var(--accent-green)' : 'var(--accent-red)'
                   return (
                     <span key={label} style={{
                       padding:'2px 8px', borderRadius:4, fontSize:10,
-                      background: isUnknown ? 'rgba(90,138,170,0.08)' : ok ? '#00e67611' : '#ff3b3b22',
-                      border:`1px solid ${isUnknown ? '#5a8aaa44' : ok ? '#00e67688' : '#ff3b3b88'}`,
-                      color: isUnknown ? '#5a8aaa' : ok ? '#00e676' : '#ff3b3b',
+                      background: 'var(--bg-card)',
+                      border:`1px solid ${isUnknown ? 'var(--border)' : tone}`,
+                      color: tone,
                     }}>
                       {label} {isUnknown ? '?' : ok ? '✓' : '✗'}
                     </span>
@@ -314,80 +301,81 @@ export default function Sidebar() {
   const alertPersons  = persons.filter(p => p.ppe?.hardhat === false || p.ppe?.vest === false || p.ppe?.goggles === false).length
 
   const tabs = [
-    { id:'zones',      label:'Zones',      badge: criticalCount, badgeColor:'#ff3b3b' },
-    { id:'persons',    label:'Personnel',  badge: alertPersons,  badgeColor:'#ff7043' },
+    { id:'zones',      label:'Zones',      badge: criticalCount },
+    { id:'persons',    label:'Personnel',  badge: alertPersons },
   ]
 
   return (
     <div style={{
-      width: 300, height: '100%', display:'flex', flexDirection:'column',
-      background:'rgba(5,12,22,0.96)',
-      borderRight:'1px solid rgba(0,180,255,0.12)',
-      backdropFilter:'blur(20px)',
+      width: 312, height: '100%', display:'flex', flexDirection:'column',
+      background:'var(--glass-panel)',
+      backdropFilter:'blur(16px) saturate(120%)',
+      WebkitBackdropFilter:'blur(16px) saturate(120%)',
+      borderRight:'1px solid var(--border)',
+      boxShadow:'var(--inner-hi)',
     }}>
       {/* Header */}
-      <div style={{ padding:'20px 20px 0' }}>
+      <div style={{ padding:'22px 20px 0' }}>
         <div style={{
-          fontFamily:"'Barlow Condensed'", fontSize:11, fontWeight:600,
-          color:'#5a8aaa', letterSpacing:4, textTransform:'uppercase', marginBottom:4
+          fontFamily:'var(--font-mono)', fontSize:10, fontWeight:500,
+          color:'var(--text-dim)', letterSpacing:2.5, textTransform:'uppercase', marginBottom:7
         }}>RigVision · RigVision-3D</div>
         <div style={{
-          fontFamily:"'Barlow Condensed'", fontSize:26, fontWeight:700,
-          color:'#00b4ff', letterSpacing:2, lineHeight:1,
-        }}>LIVE MONITOR</div>
-        
+          fontFamily:'var(--font-ui)', fontSize:21, fontWeight:600,
+          color:'var(--text-primary)', letterSpacing:-0.02, lineHeight:1,
+        }}>Live Monitor</div>
+
         {/* Connection Status */}
-        <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:6, marginBottom:12 }}>
-          <span style={{ width:7, height:7, borderRadius:'50%', 
-            background: connected ? '#00e676' : '#ff3b3b',
-            boxShadow: connected ? '0 0 8px #00e676' : '0 0 8px #ff3b3b', 
+        <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:8, marginBottom:12 }}>
+          <span style={{ width:7, height:7, borderRadius:'50%',
+            background: connected ? 'var(--accent-green)' : 'var(--accent-red)',
             display:'inline-block',
             animation: connected ? 'pulse 2s infinite' : 'none' }} />
-          <span style={{ fontFamily:"'Share Tech Mono'", fontSize:11, color: connected ? '#00e676' : '#ff3b3b' }}>
-            {connected ? `CONNECTED · ${persons.length} TRACKED` : 'DISCONNECTED - RECONNECTING...'}
+          <span style={{ fontFamily:'var(--font-mono)', fontSize:11, color: connected ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+            {connected ? `CONNECTED · ${persons.length} TRACKED` : 'DISCONNECTED — RECONNECTING…'}
           </span>
         </div>
-        
+
         {/* Toggles */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
           <button onClick={toggleAvatars} style={{
-            flex: 1, padding: '4px 0', border: `1px solid ${showAvatars ? '#00b4ff' : '#2a4a5a'}`, 
-            background: showAvatars ? 'rgba(0,180,255,0.15)' : 'transparent',
-            color: showAvatars ? '#e0f4ff' : '#5a8aaa', borderRadius: 4, cursor: 'pointer',
-            fontFamily: "'Share Tech Mono'", fontSize: 10, transition: 'all 0.2s'
+            flex: 1, padding: '5px 0', border: `1px solid ${showAvatars ? 'var(--border-bright)' : 'var(--border)'}`,
+            background: showAvatars ? 'var(--bg-card)' : 'transparent',
+            color: showAvatars ? 'var(--text-primary)' : 'var(--text-muted)', borderRadius: 4, cursor: 'pointer',
+            fontFamily: 'var(--font-mono)', fontSize: 10, transition: 'all 0.15s'
           }}>
             👤 Avatars {showAvatars ? 'ON' : 'OFF'}
           </button>
           <button onClick={toggleSensors} style={{
-            flex: 1, padding: '4px 0', border: `1px solid ${showSensors ? '#00e676' : '#2a4a5a'}`, 
-            background: showSensors ? 'rgba(0,230,118,0.15)' : 'transparent',
-            color: showSensors ? '#e0f4ff' : '#5a8aaa', borderRadius: 4, cursor: 'pointer',
-            fontFamily: "'Share Tech Mono'", fontSize: 10, transition: 'all 0.2s'
+            flex: 1, padding: '5px 0', border: `1px solid ${showSensors ? 'var(--border-bright)' : 'var(--border)'}`,
+            background: showSensors ? 'var(--bg-card)' : 'transparent',
+            color: showSensors ? 'var(--text-primary)' : 'var(--text-muted)', borderRadius: 4, cursor: 'pointer',
+            fontFamily: 'var(--font-mono)', fontSize: 10, transition: 'all 0.15s'
           }}>
             📊 Sensors {showSensors ? 'ON' : 'OFF'}
           </button>
         </div>
 
-        <div style={{ height:'1px', background:'linear-gradient(90deg,#00b4ff33,transparent)', marginBottom:16 }} />
+        <div style={{ height:'1px', background:'var(--border)', marginBottom:16 }} />
       </div>
 
       {/* Tab bar */}
       <div style={{ display:'flex', padding:'0 14px', gap:4, marginBottom:12 }}>
         {tabs.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)} style={{
-            flex:1, padding:'7px 0', border:'none', cursor:'pointer', borderRadius:7,
-            background: tab === t.id ? 'rgba(0,180,255,0.15)' : 'transparent',
-            borderBottom: tab === t.id ? '2px solid #00b4ff' : '2px solid transparent',
-            fontFamily:"'Barlow Condensed'", fontSize:12, fontWeight:600,
-            color: tab === t.id ? '#00b4ff' : '#5a8aaa',
-            letterSpacing:1, textTransform:'uppercase', transition:'all 0.2s',
-            display:'flex', flexDirection:'column', alignItems:'center', gap:2,
+            flex:1, padding:'7px 0', border:'none', cursor:'pointer', borderRadius:0,
+            background: 'transparent',
+            borderBottom: tab === t.id ? '2px solid var(--accent-cobalt)' : '2px solid var(--border)',
+            fontFamily:'var(--font-ui)', fontSize:12, fontWeight:600,
+            color: tab === t.id ? 'var(--text-primary)' : 'var(--text-muted)',
+            letterSpacing:0.3, transition:'all 0.15s',
+            display:'flex', flexDirection:'row', alignItems:'center', justifyContent:'center', gap:6,
           }}>
             {t.label}
             {t.badge > 0 && (
               <span style={{
-                background: t.badgeColor, color:'#fff', fontSize:9,
-                borderRadius:10, padding:'1px 5px', fontFamily:"'Share Tech Mono'",
+                background: 'var(--accent-red)', color:'var(--bg-deep)', fontSize:9,
+                borderRadius:4, padding:'1px 5px', fontFamily:'var(--font-mono)',
                 minWidth:16, textAlign:'center',
               }}>{t.badge}</span>
             )}
@@ -396,15 +384,15 @@ export default function Sidebar() {
       </div>
 
       {/* Scrollable content */}
-      <div style={{ flex:1, overflowY:'auto', padding:'0 14px 14px' }}>
+      <div style={{ flex:1, overflowY:'auto', padding:'4px 16px 16px' }}>
         {tab === 'zones'   && <ZonesTab />}
         {tab === 'persons' && <PersonsTab />}
       </div>
 
       {/* Footer */}
       <div style={{
-        padding:'10px 20px', borderTop:'1px solid rgba(0,180,255,0.08)',
-        fontFamily:"'Share Tech Mono'", fontSize:9.5, color:'#2a4a5a',
+        padding:'10px 20px', borderTop:'1px solid var(--border)',
+        fontFamily:'var(--font-mono)', fontSize:9.5, color:'var(--text-dim)',
         display:'flex', justifyContent:'space-between',
       }}>
         <span>Redis · 10Hz feed</span>

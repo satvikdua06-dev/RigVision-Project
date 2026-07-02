@@ -1,22 +1,48 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --bg-deep:       #050a0f;
-  --bg-panel:      rgba(8, 18, 28, 0.92);
-  --bg-card:       rgba(12, 25, 40, 0.85);
-  --border:        rgba(0, 180, 255, 0.15);
-  --border-bright: rgba(0, 180, 255, 0.45);
-  --accent-cyan:   #00b4ff;
-  --accent-teal:   #00ffd5;
-  --accent-amber:  #ffb300;
-  --accent-red:    #ff3b3b;
-  --accent-green:  #00e676;
-  --text-primary:  #e0f4ff;
-  --text-muted:    #5a8aaa;
-  --text-dim:      #2a4a5a;
-  --font-mono:     'Share Tech Mono', monospace;
-  --font-ui:       'Rajdhani', sans-serif;
-  --font-display:  'Barlow Condensed', sans-serif;
+  /* ── Surfaces ─────────────────────────────────────────────────────────────
+     A cool graphite/slate stack — never pure black. Each step lifts ~6–8% so
+     panels read as layered overlays above the 3D scene, not flat boxes. */
+  --bg-deep:       #0e1116;   /* app base (behind canvas / console) */
+  --bg-panel:      #161a21;   /* solid panel fallback */
+  --bg-card:       #1b2029;   /* raised card */
+  --bg-elev:       #222834;   /* hover / active surface */
+
+  /* Translucent panel fills for glassmorphism (used with backdrop-filter) */
+  --glass-panel:   rgba(20, 24, 31, 0.72);
+  --glass-card:    rgba(30, 36, 46, 0.55);
+
+  /* ── Hairlines ────────────────────────────────────────────────────────────
+     Borders are light-on-dark hairlines, not colored neon strokes. */
+  --border:        rgba(255, 255, 255, 0.07);
+  --border-bright: rgba(255, 255, 255, 0.14);
+  --border-solid:  #272d38;
+
+  /* ── Semantic accents (desaturated, professional) ────────────────────────── */
+  --accent-cobalt: #5b8def;
+  --accent-green:  #46b17f;
+  --accent-amber:  #d9a64e;
+  --accent-red:    #e06054;
+
+  /* ── Type ─────────────────────────────────────────────────────────────────
+     Soft off-white primary; cool slate for the muted hierarchy. */
+  --text-primary:  #e6e9ef;
+  --text-muted:    #8b93a3;
+  --text-dim:      #5a6271;
+
+  --font-mono:     'JetBrains Mono', monospace;
+  --font-ui:       'Inter', sans-serif;
+  --font-display:  'Inter', sans-serif;
+
+  /* ── Elevation ────────────────────────────────────────────────────────────
+     Soft, diffuse shadows + a faint top inner-highlight that reads as glass. */
+  --shadow-panel:  0 12px 40px -12px rgba(0, 0, 0, 0.55);
+  --shadow-card:   0 1px 2px rgba(0, 0, 0, 0.3);
+  --inner-hi:      inset 0 1px 0 rgba(255, 255, 255, 0.04);
+
+  --radius:        10px;
+  --radius-sm:     7px;
 }
 
 html, body, #root {
@@ -24,13 +50,82 @@ html, body, #root {
   background: var(--bg-deep);
   color: var(--text-primary);
   font-family: var(--font-ui);
+  letter-spacing: -0.01em;          /* Inter sits better very slightly tightened */
 }
 
-::-webkit-scrollbar { width: 4px; }
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* ── Reusable glass overlay ──────────────────────────────────────────────────
+   Panels that float over the 3D scene: translucent fill, blur, hairline border,
+   soft shadow, and a faint inner top-highlight. */
+.glass {
+  background: var(--glass-panel);
+  backdrop-filter: blur(16px) saturate(120%);
+  -webkit-backdrop-filter: blur(16px) saturate(120%);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-panel), var(--inner-hi);
+}
+
+/* ── Scrollbars ──────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 2px; }
+::-webkit-scrollbar-thumb {
+  background: var(--border-bright);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--text-dim); background-clip: padding-box; }
+
+/* ── Native-feeling range sliders ────────────────────────────────────────────
+   Thin recessed track + a tactile raised thumb with a soft ring on hover. */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 22px;
+  background: transparent;
+  cursor: pointer;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 4px;
+  background: var(--border-solid);
+}
+input[type="range"]::-moz-range-track {
+  height: 4px;
+  border-radius: 4px;
+  background: var(--border-solid);
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  margin-top: -6px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--text-primary);
+  border: 1px solid rgba(0, 0, 0, 0.4);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  transition: box-shadow 0.15s, transform 0.1s;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--text-primary);
+  border: 1px solid rgba(0, 0, 0, 0.4);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+input[type="range"]:hover::-webkit-slider-thumb { box-shadow: 0 0 0 6px rgba(91, 141, 239, 0.14), 0 1px 3px rgba(0,0,0,0.5); }
+input[type="range"]:active::-webkit-slider-thumb { transform: scale(0.94); }
+input[type="range"]:focus-visible { outline: none; }
 
 @keyframes pulse {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+  50% { opacity: 0.5; }
 }

@@ -1,15 +1,15 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "RigVision-3D Zone Definitions",
-  "description": "Physical layout of the monitoring area. Defines zone bounding boxes, equipment, and sensor placements. All units in meters. Coordinate system: X = length, Y = up, Z = width. Origin at corner of Room A.",
-  "version": "1.0.0",
+  "description": "Physical layout of the monitoring area. Two stacked rooms: Room A on the ground floor (floor 0) and Room B directly above it on the first floor (floor 1). No corridor. Each room is an 8m (X) x 6m (Z) bay, 3.4m tall. All units in meters. Coordinate system: X = length, Y = up, Z = width. Origin at the ground-floor corner of Room A. Each zone is monitored by exactly 2 cameras (overlapping fields of view) so a person can be triangulated within the zone.",
+  "version": "3.0.0",
 
   "room": {
     "total_dimensions": {
-      "length_x": 10,
-      "height_y": 3,
-      "width_z": 5,
-      "comment": "Total bounding box of the entire facility"
+      "length_x": 8,
+      "height_y": 6.8,
+      "width_z": 6,
+      "comment": "8x6m footprint, two 3.4m-tall floors stacked => 6.8m tall."
     }
   },
 
@@ -17,26 +17,34 @@
     "zone_a": {
       "name": "Room A",
       "floor": 0,
-      "description": "Main work area with drilling equipment",
+      "description": "Ground-floor work area with drilling equipment.",
       "bounds": {
         "min": { "x": 0, "y": 0, "z": 0 },
-        "max": { "x": 4, "y": 3, "z": 5 }
+        "max": { "x": 8, "y": 3.4, "z": 6 }
       },
       "color": "#4488ff",
-      "max_occupancy": 3,
-      "camera": {
-        "id": "cam0",
-        "position": { "x": 0.5, "y": 2.5, "z": 0.5 },
-        "look_at": { "x": 3, "y": 1, "z": 3 },
-        "comment": "Phone 1 mounted on wall near door, looking into room"
-      },
+      "max_occupancy": 6,
+      "cameras": [
+        {
+          "id": "cam0",
+          "position": { "x": 0.4, "y": 3.0, "z": 0.4 },
+          "look_at": { "x": 5, "y": 1, "z": 4 },
+          "comment": "Phone 1 — front-left corner, looking across the bay."
+        },
+        {
+          "id": "cam1",
+          "position": { "x": 7.6, "y": 3.0, "z": 0.4 },
+          "look_at": { "x": 3, "y": 1, "z": 4 },
+          "comment": "Phone 2 — front-right corner, overlapping cam0's view for stereo triangulation."
+        }
+      ],
       "equipment": [
         {
           "id": "pump_01",
           "name": "Mud Pump #1",
           "type": "pump",
-          "position": { "x": 1.5, "y": 0, "z": 1.5 },
-          "dimensions": { "x": 1.2, "y": 1.0, "z": 0.8 },
+          "position": { "x": 2.0, "y": 0, "z": 2.0 },
+          "dimensions": { "x": 1.6, "y": 1.2, "z": 1.1 },
           "color": "#667788",
           "sensors": ["temp_a", "vib_a"]
         },
@@ -44,8 +52,8 @@
           "id": "panel_01",
           "name": "Control Panel",
           "type": "control_panel",
-          "position": { "x": 3.0, "y": 0, "z": 4.0 },
-          "dimensions": { "x": 0.8, "y": 1.8, "z": 0.4 },
+          "position": { "x": 6.6, "y": 0, "z": 5.2 },
+          "dimensions": { "x": 1.0, "y": 1.8, "z": 0.5 },
           "color": "#445566",
           "sensors": ["pressure_a"]
         },
@@ -53,80 +61,52 @@
           "id": "pipe_rack_01",
           "name": "Pipe Rack",
           "type": "storage",
-          "position": { "x": 0.5, "y": 0, "z": 3.5 },
-          "dimensions": { "x": 0.6, "y": 2.0, "z": 1.0 },
+          "position": { "x": 1.0, "y": 0, "z": 5.0 },
+          "dimensions": { "x": 0.9, "y": 2.2, "z": 1.6 },
           "color": "#887766",
           "sensors": []
         }
       ],
       "sensors": [
-        { "id": "temp_a",     "type": "temperature", "unit": "°C",    "position": { "x": 1.5, "y": 2.0, "z": 1.5 }, "normal_range": [20, 45], "warning": 50, "critical": 65 },
-        { "id": "gas_a",      "type": "gas_h2s",     "unit": "ppm",   "position": { "x": 2.0, "y": 0.3, "z": 2.5 }, "normal_range": [0, 5],   "warning": 10, "critical": 15 },
-        { "id": "vib_a",      "type": "vibration",   "unit": "g_rms", "position": { "x": 1.5, "y": 0.5, "z": 1.5 }, "normal_range": [0, 2.5], "warning": 5,  "critical": 8 },
-        { "id": "noise_a",    "type": "noise",       "unit": "dB",    "position": { "x": 2.0, "y": 2.5, "z": 2.5 }, "normal_range": [40, 85], "warning": 95, "critical": 105 },
-        { "id": "pressure_a", "type": "pressure",    "unit": "bar",   "position": { "x": 3.0, "y": 1.0, "z": 4.0 }, "normal_range": [5, 15],  "warning": 20, "critical": 25 }
-      ]
-    },
-
-    "corridor": {
-      "name": "Corridor",
-      "floor": 0,
-      "description": "Narrow connecting passage between Room A and Room B",
-      "bounds": {
-        "min": { "x": 4, "y": 0, "z": 1.5 },
-        "max": { "x": 6, "y": 3, "z": 3.5 }
-      },
-      "color": "#44aaff",
-      "max_occupancy": 2,
-      "camera": {
-        "id": "cam1",
-        "position": { "x": 5.0, "y": 2.5, "z": 1.8 },
-        "look_at": { "x": 5.0, "y": 1.0, "z": 3.0 },
-        "comment": "Phone 2 mounted on corridor ceiling, looking down"
-      },
-      "equipment": [
-        {
-          "id": "fire_ext_01",
-          "name": "Fire Extinguisher",
-          "type": "safety",
-          "position": { "x": 4.5, "y": 0, "z": 2.0 },
-          "dimensions": { "x": 0.2, "y": 0.6, "z": 0.2 },
-          "color": "#cc3333",
-          "sensors": []
-        }
-      ],
-      "sensors": [
-        { "id": "temp_cor",     "type": "temperature", "unit": "°C",    "position": { "x": 5.0, "y": 2.0, "z": 2.5 }, "normal_range": [20, 45], "warning": 50, "critical": 65 },
-        { "id": "gas_cor",      "type": "gas_h2s",     "unit": "ppm",   "position": { "x": 5.0, "y": 0.3, "z": 2.5 }, "normal_range": [0, 5],   "warning": 10, "critical": 15 },
-        { "id": "vib_cor",      "type": "vibration",   "unit": "g_rms", "position": { "x": 4.5, "y": 0.5, "z": 2.0 }, "normal_range": [0, 2.5], "warning": 5,  "critical": 8 },
-        { "id": "noise_cor",    "type": "noise",       "unit": "dB",    "position": { "x": 5.0, "y": 2.5, "z": 2.5 }, "normal_range": [40, 85], "warning": 95, "critical": 105 },
-        { "id": "pressure_cor", "type": "pressure",    "unit": "bar",   "position": { "x": 5.5, "y": 1.0, "z": 3.0 }, "normal_range": [5, 15],  "warning": 20, "critical": 25 }
+        { "id": "temp_a",     "type": "temperature", "unit": "°C",    "position": { "x": 2.0, "y": 2.2, "z": 2.0 }, "normal_range": [20, 45], "warning": 50, "critical": 65 },
+        { "id": "gas_a",      "type": "gas_h2s",     "unit": "ppm",   "position": { "x": 4.0, "y": 0.3, "z": 3.0 }, "normal_range": [0, 5],   "warning": 10, "critical": 15 },
+        { "id": "vib_a",      "type": "vibration",   "unit": "g_rms", "position": { "x": 2.0, "y": 0.6, "z": 2.0 }, "normal_range": [0, 2.5], "warning": 5,  "critical": 8 },
+        { "id": "noise_a",    "type": "noise",       "unit": "dB",    "position": { "x": 5.0, "y": 2.6, "z": 4.0 }, "normal_range": [40, 85], "warning": 95, "critical": 105 },
+        { "id": "pressure_a", "type": "pressure",    "unit": "bar",   "position": { "x": 6.6, "y": 1.0, "z": 5.2 }, "normal_range": [5, 15],  "warning": 20, "critical": 25 }
       ]
     },
 
     "zone_b": {
       "name": "Room B",
-      "floor": 0,
-      "description": "Secondary area with compressor and wellhead equipment",
+      "floor": 1,
+      "description": "First-floor area (directly above Room A) with compressor and wellhead equipment.",
       "bounds": {
-        "min": { "x": 6, "y": 0, "z": 0 },
-        "max": { "x": 10, "y": 3, "z": 5 }
+        "min": { "x": 0, "y": 3.4, "z": 0 },
+        "max": { "x": 8, "y": 6.8, "z": 6 }
       },
       "color": "#44ff88",
-      "max_occupancy": 4,
-      "camera": {
-        "id": "cam2",
-        "position": { "x": 9.5, "y": 2.5, "z": 4.5 },
-        "look_at": { "x": 7.0, "y": 1.0, "z": 2.0 },
-        "comment": "Phone 3 mounted in far corner, looking across room"
-      },
+      "max_occupancy": 6,
+      "cameras": [
+        {
+          "id": "cam2",
+          "position": { "x": 0.4, "y": 6.4, "z": 0.4 },
+          "look_at": { "x": 5, "y": 4.4, "z": 4 },
+          "comment": "Phone 3 — front-left corner of the upper deck."
+        },
+        {
+          "id": "cam3",
+          "position": { "x": 7.6, "y": 6.4, "z": 0.4 },
+          "look_at": { "x": 3, "y": 4.4, "z": 4 },
+          "comment": "Phone 4 — front-right corner, overlapping cam2's view for stereo triangulation."
+        }
+      ],
       "equipment": [
         {
           "id": "compressor_01",
           "name": "Compressor",
           "type": "compressor",
-          "position": { "x": 7.5, "y": 0, "z": 1.0 },
-          "dimensions": { "x": 1.5, "y": 1.2, "z": 1.0 },
+          "position": { "x": 2.5, "y": 3.4, "z": 2.0 },
+          "dimensions": { "x": 1.8, "y": 1.4, "z": 1.2 },
           "color": "#556677",
           "sensors": ["temp_b", "vib_b", "pressure_b"]
         },
@@ -134,8 +114,8 @@
           "id": "wellhead_01",
           "name": "Wellhead Assembly",
           "type": "wellhead",
-          "position": { "x": 8.5, "y": 0, "z": 3.5 },
-          "dimensions": { "x": 0.8, "y": 2.5, "z": 0.8 },
+          "position": { "x": 6.0, "y": 3.4, "z": 4.0 },
+          "dimensions": { "x": 1.0, "y": 2.6, "z": 1.0 },
           "color": "#998877",
           "sensors": ["gas_b", "noise_b"]
         },
@@ -143,98 +123,18 @@
           "id": "tool_cabinet_01",
           "name": "Tool Cabinet",
           "type": "storage",
-          "position": { "x": 6.5, "y": 0, "z": 4.0 },
-          "dimensions": { "x": 0.6, "y": 1.5, "z": 0.8 },
+          "position": { "x": 1.0, "y": 3.4, "z": 5.0 },
+          "dimensions": { "x": 0.8, "y": 1.6, "z": 1.0 },
           "color": "#776655",
           "sensors": []
         }
       ],
       "sensors": [
-        { "id": "temp_b",     "type": "temperature", "unit": "°C",    "position": { "x": 7.5, "y": 1.0, "z": 1.0 }, "normal_range": [20, 45], "warning": 50, "critical": 65 },
-        { "id": "gas_b",      "type": "gas_h2s",     "unit": "ppm",   "position": { "x": 8.5, "y": 0.3, "z": 3.5 }, "normal_range": [0, 5],   "warning": 10, "critical": 15 },
-        { "id": "vib_b",      "type": "vibration",   "unit": "g_rms", "position": { "x": 7.5, "y": 0.5, "z": 1.0 }, "normal_range": [0, 2.5], "warning": 5,  "critical": 8 },
-        { "id": "noise_b",    "type": "noise",       "unit": "dB",    "position": { "x": 8.0, "y": 2.5, "z": 2.5 }, "normal_range": [40, 85], "warning": 95, "critical": 105 },
-        { "id": "pressure_b", "type": "pressure",    "unit": "bar",   "position": { "x": 7.5, "y": 0.8, "z": 1.0 }, "normal_range": [5, 15],  "warning": 20, "critical": 25 }
-      ]
-    },
-
-    "zone_a_f1": {
-      "name": "Room A - Floor 1",
-      "floor": 1,
-      "description": "Drilling rig upper deck room A",
-      "bounds": {
-        "min": { "x": 0, "y": 3, "z": 0 },
-        "max": { "x": 4, "y": 6, "z": 5 }
-      },
-      "color": "#4488ff",
-      "max_occupancy": 3,
-      "equipment": [
-        {
-          "id": "pump_01_f1",
-          "name": "Mud Pump #1 (F1)",
-          "type": "pump",
-          "position": { "x": 1.5, "y": 3, "z": 1.5 },
-          "dimensions": { "x": 1.2, "y": 1.0, "z": 0.8 },
-          "color": "#667788",
-          "sensors": ["temp_a_f1", "vib_a_f1"]
-        }
-      ],
-      "sensors": [
-        { "id": "temp_a_f1",     "type": "temperature", "unit": "°C",    "position": { "x": 1.5, "y": 5.0, "z": 1.5 }, "normal_range": [20, 45], "warning": 50, "critical": 65 },
-        { "id": "gas_a_f1",      "type": "gas_h2s",     "unit": "ppm",   "position": { "x": 2.0, "y": 3.3, "z": 2.5 }, "normal_range": [0, 5],   "warning": 10, "critical": 15 },
-        { "id": "vib_a_f1",      "type": "vibration",   "unit": "g_rms", "position": { "x": 1.5, "y": 3.5, "z": 1.5 }, "normal_range": [0, 2.5], "warning": 5,  "critical": 8 },
-        { "id": "noise_a_f1",    "type": "noise",       "unit": "dB",    "position": { "x": 2.0, "y": 5.5, "z": 2.5 }, "normal_range": [40, 85], "warning": 95, "critical": 105 },
-        { "id": "pressure_a_f1", "type": "pressure",    "unit": "bar",   "position": { "x": 3.0, "y": 4.0, "z": 4.0 }, "normal_range": [5, 15],  "warning": 20, "critical": 25 }
-      ]
-    },
-
-    "corridor_f1": {
-      "name": "Corridor - Floor 1",
-      "floor": 1,
-      "description": "Connecting passage upper deck",
-      "bounds": {
-        "min": { "x": 4, "y": 3, "z": 1.5 },
-        "max": { "x": 6, "y": 6, "z": 3.5 }
-      },
-      "color": "#44aaff",
-      "max_occupancy": 2,
-      "equipment": [],
-      "sensors": [
-        { "id": "temp_cor_f1",     "type": "temperature", "unit": "°C",    "position": { "x": 5.0, "y": 5.0, "z": 2.5 }, "normal_range": [20, 45], "warning": 50, "critical": 65 },
-        { "id": "gas_cor_f1",      "type": "gas_h2s",     "unit": "ppm",   "position": { "x": 5.0, "y": 3.3, "z": 2.5 }, "normal_range": [0, 5],   "warning": 10, "critical": 15 },
-        { "id": "vib_cor_f1",      "type": "vibration",   "unit": "g_rms", "position": { "x": 4.5, "y": 3.5, "z": 2.0 }, "normal_range": [0, 2.5], "warning": 5,  "critical": 8 },
-        { "id": "noise_cor_f1",    "type": "noise",       "unit": "dB",    "position": { "x": 5.0, "y": 5.5, "z": 2.5 }, "normal_range": [40, 85], "warning": 95, "critical": 105 },
-        { "id": "pressure_cor_f1", "type": "pressure",    "unit": "bar",   "position": { "x": 5.5, "y": 4.0, "z": 3.0 }, "normal_range": [5, 15],  "warning": 20, "critical": 25 }
-      ]
-    },
-
-    "zone_b_f1": {
-      "name": "Room B - Floor 1",
-      "floor": 1,
-      "description": "Secondary compressor upper deck room B",
-      "bounds": {
-        "min": { "x": 6, "y": 3, "z": 0 },
-        "max": { "x": 10, "y": 6, "z": 5 }
-      },
-      "color": "#44ff88",
-      "max_occupancy": 4,
-      "equipment": [
-        {
-          "id": "compressor_01_f1",
-          "name": "Compressor (F1)",
-          "type": "compressor",
-          "position": { "x": 7.5, "y": 3, "z": 1.0 },
-          "dimensions": { "x": 1.5, "y": 1.2, "z": 1.0 },
-          "color": "#556677",
-          "sensors": ["temp_b_f1", "vib_b_f1", "pressure_b_f1"]
-        }
-      ],
-      "sensors": [
-        { "id": "temp_b_f1",     "type": "temperature", "unit": "°C",    "position": { "x": 7.5, "y": 4.0, "z": 1.0 }, "normal_range": [20, 45], "warning": 50, "critical": 65 },
-        { "id": "gas_b_f1",      "type": "gas_h2s",     "unit": "ppm",   "position": { "x": 8.5, "y": 3.3, "z": 3.5 }, "normal_range": [0, 5],   "warning": 10, "critical": 15 },
-        { "id": "vib_b_f1",      "type": "vibration",   "unit": "g_rms", "position": { "x": 7.5, "y": 3.5, "z": 1.0 }, "normal_range": [0, 2.5], "warning": 5,  "critical": 8 },
-        { "id": "noise_b_f1",    "type": "noise",       "unit": "dB",    "position": { "x": 8.0, "y": 5.5, "z": 2.5 }, "normal_range": [40, 85], "warning": 95, "critical": 105 },
-        { "id": "pressure_b_f1", "type": "pressure",    "unit": "bar",   "position": { "x": 7.5, "y": 3.8, "z": 1.0 }, "normal_range": [5, 15],  "warning": 20, "critical": 25 }
+        { "id": "temp_b",     "type": "temperature", "unit": "°C",    "position": { "x": 2.5, "y": 5.6, "z": 2.0 }, "normal_range": [20, 45], "warning": 50, "critical": 65 },
+        { "id": "gas_b",      "type": "gas_h2s",     "unit": "ppm",   "position": { "x": 6.0, "y": 3.7, "z": 4.0 }, "normal_range": [0, 5],   "warning": 10, "critical": 15 },
+        { "id": "vib_b",      "type": "vibration",   "unit": "g_rms", "position": { "x": 2.5, "y": 4.0, "z": 2.0 }, "normal_range": [0, 2.5], "warning": 5,  "critical": 8 },
+        { "id": "noise_b",    "type": "noise",       "unit": "dB",    "position": { "x": 5.0, "y": 6.0, "z": 3.0 }, "normal_range": [40, 85], "warning": 95, "critical": 105 },
+        { "id": "pressure_b", "type": "pressure",    "unit": "bar",   "position": { "x": 6.0, "y": 4.2, "z": 4.0 }, "normal_range": [5, 15],  "warning": 20, "critical": 25 }
       ]
     }
   }

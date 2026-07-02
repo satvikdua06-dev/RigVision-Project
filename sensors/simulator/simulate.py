@@ -39,7 +39,8 @@ def signal_handler(sig: int, frame: object) -> None:
 
 signal.signal(signal.SIGINT, signal_handler)
 
-ZONES = ["zone_a", "corridor", "zone_b", "zone_a_f1", "corridor_f1", "zone_b_f1"]
+# Two stacked rooms: Room A (ground floor) and Room B (first floor). No corridor.
+ZONES = ["zone_a", "zone_b"]
 
 
 def generate_reading(zone_id: str, t: float) -> dict:

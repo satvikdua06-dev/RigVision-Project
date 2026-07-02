@@ -2,18 +2,18 @@ import { useState, useEffect, useMemo } from 'react'
 import { useRigStore } from '../stores/useRigStore.js'
 
 const POSTURE_COLORS = {
-  standing: '#00b4ff',
-  sitting:  '#00ffd5',
-  bending:  '#ffb300',
-  lying:    '#ff3b3b',
-  walking:  '#00b4ff',
-  unknown:  '#5a8aaa',
+  standing: 'var(--accent-cobalt)',
+  sitting:  'var(--accent-cobalt)',
+  bending:  'var(--accent-amber)',
+  lying:    'var(--accent-red)',
+  walking:  'var(--accent-cobalt)',
+  unknown:  'var(--text-muted)',
 }
 
 function ppeStatus(val) {
-  if (val === true) return { label: '✓', color: '#00e676', bg: 'rgba(0, 230, 118, 0.08)', border: 'rgba(0, 230, 118, 0.3)' }
-  if (val === false) return { label: '✗', color: '#ff3b3b', bg: 'rgba(255, 59, 59, 0.08)', border: 'rgba(255, 59, 59, 0.3)' }
-  return { label: '?', color: '#5a8aaa', bg: 'rgba(90, 138, 170, 0.08)', border: 'rgba(90, 138, 170, 0.3)' }
+  if (val === true) return { label: '✓', color: 'var(--accent-green)' }
+  if (val === false) return { label: '✗', color: 'var(--accent-red)' }
+  return { label: '?', color: 'var(--text-muted)' }
 }
 
 const host = window.location.hostname === 'localhost' ? '127.0.0.1' : window.location.hostname
@@ -70,87 +70,63 @@ export default function CameraFeeds() {
   const hasAlert = ppe.hardhat === false || ppe.vest === false || ppe.goggles === false
   const hasUnknown = ppe.hardhat == null || ppe.vest == null || ppe.goggles == null
 
+  // Small flat status pill helper (sharp border, no glow).
+  const pill = (text, color) => (
+    <span style={{
+      background: 'var(--bg-card)', border: `1px solid ${color}`, color,
+      fontFamily: 'var(--font-mono)', fontSize: 10, padding: '2px 8px',
+      borderRadius: 4, fontWeight: 500, letterSpacing: 0.5,
+    }}>{text}</span>
+  )
+
   return (
     <div style={{
-      position: 'absolute', top: 16, right: 16, display: 'flex', flexDirection: 'column', gap: 12, zIndex: 10,
-      background: 'rgba(5,15,28,0.95)', border: '1px solid rgba(0,180,255,0.4)', borderRadius: 8, padding: 12,
-      boxShadow: '0 4px 20px rgba(0,0,0,0.8)',
-      width: 344,
+      position: 'absolute', top: 16, right: 16, display: 'flex', flexDirection: 'column', gap: 14, zIndex: 10,
+      background: 'var(--glass-panel)',
+      backdropFilter: 'blur(16px) saturate(120%)', WebkitBackdropFilter: 'blur(16px) saturate(120%)',
+      border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 14,
+      boxShadow: 'var(--shadow-panel), var(--inner-hi)',
+      width: 348,
     }}>
       {/* Person Detailed Info Card */}
       {person ? (() => {
         return (
           <div style={{
-            borderBottom: '1px solid rgba(0,180,255,0.25)',
+            borderBottom: '1px solid var(--border)',
             paddingBottom: 12,
             marginBottom: 2,
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <span style={{ fontFamily: "'Barlow Condensed'", fontSize: 18, fontWeight: 700, letterSpacing: 1.5, color: '#00ffd5' }}>
+              <span style={{ fontFamily: 'var(--font-ui)', fontSize: 16, fontWeight: 600, letterSpacing: 0.3, color: 'var(--text-primary)' }}>
                 PERSON #{person.id}
               </span>
-              {hasAlert ? (
-                <span style={{
-                  background: 'rgba(255, 59, 59, 0.15)',
-                  border: '1px solid #ff3b3b',
-                  color: '#ff3b3b',
-                  fontFamily: "'Share Tech Mono', monospace",
-                  fontSize: 10,
-                  padding: '2px 8px',
-                  borderRadius: 4,
-                  fontWeight: 600,
-                  letterSpacing: 1,
-                  animation: 'pulse 1.5s infinite'
-                }}>PPE VIOLATION</span>
-              ) : hasUnknown ? (
-                <span style={{
-                  background: 'rgba(90, 138, 170, 0.15)',
-                  border: '1px solid #5a8aaa',
-                  color: '#5a8aaa',
-                  fontFamily: "'Share Tech Mono', monospace",
-                  fontSize: 10,
-                  padding: '2px 8px',
-                  borderRadius: 4,
-                  fontWeight: 600,
-                  letterSpacing: 1
-                }}>UNMONITORED</span>
-              ) : (
-                <span style={{
-                  background: 'rgba(0, 230, 118, 0.15)',
-                  border: '1px solid #00e676',
-                  color: '#00e676',
-                  fontFamily: "'Share Tech Mono', monospace",
-                  fontSize: 10,
-                  padding: '2px 8px',
-                  borderRadius: 4,
-                  fontWeight: 600,
-                  letterSpacing: 1
-                }}>COMPLIANT</span>
-              )}
+              {hasAlert ? pill('PPE VIOLATION', 'var(--accent-red)')
+                : hasUnknown ? pill('UNMONITORED', 'var(--text-muted)')
+                : pill('COMPLIANT', 'var(--accent-green)')}
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 12px', fontFamily: "'Share Tech Mono', monospace", fontSize: 12, color: '#e0f4ff', marginBottom: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 12px', fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-primary)', marginBottom: 12 }}>
               <div>
-                <span style={{ color: '#5a8aaa' }}>Zone:</span>{' '}
-                <span style={{ color: '#00b4ff', fontWeight: 'bold' }}>{person.zone.replace(/_/g, ' ').toUpperCase()}</span>
+                <span style={{ color: 'var(--text-muted)' }}>Zone:</span>{' '}
+                <span style={{ color: 'var(--accent-cobalt)', fontWeight: 600 }}>{person.zone.replace(/_/g, ' ').toUpperCase()}</span>
               </div>
               <div>
-                <span style={{ color: '#5a8aaa' }}>Posture:</span>{' '}
-                <span style={{ color: POSTURE_COLORS[person.posture] || '#00ffd5', fontWeight: 'bold' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Posture:</span>{' '}
+                <span style={{ color: POSTURE_COLORS[person.posture] || 'var(--text-primary)', fontWeight: 600 }}>
                   {person.posture.charAt(0).toUpperCase() + person.posture.slice(1)}
                 </span>
               </div>
               <div>
-                <span style={{ color: '#5a8aaa' }}>Conf:</span>{' '}
-                <span style={{ color: '#00e676', fontWeight: 'bold' }}>{(person.confidence * 100).toFixed(0)}%</span>
+                <span style={{ color: 'var(--text-muted)' }}>Conf:</span>{' '}
+                <span style={{ color: 'var(--accent-green)', fontWeight: 600 }}>{(person.confidence * 100).toFixed(0)}%</span>
               </div>
               <div>
-                <span style={{ color: '#5a8aaa' }}>Cams:</span>{' '}
-                <span style={{ color: '#e0f4ff', fontWeight: 'bold' }}>{person.cameras_visible} / {cameraIds.length}</span>
+                <span style={{ color: 'var(--text-muted)' }}>Cams:</span>{' '}
+                <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{person.cameras_visible} / {cameraIds.length}</span>
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: 6, fontFamily: "'Share Tech Mono', monospace", fontSize: 11 }}>
+            <div style={{ display: 'flex', gap: 6, fontFamily: 'var(--font-mono)', fontSize: 11 }}>
               {[
                 { label: '🪖 Hat', status: hatStatus },
                 { label: '🦺 Vest', status: vestStatus },
@@ -161,8 +137,8 @@ export default function CameraFeeds() {
                   textAlign: 'center',
                   padding: '4px 6px',
                   borderRadius: 4,
-                  background: status.bg,
-                  border: `1px solid ${status.border}`,
+                  background: 'var(--bg-card)',
+                  border: `1px solid ${status.color}`,
                   color: status.color,
                   fontWeight: 500,
                 }}>
@@ -174,34 +150,24 @@ export default function CameraFeeds() {
         )
       })() : (
         <div style={{
-          borderBottom: '1px solid rgba(0,180,255,0.25)',
+          borderBottom: '1px solid var(--border)',
           paddingBottom: 12,
           marginBottom: 2,
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-            <span style={{ fontFamily: "'Barlow Condensed'", fontSize: 18, fontWeight: 700, letterSpacing: 1.5, color: '#5a8aaa' }}>
+            <span style={{ fontFamily: 'var(--font-ui)', fontSize: 16, fontWeight: 600, letterSpacing: 0.3, color: 'var(--text-muted)' }}>
               PERSON #{selectedPerson}
             </span>
-            <span style={{
-              background: 'rgba(255, 179, 0, 0.15)',
-              border: '1px solid #ffb300',
-              color: '#ffb300',
-              fontFamily: "'Share Tech Mono', monospace",
-              fontSize: 10,
-              padding: '2px 8px',
-              borderRadius: 4,
-              fontWeight: 600,
-              letterSpacing: 1
-            }}>TRACKING LOST</span>
+            {pill('TRACKING LOST', 'var(--accent-amber)')}
           </div>
-          <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 12, color: '#5a8aaa', lineHeight: 1.5 }}>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>
             Personnel #{selectedPerson} is not currently detected by any active camera. Live feeds are shown below.
           </div>
         </div>
       )}
 
-      <div style={{ fontFamily: "'Barlow Condensed'", fontSize: 12, color: '#5a8aaa', fontWeight: 600, letterSpacing: 1 }}>
-        LIVE FEED STREAM
+      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)', fontWeight: 500, letterSpacing: 1.5, textTransform: 'uppercase' }}>
+        Live Feed Stream
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {cameraIds.map(camId => {
@@ -213,24 +179,24 @@ export default function CameraFeeds() {
                 <img
                   src={`${API_BASE}/video/mjpeg/${camId}?t=${retry}`}
                   alt={`Camera ${camId}`}
-                  style={{ width: 320, height: 180, borderRadius: 6, border: '1px solid #2a4a5a', objectFit: 'cover', color: 'transparent' }}
+                  style={{ width: 320, height: 180, borderRadius: 6, border: '1px solid var(--border)', objectFit: 'cover', color: 'transparent' }}
                   onError={() => {
                     setFailedCams(prev => ({ ...prev, [camId]: true }))
                   }}
                 />
               ) : (
                 <div style={{
-                  display: 'flex', width: 320, height: 180, borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)',
-                  background: 'rgba(0,0,0,0.5)', color: '#5a8aaa', fontFamily: "'Share Tech Mono'", fontSize: 12,
+                  display: 'flex', width: 320, height: 180, borderRadius: 6, border: '1px solid var(--border)',
+                  background: 'var(--bg-deep)', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: 12,
                   justifyContent: 'center', alignItems: 'center'
                 }}>
                   CAM {camId} OFFLINE
                 </div>
               )}
               <div style={{
-                position: 'absolute', top: 6, left: 6, background: 'rgba(0,0,0,0.7)', color: '#00b4ff',
-                fontFamily: "'Share Tech Mono'", fontSize: 10, padding: '2px 6px', borderRadius: 4,
-                border: '1px solid rgba(0,180,255,0.3)'
+                position: 'absolute', top: 6, left: 6, background: 'var(--bg-deep)', color: 'var(--accent-cobalt)',
+                fontFamily: 'var(--font-mono)', fontSize: 10, padding: '2px 6px', borderRadius: 4,
+                border: '1px solid var(--border)'
               }}>CAM {camId}</div>
             </div>
           )

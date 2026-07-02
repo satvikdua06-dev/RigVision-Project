@@ -9,9 +9,9 @@ knowledge/documents/ONGC_Device_Manuals.txt (device sections + the HSE area stan
 Conventions (keep these constant across the whole project):
   - Sensor/symptom types are the live pipeline types:
       temperature | vibration | noise | gas_h2s | pressure
-  - Floor-1 rig zones (zone_*_f1) reuse their base room's topology, so *_f1
-    equipment is MERGED into the base device (pump_01_f1 -> pump_01); its
-    sensors attach to that base device.
+  - Layout is two stacked rooms: zone_a = Room A (floor 0) -> room_1,
+    zone_b = Room B (floor 1) -> room_2. (The _base_device_id helper still strips
+    a legacy "_f1" suffix harmlessly, but no floor-1 zones exist anymore.)
   - Action nodes are {id, name}; the relationship is REQUIRES_ACTION.
   - Failure modes exist at two levels:
       (:Device)-[:CAN_EXPERIENCE]->(:FailureMode)   equipment failures (device manuals)
@@ -42,15 +42,13 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 ZONE_DEFS_PATH = os.path.join(REPO_ROOT, "cad", "zone_definitions.json")
 REGISTRY_PATH = os.path.join(REPO_ROOT, "knowledge", "thresholds", "threshold_registry.json")
 
-# Rig zone ids -> KG Zone ids. Floor-1 variants reuse their base room's topology.
+# Rig zone ids -> KG Zone ids. Two stacked rooms: Room A (floor 0), Room B (floor 1).
 ZONE_TO_KG = {
-    "zone_a": "room_1", "zone_b": "room_2", "corridor": "corridor",
-    "zone_a_f1": "room_1", "zone_b_f1": "room_2", "corridor_f1": "corridor",
+    "zone_a": "room_1", "zone_b": "room_2",
 }
 KG_ZONES = [
     {"id": "room_1", "name": "Room A", "location_type": "work_area"},
     {"id": "room_2", "name": "Room B", "location_type": "work_area"},
-    {"id": "corridor", "name": "Corridor", "location_type": "passage"},
 ]
 
 # Equipment type -> manufacturer model (the manual that governs it).
@@ -108,8 +106,8 @@ DEVICE_FAILURE_MODES = {
 }
 
 # Area/HSE hazards (HSE-2025-04 Section 3) — apply to EVERY zone, so an alert in
-# a zone with no instrumented equipment (e.g. the corridor) still resolves to a
-# known failure mode with a protocol.
+# a zone whose flagged sensor isn't tied to instrumented equipment still resolves
+# to a known failure mode with a protocol.
 ZONE_FAILURE_MODES = [
     {"id": "fm_area_h2s_accumulation", "name": "Area H2S Gas Accumulation",
      "symptoms": ["gas_h2s"], "action": "Evacuate Zone and Ventilate"},
@@ -175,7 +173,6 @@ def build_payload():
             zone_names = {
                 "room_1": "Room A",
                 "room_2": "Room B",
-                "corridor": "Corridor"
             }
             z_display_name = zone_names.get(kg_zone, kg_zone.replace("_", " ").title())
             devices_by_id[env_dev_id] = {
@@ -292,11 +289,11 @@ def create_topology(tx, payload):
     """)
 
     # ── Device-to-Device and Zone-to-Zone Connectivity ─────────────────────
-    # Spatial connectivity between rooms and corridor
+    # Room B (room_2, first floor) sits directly above Room A (room_1, ground floor),
+    # connected by the stairwell — so a hazard in one is spatially adjacent to the other.
     tx.run("""
-        MATCH (r1:Zone {id: 'room_1'}), (c1:Zone {id: 'corridor'}), (r2:Zone {id: 'room_2'})
-        MERGE (r1)-[:CONNECTS_TO]->(c1)
-        MERGE (r2)-[:CONNECTS_TO]->(c1)
+        MATCH (r1:Zone {id: 'room_1'}), (r2:Zone {id: 'room_2'})
+        MERGE (r1)-[:CONNECTS_TO]->(r2)
     """)
 
     # Functional dependency relationships between equipment

@@ -1,148 +1,81 @@
 /**
  * RigVision-3D — Zone Position Definitions
- * 
+ *
  * Frontend mirror of cad/zone_definitions.json.
- * Defines zone bounding boxes, colors, and equipment positions
- * for the Three.js 3D scene.
+ * Two stacked rooms, no corridor:
+ *   - Room A (zone_a) on the ground floor (floor 0), y ∈ [0, 3.4]
+ *   - Room B (zone_b) on the first floor (floor 1), y ∈ [3.4, 6.8], directly above A
+ * Both rooms share the same 8×6m footprint (X ∈ [0,8], Z ∈ [0,6]); they differ only
+ * in height. Each zone has 2 cameras with overlapping views (for stereo triangulation).
+ *
+ * `equipment[].position` is the mesh CENTRE (already includes the floor offset), so the
+ * 3D scene can drop a prop straight at that point.
  */
 
 export const ZONES = {
   zone_a: {
     name: 'Room A',
     floor: 0,
-    center: [2, 1.5, 2.5],
-    size: [4, 3, 5],
+    center: [4, 1.7, 3],
+    size: [8, 3.4, 6],
     min: [0, 0, 0],
-    max: [4, 3, 5],
+    max: [8, 3.4, 6],
     color: '#4488ff',
     equipment: [
-      { id: 'pump_01', name: 'Mud Pump #1', position: [1.5, 0.5, 1.5], size: [1.2, 1.0, 0.8], color: '#667788' },
-      { id: 'panel_01', name: 'Control Panel', position: [3.0, 0.9, 4.0], size: [0.8, 1.8, 0.4], color: '#445566' },
-      { id: 'pipe_rack_01', name: 'Pipe Rack', position: [0.5, 1.0, 3.5], size: [0.6, 2.0, 1.0], color: '#887766' },
+      { id: 'pump_01', name: 'Mud Pump #1', type: 'pump', position: [2.0, 0.6, 2.0], size: [1.6, 1.2, 1.1], color: '#6b7585' },
+      { id: 'panel_01', name: 'Control Panel', type: 'control_panel', position: [6.6, 0.9, 5.2], size: [1.0, 1.8, 0.5], color: '#4a5666' },
+      { id: 'pipe_rack_01', name: 'Pipe Rack', type: 'storage', position: [1.0, 1.1, 5.0], size: [0.9, 2.2, 1.6], color: '#7d7160' },
     ],
-    camera: { id: 'cam0', position: [0.5, 2.5, 0.5], lookAt: [3, 1, 3] },
+    // Two overlapping cameras per zone (cam0 + cam1 cover Room A).
+    cameras: [
+      { id: 'cam0', position: [0.4, 3.0, 0.4], lookAt: [5, 1, 4] },
+      { id: 'cam1', position: [7.6, 3.0, 0.4], lookAt: [3, 1, 4] },
+    ],
     sensors: [
-      { id: 'temp_a', type: 'temperature', position: [1.5, 2.0, 1.5] },
-      { id: 'gas_a', type: 'gas_h2s', position: [2.0, 0.3, 2.5] },
-      { id: 'vib_a', type: 'vibration', position: [1.5, 0.5, 1.5] },
-      { id: 'noise_a', type: 'noise', position: [2.0, 2.5, 2.5] },
-      { id: 'pressure_a', type: 'pressure', position: [3.0, 1.0, 4.0] }
-    ],
-  },
-  corridor: {
-    name: 'Corridor',
-    floor: 0,
-    center: [5, 1.5, 2.5],
-    size: [2, 3, 2],
-    min: [4, 0, 1.5],
-    max: [6, 3, 3.5],
-    color: '#44aaff',
-    equipment: [
-      { id: 'fire_ext_01', name: 'Fire Extinguisher', position: [4.5, 0.3, 2.0], size: [0.2, 0.6, 0.2], color: '#cc3333' },
-    ],
-    camera: { id: 'cam1', position: [5.0, 2.5, 1.8], lookAt: [5.0, 1.0, 3.0] },
-    sensors: [
-      { id: 'temp_cor', type: 'temperature', position: [5.0, 2.0, 2.5] },
-      { id: 'gas_cor', type: 'gas_h2s', position: [5.0, 0.3, 2.5] },
-      { id: 'vib_cor', type: 'vibration', position: [4.5, 0.5, 2.0] },
-      { id: 'noise_cor', type: 'noise', position: [5.0, 2.5, 2.5] },
-      { id: 'pressure_cor', type: 'pressure', position: [5.5, 1.0, 3.0] }
+      { id: 'temp_a', type: 'temperature', position: [2.0, 2.2, 2.0] },
+      { id: 'gas_a', type: 'gas_h2s', position: [4.0, 0.3, 3.0] },
+      { id: 'vib_a', type: 'vibration', position: [2.0, 0.6, 2.0] },
+      { id: 'noise_a', type: 'noise', position: [5.0, 2.6, 4.0] },
+      { id: 'pressure_a', type: 'pressure', position: [6.6, 1.0, 5.2] }
     ],
   },
   zone_b: {
     name: 'Room B',
-    floor: 0,
-    center: [8, 1.5, 2.5],
-    size: [4, 3, 5],
-    min: [6, 0, 0],
-    max: [10, 3, 5],
+    floor: 1,
+    center: [4, 5.1, 3],
+    size: [8, 3.4, 6],
+    min: [0, 3.4, 0],
+    max: [8, 6.8, 6],
     color: '#44ff88',
     equipment: [
-      { id: 'compressor_01', name: 'Compressor', position: [7.5, 0.6, 1.0], size: [1.5, 1.2, 1.0], color: '#556677' },
-      { id: 'wellhead_01', name: 'Wellhead', position: [8.5, 1.25, 3.5], size: [0.8, 2.5, 0.8], color: '#998877' },
-      { id: 'tool_cabinet_01', name: 'Tool Cabinet', position: [6.5, 0.75, 4.0], size: [0.6, 1.5, 0.8], color: '#776655' },
+      { id: 'compressor_01', name: 'Compressor', type: 'compressor', position: [2.5, 4.1, 2.0], size: [1.8, 1.4, 1.2], color: '#566472' },
+      { id: 'wellhead_01', name: 'Wellhead', type: 'wellhead', position: [6.0, 4.7, 4.0], size: [1.0, 2.6, 1.0], color: '#8a7d6a' },
+      { id: 'tool_cabinet_01', name: 'Tool Cabinet', type: 'storage', position: [1.0, 4.2, 5.0], size: [0.8, 1.6, 1.0], color: '#6f6555' },
     ],
-    camera: { id: 'cam2', position: [9.5, 2.5, 4.5], lookAt: [7.0, 1.0, 2.0] },
+    // Two overlapping cameras per zone (cam2 + cam3 cover Room B on the upper deck).
+    cameras: [
+      { id: 'cam2', position: [0.4, 6.4, 0.4], lookAt: [5, 4.4, 4] },
+      { id: 'cam3', position: [7.6, 6.4, 0.4], lookAt: [3, 4.4, 4] },
+    ],
     sensors: [
-      { id: 'temp_b', type: 'temperature', position: [7.5, 1.0, 1.0] },
-      { id: 'gas_b', type: 'gas_h2s', position: [8.5, 0.3, 3.5] },
-      { id: 'vib_b', type: 'vibration', position: [7.5, 0.5, 1.0] },
-      { id: 'noise_b', type: 'noise', position: [8.0, 2.5, 2.5] },
-      { id: 'pressure_b', type: 'pressure', position: [7.5, 0.8, 1.0] }
-    ],
-  },
-  zone_a_f1: {
-    name: 'Room A - Floor 1',
-    floor: 1,
-    center: [2, 4.5, 2.5],
-    size: [4, 3, 5],
-    min: [0, 3, 0],
-    max: [4, 6, 5],
-    color: '#4488ff',
-    equipment: [
-      { id: 'pump_01_f1', name: 'Mud Pump #1 (F1)', position: [1.5, 3.5, 1.5], size: [1.2, 1.0, 0.8], color: '#667788' }
-    ],
-    camera: { id: 'cam0_f1', position: [0.5, 5.5, 0.5], lookAt: [3, 4, 3] },
-    sensors: [
-      { id: 'temp_a_f1', type: 'temperature', position: [1.5, 5.0, 1.5] },
-      { id: 'gas_a_f1', type: 'gas_h2s', position: [2.0, 3.3, 2.5] },
-      { id: 'vib_a_f1', type: 'vibration', position: [1.5, 3.5, 1.5] },
-      { id: 'noise_a_f1', type: 'noise', position: [2.0, 5.5, 2.5] },
-      { id: 'pressure_a_f1', type: 'pressure', position: [3.0, 4.0, 4.0] }
-    ],
-  },
-  corridor_f1: {
-    name: 'Corridor - Floor 1',
-    floor: 1,
-    center: [5, 4.5, 2.5],
-    size: [2, 3, 2],
-    min: [4, 3, 1.5],
-    max: [6, 6, 3.5],
-    color: '#44aaff',
-    equipment: [],
-    camera: { id: 'cam1_f1', position: [5.0, 5.5, 1.8], lookAt: [5.0, 4.0, 3.0] },
-    sensors: [
-      { id: 'temp_cor_f1', type: 'temperature', position: [5.0, 5.0, 2.5] },
-      { id: 'gas_cor_f1', type: 'gas_h2s', position: [5.0, 3.3, 2.5] },
-      { id: 'vib_cor_f1', type: 'vibration', position: [4.5, 3.5, 2.0] },
-      { id: 'noise_cor_f1', type: 'noise', position: [5.0, 5.5, 2.5] },
-      { id: 'pressure_cor_f1', type: 'pressure', position: [5.5, 4.0, 3.0] }
-    ],
-  },
-  zone_b_f1: {
-    name: 'Room B - Floor 1',
-    floor: 1,
-    center: [8, 4.5, 2.5],
-    size: [4, 3, 5],
-    min: [6, 3, 0],
-    max: [10, 6, 5],
-    color: '#44ff88',
-    equipment: [
-      { id: 'compressor_01_f1', name: 'Compressor (F1)', position: [7.5, 3.6, 1.0], size: [1.5, 1.2, 1.0], color: '#556677' }
-    ],
-    camera: { id: 'cam2_f1', position: [9.5, 5.5, 4.5], lookAt: [7.0, 4.0, 2.0] },
-    sensors: [
-      { id: 'temp_b_f1', type: 'temperature', position: [7.5, 4.0, 1.0] },
-      { id: 'gas_b_f1', type: 'gas_h2s', position: [8.5, 3.3, 3.5] },
-      { id: 'vib_b_f1', type: 'vibration', position: [7.5, 3.5, 1.0] },
-      { id: 'noise_b_f1', type: 'noise', position: [8.0, 5.5, 2.5] },
-      { id: 'pressure_b_f1', type: 'pressure', position: [7.5, 3.8, 1.0] }
+      { id: 'temp_b', type: 'temperature', position: [2.5, 5.6, 2.0] },
+      { id: 'gas_b', type: 'gas_h2s', position: [6.0, 3.7, 4.0] },
+      { id: 'vib_b', type: 'vibration', position: [2.5, 4.0, 2.0] },
+      { id: 'noise_b', type: 'noise', position: [5.0, 6.0, 3.0] },
+      { id: 'pressure_b', type: 'pressure', position: [6.0, 4.2, 4.0] }
     ],
   },
 };
 
 /**
- * Get zone color based on status.
- * normal  → green (#00ff88)
- * warning → amber (#ffaa00)
- * critical → red  (#ff4455)
+ * Get zone color based on status (desaturated semantic palette).
  */
 export function getZoneColor(status) {
   switch (status) {
-    case 'warning': return '#ffaa00';
-    case 'critical': return '#ff4455';
+    case 'warning': return '#d9a64e';
+    case 'critical': return '#e06054';
     case 'normal':
-    default: return '#00ff88';
+    default: return '#46b17f';
   }
 }
 
