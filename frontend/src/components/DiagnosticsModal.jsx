@@ -317,6 +317,39 @@ export default function DiagnosticsModal() {
                                   {val}
                                   {isTriggered && <span style={{ fontSize: 10, marginLeft: 6, color: '#ff3b3b' }}>⚠ ALERT</span>}
                                 </div>
+                                {isTriggered && selectedDiag.threshold_context?.[key] && (() => {
+                                  const ctx = selectedDiag.threshold_context[key]
+                                  const showLimits = ctx.warning_min != null || ctx.critical_min != null
+                                  return (
+                                    <div style={{
+                                      marginTop: 8, paddingTop: 8,
+                                      borderTop: '1px solid rgba(255,255,255,0.05)',
+                                      fontFamily: "'Share Tech Mono', monospace", fontSize: 9.5,
+                                      color: '#a0c0e0', lineHeight: 1.4
+                                    }}>
+                                      {showLimits && (
+                                        <div style={{ color: '#ffb300', fontWeight: 'bold' }}>
+                                          LIMITS: {ctx.warning_min != null ? `Warn ${ctx.warning_min}` : '—'} / {ctx.critical_min != null ? `Crit ${ctx.critical_min}` : '—'} {ctx.unit || ''}
+                                        </div>
+                                      )}
+                                      {ctx.source_manual && (
+                                        <div style={{ color: '#00bcd4', marginTop: 2 }}>
+                                          📄 {ctx.source_manual} {ctx.source_section ? `(Sec ${ctx.source_section})` : ''}
+                                        </div>
+                                      )}
+                                      {ctx.device_name && (
+                                        <div style={{ color: '#8a7bd8', marginTop: 1 }}>
+                                          ⚙ Equipment: {ctx.device_name}
+                                        </div>
+                                      )}
+                                      {ctx.selection_reason && (
+                                        <div style={{ color: '#5a8aaa', fontSize: 8.5, fontStyle: 'italic', marginTop: 3, whiteSpace: 'normal' }}>
+                                          {ctx.selection_reason}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )
+                                })()}
                               </div>
                             )
                           })}

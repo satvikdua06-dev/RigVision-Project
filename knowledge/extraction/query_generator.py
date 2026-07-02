@@ -38,12 +38,12 @@ class AnomalyQueryBuilder:
 
         return """
         MATCH (z:Zone {id: $zone_id})-[:CONTAINS]->(d:Device)-[:CAN_EXPERIENCE]->(f:FailureMode)-[:INDICATED_BY]->(s:Symptom)
-        MATCH (f)-[:REQUIRE_ACTION]->(a:Action)
+        MATCH (f)-[:REQUIRES_ACTION]->(a:Action)
         WHERE s.type IN $sensor_types
-        RETURN d.name AS device_name, 
-               f.name AS suspected_failure, 
+        RETURN d.name AS device_name,
+               f.name AS suspected_failure,
                collect(DISTINCT s.condition) AS observed_symptoms,
-               collect(DISTINCT a.condition) AS required_actions
+               collect(DISTINCT a.name) AS required_actions
         """
 
 
