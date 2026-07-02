@@ -311,6 +311,26 @@ async def post_clear_cache():
     await get_redis().publish("rigvision:commands", "clear_cache")
     return {"status": "ok", "message": "clear_cache command published"}
 
+@app.post("/api/diagnostics/clear")
+async def clear_diagnostics():
+    r = get_redis()
+    await r.delete("rigvision:diagnostics")
+    
+    # Broadcast an immediate WebSocket update so that clients clear their local arrays instantly
+    p_raw, z_raw = await asyncio.gather(
+        r.get("rigvision:persons"),
+        r.get("rigvision:zones")
+    )
+    msg = {
+        "type": "realtime_update",
+        "timestamp": time.time(),
+        "persons": json.loads(p_raw) if p_raw else [],
+        "zones": json.loads(z_raw) if z_raw else {},
+        "diagnostics": [],
+    }
+    await manager.broadcast(json.dumps(msg))
+    return {"status": "ok", "message": "Diagnostics backlog cleared successfully"}
+
 async def _evaluate_and_publish(sensors: dict, *, dedup: bool) -> dict:
     """Threshold-check every zone against `sensors` using the cached resolved
     thresholds, and publish one Kafka alert per flagged zone (→ anomaly_listener

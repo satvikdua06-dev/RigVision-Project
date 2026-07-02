@@ -92,16 +92,15 @@ export default function NotificationAlert() {
       d => d && (d.zone_id === activeZoneId || (ZONE_TO_KG[activeZoneId] && d.zone_id === ZONE_TO_KG[activeZoneId]))
     )
 
-    const isReady = anomalyState.isReady && latestDiag
+    const isAnalyzing = !anomalyState.isReady
     const color = SEVERITY_COLOR[zoneStatus] || '#ff3b3b'
 
-    // Extract concise steps from the recommended action if ready
+    // Extract concise steps from the recommended action if available
     let safetyStep = ""
     let repairStep = ""
     
-    if (isReady && latestDiag && latestDiag.recommended_action) {
+    if (latestDiag && latestDiag.recommended_action) {
       const steps = latestDiag.recommended_action.split(/\d+\)\s+/)
-      // parts matching 1) Immediate Safety... 2) Core Repair... 3) Verification...
       const filteredSteps = steps.map(s => s.trim()).filter(Boolean)
       if (filteredSteps.length > 0) {
         safetyStep = filteredSteps[0]
@@ -172,27 +171,44 @@ export default function NotificationAlert() {
             alignItems: 'center',
             gap: 6
           }}>
-            <span className={!isReady ? "pulse-alert" : ""} style={{ fontSize: 14 }}>🚨</span>
+            <span className={isAnalyzing ? "pulse-alert" : ""} style={{ fontSize: 14 }}>🚨</span>
             <span>{zoneStatus.toUpperCase()} ANOMALY: {(zone.name || activeZoneId).toUpperCase()}</span>
           </div>
-          <button 
-            onClick={handleClose}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: '#5a8aaa',
-              cursor: 'pointer',
-              fontSize: 16,
-              padding: 0,
-              lineHeight: 1
-            }}
-          >
-            ×
-          </button>
+          
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {isAnalyzing && (
+              <span className="pulse-alert" style={{
+                fontSize: 9,
+                fontFamily: "'Share Tech Mono'",
+                color: '#ffb300',
+                background: 'rgba(255, 179, 0, 0.1)',
+                border: '1px solid rgba(255, 179, 0, 0.3)',
+                padding: '1px 6px',
+                borderRadius: 4,
+                letterSpacing: 1
+              }}>
+                ANALYZING...
+              </span>
+            )}
+            <button 
+              onClick={handleClose}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: '#5a8aaa',
+                cursor: 'pointer',
+                fontSize: 16,
+                padding: 0,
+                lineHeight: 1
+              }}
+            >
+              ×
+            </button>
+          </div>
         </div>
 
         {/* Content */}
-        {!isReady ? (
+        {!latestDiag ? (
           <div className="pulse-alert" style={{ margin: '10px 0' }}>
             <div style={{ fontSize: 16, fontWeight: 700, color: '#fff', marginBottom: 4 }}>
               Analyzing Telemetry...
