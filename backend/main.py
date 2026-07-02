@@ -344,6 +344,16 @@ async def clear_diagnostics():
         "diagnostics": [],
     }
     await manager.broadcast(json.dumps(msg))
+    
+    # Re-evaluate current sensor readings so standing breaches are immediately re-published and diagnosed
+    try:
+        sensors_raw = await r.get(SENSORS_KEY)
+        if sensors_raw:
+            sensors = json.loads(sensors_raw)
+            await _evaluate_and_publish(sensors, dedup=True)
+    except Exception as e:
+        logger.error("Error running re-evaluation after clear: %s", e)
+        
     return {"status": "ok", "message": "Diagnostics backlog cleared successfully"}
 
 async def _evaluate_and_publish(sensors: dict, *, dedup: bool) -> dict:
