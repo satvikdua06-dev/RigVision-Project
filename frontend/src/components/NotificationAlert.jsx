@@ -127,6 +127,11 @@ export default function NotificationAlert() {
       d => d && (d.zone_id === activeZoneId || (ZONE_TO_KG[activeZoneId] && d.zone_id === ZONE_TO_KG[activeZoneId]))
     )
 
+    // Only display the cached report if it is relevant to the currently breached sensors
+    const reportSensors = latestDiag?.triggered_sensors || []
+    const coversBreached = breachedSensors.every(s => reportSensors.includes(s))
+    const displayDiag = (latestDiag && coversBreached) ? latestDiag : null
+
     const isAnalyzing = !anomalyState.isReady
     const color = SEVERITY_COLOR[zoneStatus] || '#ff3b3b'
 
@@ -134,8 +139,8 @@ export default function NotificationAlert() {
     let safetyStep = ""
     let repairStep = ""
     
-    if (latestDiag && latestDiag.recommended_action) {
-      const steps = latestDiag.recommended_action.split(/\d+\)\s+/)
+    if (displayDiag && displayDiag.recommended_action) {
+      const steps = displayDiag.recommended_action.split(/\d+\)\s+/)
       const filteredSteps = steps.map(s => s.trim()).filter(Boolean)
       if (filteredSteps.length > 0) {
         safetyStep = filteredSteps[0]
@@ -243,7 +248,7 @@ export default function NotificationAlert() {
         </div>
 
         {/* Content */}
-        {!latestDiag ? (
+        {!displayDiag ? (
           <div className="pulse-alert" style={{ margin: '10px 0' }}>
             <div style={{ fontSize: 16, fontWeight: 700, color: '#fff', marginBottom: 4 }}>
               Analyzing Telemetry...
@@ -256,7 +261,7 @@ export default function NotificationAlert() {
           <div>
             {/* Issue title */}
             <div style={{ fontSize: 18, fontWeight: 700, color: '#fff', marginBottom: 8, lineHeight: 1.2 }}>
-              {latestDiag.primary_diagnosis || 'Unclassified failure mode'}
+              {displayDiag.primary_diagnosis || 'Unclassified failure mode'}
             </div>
 
             {/* Quick steps split */}
