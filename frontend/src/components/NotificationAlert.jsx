@@ -17,45 +17,72 @@ export default function NotificationAlert() {
     const diagnostics = useRigStore(s => s.diagnostics) || []
     const setShowModal = useRigStore(s => s.setShowDiagnosticsModal)
     
-    const [dismissedTime, setDismissedTime] = useState(0)
+    const [dismissedSignature, setDismissedSignature] = useState('')
     const [anomalyState, setAnomalyState] = useState({
-      zoneId: null,
-      status: null,
+      signature: '',
       startedAt: 0,
       isReady: false,
     })
 
-    // Find if there is any active anomaly in the zones
-    const activeZoneId = Object.keys(zones).find(
-      k => zones[k] && (zones[k].status === 'warning' || zones[k].status === 'critical')
-    )
+    // Find if there is any active sensor anomaly in the zones
+    const activeZoneId = Object.keys(zones).find(k => {
+      const zone = zones[k]
+      if (!zone || (zone.status !== 'warning' && zone.status !== 'critical')) return false
+      
+      // Check if it has actual sensor breaches
+      if (zone.sensor_meta) {
+        for (const [stype, meta] of Object.entries(zone.sensor_meta)) {
+          const val = zone[stype]
+          if (val !== undefined && val !== null) {
+            if ((meta.critical !== null && val >= meta.critical) ||
+                (meta.warning !== null && val >= meta.warning)) {
+              return true
+            }
+          }
+        }
+      }
+      return false
+    })
+
+    const activeZone = activeZoneId ? zones[activeZoneId] : null
+    const breachedSensors = []
+    if (activeZone && activeZone.sensor_meta) {
+      for (const [stype, meta] of Object.entries(activeZone.sensor_meta)) {
+        const val = activeZone[stype]
+        if (val !== undefined && val !== null) {
+          if ((meta.critical !== null && val >= meta.critical) ||
+              (meta.warning !== null && val >= meta.warning)) {
+            breachedSensors.push(stype)
+          }
+        }
+      }
+    }
+
+    const breachSignature = activeZoneId 
+      ? `${activeZoneId}:${activeZone.status}:${breachedSensors.slice().sort().join(',')}`
+      : ''
 
     // Sync anomalyState with active anomaly changes
     useEffect(() => {
-      if (!activeZoneId) {
-        if (anomalyState.zoneId !== null) {
-          setAnomalyState({ zoneId: null, status: null, startedAt: 0, isReady: false })
+      if (!breachSignature) {
+        if (anomalyState.signature !== '') {
+          setAnomalyState({ signature: '', startedAt: 0, isReady: false })
         }
         return
       }
 
-      const zone = zones[activeZoneId]
-      const zoneStatus = zone.status
-      const rawUpdatedAt = zone.updated_at || 0
-      const zoneUpdatedMs = rawUpdatedAt > 100000000000 ? rawUpdatedAt : rawUpdatedAt * 1000
-
-      // If it's a new anomaly or the severity status has changed
-      if (anomalyState.zoneId !== activeZoneId || anomalyState.status !== zoneStatus) {
+      if (anomalyState.signature !== breachSignature) {
         // Find latest diagnostic report for this zone
         const latestDiag = diagnostics.find(
           d => d && (d.zone_id === activeZoneId || (ZONE_TO_KG[activeZoneId] && d.zone_id === ZONE_TO_KG[activeZoneId]))
         )
-        // Check if a report is already ready (e.g. on page mount/refresh)
-        const initiallyReady = latestDiag && latestDiag.timestamp && (new Date(latestDiag.timestamp).getTime() >= zoneUpdatedMs - 5000)
+        // Check if a report is already ready (covers all currently breached sensors)
+        const reportSensors = latestDiag?.triggered_sensors || []
+        const coversBreached = breachedSensors.every(s => reportSensors.includes(s))
+        const initiallyReady = latestDiag && coversBreached
 
         setAnomalyState({
-          zoneId: activeZoneId,
-          status: zoneStatus,
+          signature: breachSignature,
           startedAt: Date.now(),
           isReady: !!initiallyReady,
         })
@@ -64,15 +91,25 @@ export default function NotificationAlert() {
         const latestDiag = diagnostics.find(
           d => d && (d.zone_id === activeZoneId || (ZONE_TO_KG[activeZoneId] && d.zone_id === ZONE_TO_KG[activeZoneId]))
         )
-        if (latestDiag && latestDiag.timestamp) {
-          const diagTime = new Date(latestDiag.timestamp).getTime()
-          // Mark ready if the report timestamp was generated after this anomaly state started
-          if (diagTime >= anomalyState.startedAt - 8000) {
+        if (latestDiag) {
+          const reportSensors = latestDiag.triggered_sensors || []
+          const coversBreached = breachedSensors.every(s => reportSensors.includes(s))
+          const age = Date.now() - anomalyState.startedAt
+          const diagTime = latestDiag.timestamp ? new Date(latestDiag.timestamp).getTime() : 0
+          
+          // Mark ready if the report covers the breach and is recent, or fallback to ready after a timeout to prevent being stuck
+          if (coversBreached && (diagTime >= anomalyState.startedAt - 8000 || age > 15000)) {
+            setAnomalyState(prev => ({ ...prev, isReady: true }))
+          }
+        } else {
+          // Timeout fallback
+          const age = Date.now() - anomalyState.startedAt
+          if (age > 15000) {
             setAnomalyState(prev => ({ ...prev, isReady: true }))
           }
         }
       }
-    }, [activeZoneId, zones, diagnostics, anomalyState])
+    }, [breachSignature, activeZoneId, breachedSensors, diagnostics, anomalyState])
 
     if (!activeZoneId || !zones[activeZoneId]) {
       return null
@@ -80,11 +117,9 @@ export default function NotificationAlert() {
 
     const zone = zones[activeZoneId]
     const zoneStatus = zone.status // 'warning' or 'critical'
-    const rawUpdatedAt = zone.updated_at || 0
-    const zoneUpdatedMs = rawUpdatedAt > 100000000000 ? rawUpdatedAt : rawUpdatedAt * 1000
 
     // If the user has dismissed this specific telemetry alert instance, suppress the overlay
-    if (dismissedTime === zoneUpdatedMs) {
+    if (dismissedSignature === breachSignature) {
       return null
     }
 
@@ -116,7 +151,7 @@ export default function NotificationAlert() {
 
     const handleClose = (e) => {
       e.stopPropagation()
-      setDismissedTime(zoneUpdatedMs)
+      setDismissedSignature(breachSignature)
     }
 
     return (

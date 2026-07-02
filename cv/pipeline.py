@@ -241,9 +241,9 @@ class DemoDataGenerator:
             "phase_z": np.random.uniform(0, 2 * math.pi),
             "speed_x": np.random.uniform(0.3, 0.7),
             "speed_z": np.random.uniform(0.2, 0.5),
-            "has_hardhat": np.random.random() > 0.3,
-            "has_vest": np.random.random() > 0.4,
-            "has_goggles": np.random.random() > 0.6,
+            "has_hardhat": True,
+            "has_vest": True,
+            "has_goggles": True,
             "posture": "standing",
         } for i in range(num_persons)]
 
@@ -258,8 +258,6 @@ class DemoDataGenerator:
             if 4.0 <= x <= 6.0 and not (1.5 <= z <= 3.5):
                 z = 1.5 if z < 1.5 else 3.5
             zone = assign_zone((x, y, z), self.zone_defs)
-            if np.random.random() < 0.002:
-                p["has_hardhat"] = not p["has_hardhat"]
             if np.random.random() < 0.01:
                 p["posture"] = np.random.choice(["standing", "sitting", "bending", "lying"], p=[0.7, 0.15, 0.1, 0.05])
             res.append({
