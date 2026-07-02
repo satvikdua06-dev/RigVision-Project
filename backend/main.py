@@ -235,6 +235,18 @@ async def lifespan(app: FastAPI):
         await publish_resolved_thresholds()
     except Exception as e:
         logger.warning("Could not publish resolved thresholds at startup: %s", e)
+    
+    # Run startup evaluation check of current sensor values in Redis
+    try:
+        r = get_redis()
+        sensors_raw = await r.get(SENSORS_KEY)
+        if sensors_raw:
+            sensors = json.loads(sensors_raw)
+            await _evaluate_and_publish(sensors, dedup=False)
+            logger.info("Startup diagnostics check completed.")
+    except Exception as e:
+        logger.warning("Could not run startup diagnostics: %s", e)
+
     start_kafka_consumer()
     bridge_task = asyncio.create_task(redis_to_websocket_bridge())
     yield
@@ -313,6 +325,9 @@ async def post_clear_cache():
 
 @app.post("/api/diagnostics/clear")
 async def clear_diagnostics():
+    global _last_alert_signatures
+    _last_alert_signatures.clear()
+    
     r = get_redis()
     await r.delete("rigvision:diagnostics")
     
