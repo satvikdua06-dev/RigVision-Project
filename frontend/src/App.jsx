@@ -43,8 +43,8 @@ export default function App() {
           {/* Corner watermark */}
           <div style={{
             position:'absolute', bottom:16, left:16, pointerEvents:'none',
-            fontFamily:"'Share Tech Mono'", fontSize:10, color:'rgba(0,180,255,0.25)',
-            letterSpacing:2,
+            fontFamily:'var(--font-mono)', fontSize:10, color:'var(--text-dim)',
+            letterSpacing:1,
           }}>
             RigVision · LNMIIT · RIGVISION-3D · PHASE 1
           </div>
@@ -52,9 +52,9 @@ export default function App() {
           {/* Controls hint */}
           <div style={{
             position:'absolute', bottom:16, right:80,
-            fontFamily:"'Share Tech Mono'", fontSize:9.5,
-            color:'rgba(90,138,170,0.6)', pointerEvents:'none',
-            textAlign:'right', lineHeight:1.8, letterSpacing:1,
+            fontFamily:'var(--font-mono)', fontSize:9.5,
+            color:'var(--text-dim)', pointerEvents:'none',
+            textAlign:'right', lineHeight:1.8, letterSpacing:0.5,
           }}>
             ORBIT: drag · ZOOM: scroll · PAN: right-drag<br/>
             CLICK zone/person to inspect

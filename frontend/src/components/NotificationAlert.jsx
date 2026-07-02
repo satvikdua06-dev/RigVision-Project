@@ -2,13 +2,14 @@ import { useState, useEffect } from 'react'
 import { useRigStore } from '../stores/useRigStore.js'
 
 const SEVERITY_COLOR = {
-  warning: '#ffb300',
-  critical: '#ff3b3b',
+  warning: '#d9a64e',
+  critical: '#e06054',
 }
 
+// Rig zone ids → Neo4j KG Zone ids. Diagnostics are tagged with the KG id, so an
+// alert overlay matches a diagnostic either by the rig id or its mapped KG id.
 const ZONE_TO_KG = {
-  "zone_a": "room_1", "zone_b": "room_2", "corridor": "corridor",
-  "zone_a_f1": "room_1", "zone_b_f1": "room_2", "corridor_f1": "corridor",
+  "zone_a": "room_1", "zone_b": "room_2",
 }
 
 export default function NotificationAlert() {
@@ -16,7 +17,7 @@ export default function NotificationAlert() {
     const zones = useRigStore(s => s.zones) || {}
     const diagnostics = useRigStore(s => s.diagnostics) || []
     const setShowModal = useRigStore(s => s.setShowDiagnosticsModal)
-    
+
     const [dismissedSignature, setDismissedSignature] = useState('')
     const [anomalyState, setAnomalyState] = useState({
       signature: '',
@@ -28,7 +29,7 @@ export default function NotificationAlert() {
     const activeZoneId = Object.keys(zones).find(k => {
       const zone = zones[k]
       if (!zone || (zone.status !== 'warning' && zone.status !== 'critical')) return false
-      
+
       // Check if it has actual sensor breaches
       if (zone.sensor_meta) {
         for (const [stype, meta] of Object.entries(zone.sensor_meta)) {
@@ -58,7 +59,7 @@ export default function NotificationAlert() {
       }
     }
 
-    const breachSignature = activeZoneId 
+    const breachSignature = activeZoneId
       ? `${activeZoneId}:${activeZone.status}:${breachedSensors.slice().sort().join(',')}`
       : ''
 
@@ -96,7 +97,7 @@ export default function NotificationAlert() {
           const coversBreached = breachedSensors.every(s => reportSensors.includes(s))
           const age = Date.now() - anomalyState.startedAt
           const diagTime = latestDiag.timestamp ? new Date(latestDiag.timestamp).getTime() : 0
-          
+
           // Mark ready if the report covers the breach and is recent, or fallback to ready after a timeout to prevent being stuck
           if (coversBreached && (diagTime >= anomalyState.startedAt - 8000 || age > 15000)) {
             setAnomalyState(prev => ({ ...prev, isReady: true }))
@@ -133,12 +134,12 @@ export default function NotificationAlert() {
     const displayDiag = (latestDiag && coversBreached) ? latestDiag : null
 
     const isAnalyzing = !anomalyState.isReady
-    const color = SEVERITY_COLOR[zoneStatus] || '#ff3b3b'
+    const color = SEVERITY_COLOR[zoneStatus] || '#e06054'
 
     // Extract concise steps from the recommended action if available
     let safetyStep = ""
     let repairStep = ""
-    
+
     if (displayDiag && displayDiag.recommended_action) {
       const steps = displayDiag.recommended_action.split(/\d+\)\s+/)
       const filteredSteps = steps.map(s => s.trim()).filter(Boolean)
@@ -160,7 +161,7 @@ export default function NotificationAlert() {
     }
 
     return (
-      <div 
+      <div
         onClick={handleAlertClick}
         style={{
           position: 'fixed',
@@ -168,45 +169,43 @@ export default function NotificationAlert() {
           right: 24,
           width: 380,
           zIndex: 99999,
-          background: 'rgba(5, 12, 24, 0.95)',
-          backdropFilter: 'blur(12px)',
-          border: `1px solid ${color}44`,
-          borderLeft: `5px solid ${color}`,
-          borderRadius: 8,
+          background: 'var(--glass-panel)',
+          backdropFilter: 'blur(16px) saturate(120%)',
+          WebkitBackdropFilter: 'blur(16px) saturate(120%)',
+          border: '1px solid var(--border)',
+          borderLeft: `3px solid ${color}`,
+          borderRadius: 'var(--radius)',
           padding: '16px 20px',
           boxSizing: 'border-box',
-          boxShadow: `0 10px 30px rgba(0, 0, 0, 0.5), 0 0 15px ${color}15`,
+          boxShadow: 'var(--shadow-panel), var(--inner-hi)',
           cursor: 'pointer',
-          fontFamily: "'Rajdhani', sans-serif",
-          color: '#e0f4ff',
-          transition: 'all 0.3s ease',
+          fontFamily: 'var(--font-ui)',
+          color: 'var(--text-primary)',
+          transition: 'border-color 0.2s ease',
         }}
       >
-        {/* CSS Pulse effect for loading state */}
+        {/* Subtle opacity pulse for the loading state (no neon glow) */}
         <style>{`
-          @keyframes pulseGlow {
-            0% { opacity: 0.5; box-shadow: 0 0 5px ${color}10; }
-            50% { opacity: 1; box-shadow: 0 0 20px ${color}35; }
-            100% { opacity: 0.5; box-shadow: 0 0 5px ${color}10; }
+          @keyframes pulseFade {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.45; }
           }
-          .pulse-alert {
-            animation: pulseGlow 1.5s infinite ease-in-out;
-          }
+          .pulse-alert { animation: pulseFade 1.5s infinite ease-in-out; }
           .alert-btn:hover {
-            background: ${color}22 !important;
-            border-color: ${color}bb !important;
-            color: #fff !important;
+            background: var(--bg-card) !important;
+            border-color: ${color} !important;
+            color: var(--text-primary) !important;
           }
         `}</style>
 
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
           <div style={{
-            fontFamily: "'Share Tech Mono'",
+            fontFamily: 'var(--font-mono)',
             fontSize: 12,
-            fontWeight: 'bold',
+            fontWeight: 600,
             color: color,
-            letterSpacing: 2,
+            letterSpacing: 1,
             display: 'flex',
             alignItems: 'center',
             gap: 6
@@ -214,15 +213,15 @@ export default function NotificationAlert() {
             <span className={isAnalyzing ? "pulse-alert" : ""} style={{ fontSize: 14 }}>🚨</span>
             <span>{zoneStatus.toUpperCase()} ANOMALY: {(zone.name || activeZoneId).toUpperCase()}</span>
           </div>
-          
+
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             {isAnalyzing && (
               <span className="pulse-alert" style={{
                 fontSize: 9,
-                fontFamily: "'Share Tech Mono'",
-                color: '#ffb300',
-                background: 'rgba(255, 179, 0, 0.1)',
-                border: '1px solid rgba(255, 179, 0, 0.3)',
+                fontFamily: 'var(--font-mono)',
+                color: 'var(--accent-amber)',
+                background: 'var(--bg-card)',
+                border: '1px solid var(--border)',
                 padding: '1px 6px',
                 borderRadius: 4,
                 letterSpacing: 1
@@ -230,12 +229,12 @@ export default function NotificationAlert() {
                 ANALYZING...
               </span>
             )}
-            <button 
+            <button
               onClick={handleClose}
               style={{
                 background: 'transparent',
                 border: 'none',
-                color: '#5a8aaa',
+                color: 'var(--text-muted)',
                 cursor: 'pointer',
                 fontSize: 16,
                 padding: 0,
@@ -250,25 +249,25 @@ export default function NotificationAlert() {
         {/* Content */}
         {!displayDiag ? (
           <div className="pulse-alert" style={{ margin: '10px 0' }}>
-            <div style={{ fontSize: 16, fontWeight: 700, color: '#fff', marginBottom: 4 }}>
+            <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
               Analyzing Telemetry...
             </div>
-            <div style={{ fontSize: 13, color: '#88b5d5', lineHeight: 1.4 }}>
+            <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.4 }}>
               Breach detected on sensors. AI diagnostic agent is generating root-cause report...
             </div>
           </div>
         ) : (
           <div>
             {/* Issue title */}
-            <div style={{ fontSize: 18, fontWeight: 700, color: '#fff', marginBottom: 8, lineHeight: 1.2 }}>
+            <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8, lineHeight: 1.2 }}>
               {displayDiag.primary_diagnosis || 'Unclassified failure mode'}
             </div>
 
             {/* Quick steps split */}
-            <div style={{ fontSize: 13, color: '#cbe4ff', lineHeight: 1.5, marginBottom: 12 }}>
+            <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.5, marginBottom: 12 }}>
               {safetyStep && (
                 <div style={{ marginBottom: 6 }}>
-                  <strong style={{ color: color, fontSize: 11, fontFamily: "'Share Tech Mono'", textTransform: 'uppercase', display: 'block' }}>
+                  <strong style={{ color: color, fontSize: 11, fontFamily: 'var(--font-mono)', textTransform: 'uppercase', display: 'block' }}>
                     Immediate Action:
                   </strong>
                   {safetyStep.replace(/^(Immediate Safety & Isolation Protocol:|Immediate Safety:)/i, '').trim()}
@@ -276,7 +275,7 @@ export default function NotificationAlert() {
               )}
               {repairStep && (
                 <div>
-                  <strong style={{ color: '#00bcd4', fontSize: 11, fontFamily: "'Share Tech Mono'", textTransform: 'uppercase', display: 'block' }}>
+                  <strong style={{ color: 'var(--accent-cobalt)', fontSize: 11, fontFamily: 'var(--font-mono)', textTransform: 'uppercase', display: 'block' }}>
                     Repair Procedure:
                   </strong>
                   {repairStep.replace(/^(Core Repair Procedures:|Core Repair:)/i, '').trim()}
@@ -286,18 +285,18 @@ export default function NotificationAlert() {
 
             {/* Button to show full diagnostics modal */}
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
-              <div 
+              <div
                 className="alert-btn"
                 style={{
                   fontSize: 11,
-                  fontFamily: "'Share Tech Mono'",
+                  fontFamily: 'var(--font-mono)',
                   color: color,
-                  border: `1px solid ${color}66`,
+                  border: `1px solid ${color}`,
                   borderRadius: 4,
                   padding: '4px 10px',
-                  background: 'rgba(0,0,0,0.2)',
+                  background: 'var(--bg-card)',
                   transition: 'all 0.2s',
-                  letterSpacing: 1
+                  letterSpacing: 0.5
                 }}
               >
                 VIEW FULL REPORT →

@@ -2,13 +2,14 @@ import React, { useState } from 'react';
 import { Html } from '@react-three/drei';
 import { useRigStore } from '../stores/useRigStore.js';
 
+// Muted, distinguishable sensor-type tints (within the refined slate palette).
 const SENSOR_COLORS = {
-  temperature: '#ff6600',
-  vibration: '#00ccff',
-  gas_h2s: '#ffcc00',
-  noise: '#cc33ff',
-  pressure: '#00ff66',
-  default: '#ffffff'
+  temperature: '#d98a4e',
+  vibration: '#5b8def',
+  gas_h2s: '#c9b84e',
+  noise: '#9b8fc4',
+  pressure: '#46b17f',
+  default: '#8b93a3'
 };
 
 export default function SensorIndicator({ sensor }) {
@@ -27,25 +28,26 @@ export default function SensorIndicator({ sensor }) {
         <meshBasicMaterial color={color} />
       </mesh>
 
-      {/* Outer Glow Ring */}
+      {/* Soft halo (subtle, no neon bloom) */}
       <mesh>
         <sphereGeometry args={[0.1, 16, 16]} />
-        <meshBasicMaterial color={color} transparent opacity={hovered ? 0.4 : 0.15} depthWrite={false} />
+        <meshBasicMaterial color={color} transparent opacity={hovered ? 0.25 : 0.1} depthWrite={false} />
       </mesh>
 
       {hovered && !showDiagnosticsModal && (
         <Html position={[0, 0.2, 0]} center distanceFactor={6} zIndexRange={[100, 0]}>
           <div style={{
-            background: 'rgba(20, 20, 30, 0.85)',
-            border: `1px solid ${color}`,
+            background: 'var(--bg-panel)',
+            border: '1px solid var(--border)',
+            borderLeft: `2px solid ${color}`,
             borderRadius: '4px',
             padding: '4px 8px',
-            color: '#fff',
+            color: 'var(--text-primary)',
             fontSize: '11px',
-            fontFamily: 'Inter, sans-serif',
+            fontFamily: 'var(--font-mono)',
             whiteSpace: 'nowrap',
             pointerEvents: 'none',
-            boxShadow: `0 0 10px ${color}40`
+            boxShadow: '0 2px 8px rgba(0,0,0,0.5)'
           }}>
             <strong style={{ color }}>{sensor.type.toUpperCase()}</strong>
             <br />

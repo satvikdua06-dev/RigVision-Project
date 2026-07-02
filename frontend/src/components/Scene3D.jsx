@@ -1,6 +1,6 @@
-import { Suspense, useState, useMemo, useEffect, useRef } from 'react'
+import { Suspense, useState, useMemo, useRef } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
-import { OrbitControls, useGLTF, GizmoHelper, GizmoViewport, Grid, Environment, Html } from '@react-three/drei'
+import { OrbitControls, GizmoHelper, GizmoViewport, Grid, Environment, Html } from '@react-three/drei'
 import * as THREE from 'three'
 
 import { useRigStore } from '../stores/useRigStore.js'
@@ -42,218 +42,281 @@ function findAvatarInIntersections(intersections) {
   return null
 }
 
-// ── Reusable Room Component ───────────────────────────────────────────────────
-function RigRoom({ positionOffset, rotationY, label, zoneId }) {
-  const { scene } = useGLTF('/kitchen_interior/scene.gltf')
-  const [hoveredPart, setHoveredPart] = useState(null)
+// ── Facility dimensions (one bay) ───────────────────────────────────────────────
+// Each room is an 8m (X) × 6m (Z) bay, 3.4m tall. Built procedurally in local space
+// spanning x∈[0,8], z∈[0,6], y∈[0,3.4]; the group is shifted up by `baseY` per floor.
+const BAY_W = 8, BAY_D = 6, BAY_H = 3.4
+
+// Shared material presets (memo-friendly plain objects fed to <meshStandardMaterial/>).
+const STEEL_DARK = { color: '#262c35', metalness: 0.85, roughness: 0.5 }
+const STEEL_MID  = { color: '#39424f', metalness: 0.8, roughness: 0.42 }
+const STEEL_LITE = { color: '#4a5563', metalness: 0.75, roughness: 0.4 }
+
+// A reusable steel beam/box.
+function Beam({ args, position, mat = STEEL_MID, castShadow = true }) {
+  return (
+    <mesh position={position} castShadow={castShadow} receiveShadow>
+      <boxGeometry args={args} />
+      <meshStandardMaterial {...mat} />
+    </mesh>
+  )
+}
+
+// ── Hand-built rig room shell ───────────────────────────────────────────────────
+function RigRoom({ baseY, zoneId, isUpper }) {
   const wallOpacity = useRigStore(s => s.wallOpacity)
   const zoneSelectMode = useRigStore(s => s.zoneSelectMode)
   const selectZone = useRigStore(s => s.selectZone)
   const selectPerson = useRigStore(s => s.selectPerson)
 
-  // Deep clone the scene and its materials so Room A and Room B are independent
-  const { clonedScene, scale, basePosition } = useMemo(() => {
-    const clone = scene.clone()
-    clone.traverse((node) => {
-      if (node.isMesh && node.material) {
-        node.material = node.material.clone()
-      }
-    })
+  const handleClick = zoneSelectMode ? (e) => {
+    e.stopPropagation()
+    const id = findAvatarInIntersections(e.intersections)
+    if (id !== null) selectPerson(id); else selectZone(zoneId)
+  } : undefined
 
-    clone.updateMatrixWorld(true)
-    const box = new THREE.Box3().setFromObject(clone)
-    const size = box.getSize(new THREE.Vector3())
-    const center = box.getCenter(new THREE.Vector3())
+  // Plain solid walls: opacity directly driven by wallOpacity, becoming fully opaque at 1.0.
+  const wallOpacityValue = wallOpacity
+  const isWallTransparent = wallOpacity < 1.0
 
-    // Scale to fit approximately 4x5 meters
-    const TARGET_SIZE = 5; 
-    const computedScale = TARGET_SIZE / Math.max(size.x, size.y, size.z)
-
-    const computedPosition = [
-      -center.x * computedScale,
-      -box.min.y * computedScale,
-      -center.z * computedScale
-    ]
-
-    return { clonedScene: clone, scale: computedScale, basePosition: computedPosition }
-  }, [scene])
-
-  useEffect(() => {
-    clonedScene.traverse((child) => {
-      if (child.isMesh) {
-        child.receiveShadow = true
-        child.castShadow = false 
-        if (child.material) {
-          child.material.transparent = wallOpacity < 1.0
-          child.material.opacity = wallOpacity
-          // Depth-write settings to prevent translucency z-fighting
-          child.material.depthWrite = wallOpacity >= 0.95
-        }
-      }
-    })
-  }, [clonedScene, wallOpacity])
+  const floorHeight = isUpper ? 0.14 : 0.02
+  const floorPosY = isUpper ? -0.07 : 0.01
+  const inlaidPosY = isUpper ? 0.011 : 0.021
 
   return (
-    <group position={positionOffset} rotation={[0, rotationY, 0]}>
-      <primitive 
-        object={clonedScene} 
-        scale={scale} 
-        position={basePosition}
-        raycast={zoneSelectMode ? undefined : null}
-        onClick={zoneSelectMode ? (e) => {
-          e.stopPropagation()
-          const clickedAvatarId = findAvatarInIntersections(e.intersections)
-          if (clickedAvatarId !== null) {
-            selectPerson(clickedAvatarId)
-          } else {
-            selectZone(zoneId)
-          }
-        } : undefined}
-        onPointerOver={zoneSelectMode ? (e) => {
-          e.stopPropagation()
-          setHoveredPart({ name: e.object.name || 'Unknown', point: e.point })
-          if (e.object.material) {
-             e.object.material.emissive = new THREE.Color('#0055ff')
-             e.object.material.emissiveIntensity = 0.3
-           }
-        } : undefined}
-        onPointerOut={zoneSelectMode ? (e) => {
-          e.stopPropagation()
-          setHoveredPart(null)
-          if (e.object.material) {
-             e.object.material.emissive = new THREE.Color(0x000000)
-          }
-        } : undefined}
-      />
-      
-      {/* Hover Popup */}
-      {hoveredPart && (
-        <Html position={hoveredPart.point} center distanceFactor={8} style={{ pointerEvents: 'none', zIndex: 100 }}>
+    <group position={[0, baseY, 0]}>
+      {/* Floor deck (primary click target) */}
+      <mesh position={[BAY_W / 2, floorPosY, BAY_D / 2]} receiveShadow
+        raycast={zoneSelectMode ? undefined : null} onClick={handleClick}>
+        <boxGeometry args={[BAY_W, floorHeight, BAY_D]} />
+        <meshStandardMaterial color="#1c222b" metalness={0.65} roughness={0.7} />
+      </mesh>
+      {/* Inlaid deck panel (subtle two-tone) */}
+      <mesh position={[BAY_W / 2, inlaidPosY, BAY_D / 2]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[BAY_W - 0.5, BAY_D - 0.5]} />
+        <meshStandardMaterial color="#222a34" metalness={0.55} roughness={0.65} />
+      </mesh>
+
+      {/* Plain walls (4 sides, full-height) */}
+      {[
+        { args: [BAY_W, BAY_H, 0.03], pos: [BAY_W / 2, BAY_H / 2, 0] },
+        { args: [BAY_W, BAY_H, 0.03], pos: [BAY_W / 2, BAY_H / 2, BAY_D] },
+        { args: [0.03, BAY_H, BAY_D], pos: [0, BAY_H / 2, BAY_D / 2] },
+        { args: [0.03, BAY_H, BAY_D], pos: [BAY_W, BAY_H / 2, BAY_D / 2] },
+      ].map((w, i) => (
+        <mesh key={`wall${i}`} position={w.pos} raycast={null}>
+          <boxGeometry args={w.args} />
+          <meshStandardMaterial color="#39424f" transparent={isWallTransparent} opacity={wallOpacityValue}
+            metalness={0.15} roughness={0.85} depthWrite={!isWallTransparent} side={THREE.DoubleSide} />
+        </mesh>
+      ))}
+    </group>
+  )
+}
+
+// ── Equipment props ─────────────────────────────────────────────────────────────
+// Stylised, type-specific machinery built from primitives. Each prop is clickable
+// (selects its zone) and highlights on hover.
+function EquipmentProp({ item, zoneId }) {
+  const [hovered, setHovered] = useState(false)
+  const zoneSelectMode = useRigStore(s => s.zoneSelectMode)
+  const selectZone = useRigStore(s => s.selectZone)
+  const [w, h, d] = item.size
+  const emissive = hovered ? '#5b8def' : '#000000'
+  const ei = hovered ? 0.35 : 0
+  const mat = { color: item.color, metalness: 0.7, roughness: 0.5, emissive, emissiveIntensity: ei }
+
+  // Body shapes per equipment type.
+  const body = (() => {
+    switch (item.type) {
+      case 'pump':
+        return (
+          <group position={[0, 0, 0]}>
+            {/* Main horizontal pump body */}
+            <mesh position={[0, -h * 0.15, 0]} castShadow receiveShadow>
+              <boxGeometry args={[w * 0.85, h * 0.7, d * 0.85]} />
+              <meshStandardMaterial {...mat} />
+            </mesh>
+            {/* Cylindrical motor drive on the side */}
+            <mesh position={[w * 0.45, -h * 0.25, 0]} rotation={[0, 0, Math.PI / 2]} castShadow>
+              <cylinderGeometry args={[h * 0.22, h * 0.22, w * 0.3, 16]} />
+              <meshStandardMaterial color="#2b323c" metalness={0.8} roughness={0.4} emissive={emissive} emissiveIntensity={ei} />
+            </mesh>
+            {/* Small outlet pipe */}
+            <mesh position={[-w * 0.2, h * 0.35, 0]} castShadow>
+              <cylinderGeometry args={[0.08, 0.08, h * 0.3, 12]} />
+              <meshStandardMaterial color="#4a5563" metalness={0.7} roughness={0.4} />
+            </mesh>
+          </group>
+        )
+      case 'compressor':
+        return (
+          <group position={[0, 0, 0]}>
+            {/* Bottom support base plate */}
+            <mesh position={[0, -h * 0.5 + 0.04, 0]} castShadow receiveShadow>
+              <boxGeometry args={[w * 0.95, 0.08, d * 0.95]} />
+              <meshStandardMaterial color="#2b323c" metalness={0.6} roughness={0.6} />
+            </mesh>
+            {/* Large horizontal cylindrical tank */}
+            <mesh position={[0, -h * 0.5 + 0.08 + d * 0.35, 0]} rotation={[0, 0, Math.PI / 2]} castShadow receiveShadow>
+              <cylinderGeometry args={[d * 0.35, d * 0.35, w * 0.85, 20]} />
+              <meshStandardMaterial {...mat} />
+            </mesh>
+            {/* Top motor box */}
+            <mesh position={[0, h * 0.5 - h * 0.125, 0]} castShadow>
+              <boxGeometry args={[w * 0.45, h * 0.25, d * 0.6]} />
+              <meshStandardMaterial color="#46505d" metalness={0.78} roughness={0.4} emissive={emissive} emissiveIntensity={ei} />
+            </mesh>
+          </group>
+        )
+      case 'wellhead':
+        return (
+          <group position={[0, 0, 0]}>
+            {/* Main vertical pipe column */}
+            <mesh position={[0, 0, 0]} castShadow receiveShadow>
+              <cylinderGeometry args={[w * 0.18, w * 0.18, h, 16]} />
+              <meshStandardMaterial {...mat} />
+            </mesh>
+            {/* Flange ring 1 */}
+            <mesh position={[0, -h * 0.25, 0]} castShadow>
+              <cylinderGeometry args={[w * 0.28, w * 0.28, h * 0.08, 16]} />
+              <meshStandardMaterial color="#2b323c" metalness={0.8} roughness={0.5} />
+            </mesh>
+            {/* Flange ring 2 */}
+            <mesh position={[0, h * 0.25, 0]} castShadow>
+              <cylinderGeometry args={[w * 0.28, w * 0.28, h * 0.08, 16]} />
+              <meshStandardMaterial color="#2b323c" metalness={0.8} roughness={0.5} />
+            </mesh>
+            {/* Sleek horizontal hand valve wheel at the top */}
+            <mesh position={[0, h * 0.45, 0]} rotation={[Math.PI / 2, 0, 0]} castShadow>
+              <torusGeometry args={[w * 0.26, 0.035, 8, 24]} />
+              <meshStandardMaterial color="#c2543f" metalness={0.65} roughness={0.4} emissive={emissive} emissiveIntensity={ei} />
+            </mesh>
+          </group>
+        )
+      case 'control_panel':
+        return (
+          <group position={[0, 0, 0]}>
+            {/* Sleek vertical terminal body */}
+            <mesh position={[0, 0, 0]} castShadow receiveShadow>
+              <boxGeometry args={[w, h, d]} />
+              <meshStandardMaterial {...mat} />
+            </mesh>
+            {/* Integrated glowing interface display screen */}
+            <mesh position={[0, h * 0.15, d / 2 + 0.01]}>
+              <planeGeometry args={[w * 0.8, h * 0.45]} />
+              <meshStandardMaterial color="#0b111a" emissive="#5b8def" emissiveIntensity={hovered ? 1.0 : 0.6} />
+            </mesh>
+          </group>
+        )
+      default: // storage (Cabinet / Locker)
+        return (
+          <group position={[0, 0, 0]}>
+            {/* Main double-door locker box */}
+            <mesh position={[0, 0, 0]} castShadow receiveShadow>
+              <boxGeometry args={[w, h, d]} />
+              <meshStandardMaterial {...mat} />
+            </mesh>
+            {/* Vertical door seam line */}
+            <mesh position={[0, 0, d / 2 + 0.005]}>
+              <boxGeometry args={[0.015, h * 0.92, 0.01]} />
+              <meshStandardMaterial color="#1f2937" />
+            </mesh>
+            {/* Sleek metal handles */}
+            {[-0.08, 0.08].map((ox) => (
+              <mesh key={ox} position={[ox, 0, d / 2 + 0.015]} castShadow>
+                <cylinderGeometry args={[0.008, 0.008, h * 0.15, 8]} />
+                <meshStandardMaterial color="#d1d5db" metalness={0.9} roughness={0.2} />
+              </mesh>
+            ))}
+          </group>
+        )
+    }
+  })()
+
+  return (
+    <group position={item.position}
+      raycast={zoneSelectMode ? undefined : null}
+      onClick={zoneSelectMode ? (e) => { e.stopPropagation(); selectZone(zoneId) } : undefined}
+      onPointerOver={zoneSelectMode ? (e) => { e.stopPropagation(); setHovered(true) } : undefined}
+      onPointerOut={zoneSelectMode ? (e) => { e.stopPropagation(); setHovered(false) } : undefined}
+    >
+      {body}
+      {hovered && (
+        <Html position={[0, h * 0.7 + 0.3, 0]} center distanceFactor={12} style={{ pointerEvents: 'none' }}>
           <div style={{
-            background: 'rgba(5, 15, 28, 0.95)', border: '1px solid #00b4ff', borderRadius: '6px',
-            padding: '4px 8px', color: '#e0f4ff', fontFamily: "'Share Tech Mono', monospace",
-            fontSize: '10px', boxShadow: '0 4px 20px rgba(0,0,0,0.8)', whiteSpace: 'nowrap'
-          }}>
-            <span style={{ color: '#5a8aaa' }}>{label} PART:</span> <br/>
-            <span style={{ color: '#00ffd5', fontSize: '11px' }}>{hoveredPart.name}</span>
-          </div>
+            background: 'rgba(18,22,29,0.6)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
+            border: '1px solid rgba(255,255,255,0.1)', borderRadius: 999, padding: '3px 10px',
+            fontFamily: 'var(--font-mono)', fontSize: 11, color: 'rgba(230,233,239,0.95)', whiteSpace: 'nowrap',
+          }}>{item.name}</div>
         </Html>
       )}
     </group>
   )
 }
 
-// ── Visual Bridge for the Corridor ────────────────────────────────────────────
-function CorridorBridge({ positionOffset, zoneId }) {
-  const zoneSelectMode = useRigStore(s => s.zoneSelectMode)
-  const selectZone = useRigStore(s => s.selectZone)
-  const selectPerson = useRigStore(s => s.selectPerson)
-  return (
-    <group 
-      position={positionOffset} 
-      raycast={zoneSelectMode ? undefined : null}
-      onClick={zoneSelectMode ? (e) => {
-        e.stopPropagation()
-        const clickedAvatarId = findAvatarInIntersections(e.intersections)
-        if (clickedAvatarId !== null) {
-          selectPerson(clickedAvatarId)
-        } else {
-          selectZone(zoneId)
-        }
-      } : undefined}
-    >
-      {/* Catwalk platform base (X size 2.2 to overlap 10cm into rooms, closing all gaps) */}
-      <mesh position={[0, -0.025, 0]} receiveShadow>
-        <boxGeometry args={[2.2, 0.05, 2.0]} />
-        <meshStandardMaterial color="#111d2e" roughness={0.3} metalness={0.85} />
-      </mesh>
-      
-      {/* Corner/Structural support pillars (extending down 3 meters to floor below or ground) */}
-      <mesh position={[-1.1, -1.5, -0.95]}>
-        <cylinderGeometry args={[0.04, 0.04, 3.0]} />
-        <meshStandardMaterial color="#0b1320" roughness={0.4} metalness={0.9} />
-      </mesh>
-      <mesh position={[1.1, -1.5, -0.95]}>
-        <cylinderGeometry args={[0.04, 0.04, 3.0]} />
-        <meshStandardMaterial color="#0b1320" roughness={0.4} metalness={0.9} />
-      </mesh>
-      <mesh position={[-1.1, -1.5, 0.95]}>
-        <cylinderGeometry args={[0.04, 0.04, 3.0]} />
-        <meshStandardMaterial color="#0b1320" roughness={0.4} metalness={0.9} />
-      </mesh>
-      <mesh position={[1.1, -1.5, 0.95]}>
-        <cylinderGeometry args={[0.04, 0.04, 3.0]} />
-        <meshStandardMaterial color="#0b1320" roughness={0.4} metalness={0.9} />
-      </mesh>
-
-      {/* Side Handrails on both sides (Z = -0.95 and Z = 0.95) */}
-      {[-0.95, 0.95].map((zVal, idx) => (
-        <group key={`handrail-${idx}`} position={[0, 0, zVal]}>
-          {/* Vertical safety stanchions/posts */}
-          {[-1.1, -0.36, 0.36, 1.1].map((xVal, pIdx) => (
-            <mesh key={`post-${pIdx}`} position={[xVal, 0.5, 0]} castShadow>
-              <cylinderGeometry args={[0.02, 0.02, 1.0]} />
-              <meshStandardMaterial color="#00b4ff" metalness={0.95} roughness={0.15} emissive="#004488" emissiveIntensity={0.2} />
-            </mesh>
-          ))}
-          
-          {/* Horizontal Top handrail tube */}
-          <mesh position={[0, 1.0, 0]} rotation={[0, 0, Math.PI / 2]} castShadow>
-            <cylinderGeometry args={[0.015, 0.015, 2.2]} />
-            <meshStandardMaterial color="#00b4ff" metalness={0.95} roughness={0.15} emissive="#004488" emissiveIntensity={0.2} />
-          </mesh>
-
-          {/* Horizontal Mid safety tube */}
-          <mesh position={[0, 0.5, 0]} rotation={[0, 0, Math.PI / 2]}>
-            <cylinderGeometry args={[0.01, 0.01, 2.2]} />
-            <meshStandardMaterial color="#00b4ff" metalness={0.9} roughness={0.2} />
-          </mesh>
-
-          {/* Semi-transparent safety glass panel inside the rail frame */}
-          <mesh position={[0, 0.48, 0]}>
-            <boxGeometry args={[2.16, 0.82, 0.012]} />
-            <meshStandardMaterial color="#00ffd5" transparent opacity={0.15} roughness={0.05} metalness={0.9} />
-          </mesh>
-        </group>
-      ))}
-    </group>
-  )
+function Equipment({ zoneId }) {
+  const zone = ZONES[zoneId]
+  if (!zone) return null
+  return zone.equipment.map((item) => <EquipmentProp key={item.id} item={item} zoneId={zoneId} />)
 }
 
 // ── Lighting & Floor ──────────────────────────────────────────────────────────
 function Lighting() {
   return (
     <>
-      <ambientLight intensity={0.7} color="#b0d8ff" />
-      <directionalLight position={[5, 15, 5]} intensity={1.5} castShadow shadow-mapSize={[2048, 2048]} />
-      <pointLight position={[2, 5, 2.5]} intensity={20} color="#00b4ff" /> {/* Zone A Light */}
-      <pointLight position={[8, 5, 2.5]} intensity={20} color="#00ffd5" />  {/* Zone B Light */}
-      <pointLight position={[5, 1.5, 2.5]} intensity={15} color="#ffaa00" /> {/* Corridor F0 Amber Glow */}
-      <pointLight position={[5, 4.5, 2.5]} intensity={15} color="#ffaa00" /> {/* Corridor F1 Amber Glow */}
-      <hemisphereLight skyColor="#0a1f3a" groundColor="#050a0f" intensity={0.6} />
+      {/* Cool, soft ambient light to fill the scene and add dark indigo depth to shadows */}
+      <ambientLight intensity={0.5} color="#141d2b" />
+      
+      {/* Strong, warm white key light (sun-like) casting soft shadows across the rooms */}
+      <directionalLight 
+        position={[12, 22, 10]} 
+        intensity={2.2} 
+        castShadow
+        shadow-mapSize={[2048, 2048]} 
+        shadow-camera-far={40}
+        shadow-camera-left={-10} 
+        shadow-camera-right={10}
+        shadow-camera-top={10} 
+        shadow-camera-bottom={-10} 
+        shadow-bias={-0.0005}
+      />
+      
+      {/* Warm orange-gold key fill point lights inside the rooms to illuminate the machines */}
+      <pointLight position={[4, 1.2, 3]} intensity={80} distance={15} decay={2} color="#ffd4a3" /> {/* Room A Key Fill */}
+      <pointLight position={[4, 4.6, 3]} intensity={80} distance={15} decay={2} color="#ffb480" /> {/* Room B Key Fill */}
+      
+      {/* Cool cyan-blue fill point lights to bounce back and provide dual-colored aesthetic reflections on the metal equipment */}
+      <pointLight position={[2, 2.2, 4]} intensity={50} distance={12} decay={2} color="#5b8def" /> {/* Room A Cool Fill */}
+      <pointLight position={[6, 5.6, 2]} intensity={50} distance={12} decay={2} color="#5b8def" /> {/* Room B Cool Fill */}
+      
+      {/* Hemisphere light for ground bounce and sky glow contrast */}
+      <hemisphereLight skyColor="#1a2b4c" groundColor="#0a0f1d" intensity={0.7} />
     </>
   )
 }
 
 function Floor({ showFloor0, showFloor1 }) {
+  // Rooms share the 8×6m footprint centred at x=4, z=3. Floor-0 grid sits at y=0
+  // (Room A), floor-1 grid at y=3.4 (Room B's deck / Room A's ceiling line).
   return (
     <>
-      {/* Background Floor Plane at Floor 0 */}
+      {/* Background ground plane */}
       {showFloor0 && (
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[5, -0.01, 2.5]} receiveShadow>
-          <planeGeometry args={[30, 20]} />
-          <meshStandardMaterial color="#03080e" roughness={0.35} metalness={0.8} />
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[4, -0.01, 3]} receiveShadow>
+          <planeGeometry args={[48, 36]} />
+          <meshStandardMaterial color="#070b11" roughness={0.4} metalness={0.7} />
         </mesh>
       )}
-      
-      {/* Grid aligned to [0,10]x[0,5] for Floor 0 */}
+
+      {/* Grid for Floor 0 (Room A) */}
       {showFloor0 && (
-        <Grid position={[5, 0.002, 2.5]} args={[30, 20]} cellSize={1} cellThickness={0.4} cellColor="#102e45" sectionSize={5} sectionThickness={0.8} sectionColor="#18527a" fadeDistance={30} fadeStrength={2} infiniteGrid={false} />
+        <Grid position={[4, 0, 3]} args={[BAY_W, BAY_D]} cellSize={1} cellThickness={0.4} cellColor="#14202d" sectionSize={4} sectionThickness={0.8} sectionColor="#243a4f" fadeDistance={42} fadeStrength={2.5} infiniteGrid={false} />
       )}
 
-      {/* Grid aligned for Floor 1 */}
+      {/* Grid for Floor 1 (Room B, stacked 3.4m above) */}
       {showFloor1 && (
-        <Grid position={[5, 3.002, 2.5]} args={[30, 20]} cellSize={1} cellThickness={0.4} cellColor="#102e45" sectionSize={5} sectionThickness={0.8} sectionColor="#18527a" fadeDistance={30} fadeStrength={2} infiniteGrid={false} />
+        <Grid position={[4, 3.26, 3]} args={[BAY_W, BAY_D]} cellSize={1} cellThickness={0.4} cellColor="#14202d" sectionSize={4} sectionThickness={0.8} sectionColor="#243a4f" fadeDistance={42} fadeStrength={2.5} infiniteGrid={false} />
       )}
     </>
   )
@@ -279,80 +342,85 @@ function SettingsPanel() {
     setTimeout(() => setClearing(false), 1000)
   }
 
+  // Segmented-control button style (active = filled cobalt, inactive = flat steel).
+  const segBtn = (active) => ({
+    flex: 1,
+    background: active ? 'var(--accent-cobalt)' : 'var(--bg-card)',
+    border: `1px solid ${active ? 'var(--accent-cobalt)' : 'var(--border)'}`,
+    borderRadius: '4px',
+    color: active ? 'var(--bg-deep)' : 'var(--text-muted)',
+    padding: '6px 4px',
+    fontSize: '11px',
+    cursor: 'pointer',
+    transition: 'all 0.15s',
+    fontFamily: 'var(--font-mono)',
+  })
+  const sliderStyle = { width: '100%', background: 'var(--bg-card)', cursor: 'pointer', accentColor: 'var(--accent-cobalt)' }
+  const labelStyle = { fontSize: '10px', color: 'var(--text-muted)', letterSpacing: '1px', textTransform: 'uppercase' }
+
   return (
     <div style={{
       position: 'absolute',
       bottom: 20,
       right: 20,
       zIndex: 1000,
-      fontFamily: "'Share Tech Mono', monospace",
+      fontFamily: 'var(--font-mono)',
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'flex-end',
     }}>
       {/* Toggle Button */}
-      <button 
+      <button
         onClick={() => setIsOpen(!isOpen)}
         style={{
-          background: 'rgba(5, 15, 28, 0.85)',
-          border: '1px solid #00b4ff',
-          borderRadius: '6px',
-          color: '#00ffd5',
-          padding: '8px 12px',
+          background: 'var(--glass-panel)',
+          backdropFilter: 'blur(16px) saturate(120%)',
+          WebkitBackdropFilter: 'blur(16px) saturate(120%)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-sm)',
+          color: 'var(--text-primary)',
+          padding: '9px 14px',
           cursor: 'pointer',
-          boxShadow: '0 0 10px rgba(0, 180, 255, 0.3)',
-          transition: 'all 0.2s',
+          transition: 'all 0.15s',
           fontSize: '11px',
+          boxShadow: 'var(--shadow-card)',
           display: 'flex',
           alignItems: 'center',
           gap: '6px',
           marginBottom: isOpen ? '10px' : '0px',
         }}
       >
-        <span>⚙</span>
+        <span style={{ opacity: 0.7 }}>⚙</span>
         <span>{isOpen ? 'CLOSE CONTROLS' : 'STREAM CONTROLS'}</span>
       </button>
 
       {/* Main Panel */}
       {isOpen && (
         <div style={{
-          width: '280px',
-          background: 'rgba(5, 15, 28, 0.8)',
-          backdropFilter: 'blur(12px)',
-          border: '1px solid rgba(0, 180, 255, 0.35)',
-          borderRadius: '10px',
-          padding: '16px',
-          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.6)',
-          color: '#e0f4ff',
+          width: '288px',
+          background: 'var(--glass-panel)',
+          backdropFilter: 'blur(16px) saturate(120%)',
+          WebkitBackdropFilter: 'blur(16px) saturate(120%)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius)',
+          padding: '18px',
+          boxShadow: 'var(--shadow-panel), var(--inner-hi)',
+          color: 'var(--text-primary)',
           display: 'flex',
           flexDirection: 'column',
-          gap: '14px',
+          gap: '18px',
         }}>
-          <div style={{ borderBottom: '1px solid rgba(0, 180, 255, 0.2)', paddingBottom: '8px', fontSize: '13px', fontWeight: 'bold', color: '#00ffd5', letterSpacing: '1px' }}>
-            RIGVISION CONTROL PANEL
+          <div style={{ borderBottom: '1px solid var(--border)', paddingBottom: '8px', fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', letterSpacing: '0.5px', fontFamily: 'var(--font-ui)', textTransform: 'uppercase' }}>
+            RigVision Control Panel
           </div>
 
           {/* Floor Filter */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <span style={{ fontSize: '10px', color: '#5a8aaa' }}>FLOOR VIEW FILTER</span>
+            <span style={labelStyle}>Floor View Filter</span>
             <div style={{ display: 'flex', gap: '4px' }}>
               {['all', 0, 1].map((f) => (
-                <button
-                  key={f}
-                  onClick={() => setFloorFilter(f)}
-                  style={{
-                    flex: 1,
-                    background: floorFilter === f ? '#00b4ff44' : 'rgba(10, 25, 47, 0.6)',
-                    border: `1px solid ${floorFilter === f ? '#00ffd5' : 'rgba(0, 180, 255, 0.25)'}`,
-                    borderRadius: '4px',
-                    color: floorFilter === f ? '#fff' : '#8892b0',
-                    padding: '6px 4px',
-                    fontSize: '11px',
-                    cursor: 'pointer',
-                    textTransform: 'uppercase',
-                    transition: 'all 0.15s',
-                  }}
-                >
+                <button key={f} onClick={() => setFloorFilter(f)}
+                  style={{ ...segBtn(floorFilter === f), textTransform: 'uppercase' }}>
                   {f === 'all' ? 'All' : `F${f}`}
                 </button>
               ))}
@@ -361,40 +429,12 @@ function SettingsPanel() {
 
           {/* Click Interaction Target Toggle */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <span style={{ fontSize: '10px', color: '#5a8aaa' }}>CLICK INTERACTION TARGET</span>
+            <span style={labelStyle}>Click Interaction Target</span>
             <div style={{ display: 'flex', gap: '4px' }}>
-              <button
-                onClick={() => setZoneSelectMode(true)}
-                style={{
-                  flex: 1,
-                  background: zoneSelectMode ? '#00b4ff44' : 'rgba(10, 25, 47, 0.6)',
-                  border: `1px solid ${zoneSelectMode ? '#00ffd5' : 'rgba(0, 180, 255, 0.25)'}`,
-                  borderRadius: '4px',
-                  color: zoneSelectMode ? '#fff' : '#8892b0',
-                  padding: '6px 4px',
-                  fontSize: '11px',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s',
-                  fontFamily: "'Share Tech Mono', monospace",
-                }}
-              >
+              <button onClick={() => setZoneSelectMode(true)} style={segBtn(zoneSelectMode)}>
                 Zones
               </button>
-              <button
-                onClick={() => setZoneSelectMode(false)}
-                style={{
-                  flex: 1,
-                  background: !zoneSelectMode ? '#00b4ff44' : 'rgba(10, 25, 47, 0.6)',
-                  border: `1px solid ${!zoneSelectMode ? '#00ffd5' : 'rgba(0, 180, 255, 0.25)'}`,
-                  borderRadius: '4px',
-                  color: !zoneSelectMode ? '#fff' : '#8892b0',
-                  padding: '6px 4px',
-                  fontSize: '11px',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s',
-                  fontFamily: "'Share Tech Mono', monospace",
-                }}
-              >
+              <button onClick={() => setZoneSelectMode(false)} style={segBtn(!zoneSelectMode)}>
                 Avatars
               </button>
             </div>
@@ -403,45 +443,21 @@ function SettingsPanel() {
           {/* Wall Opacity Slider */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
-              <span style={{ color: '#5a8aaa' }}>WALL OPACITY</span>
-              <span style={{ color: '#00ffd5' }}>{(wallOpacity * 100).toFixed(0)}%</span>
+              <span style={{ color: 'var(--text-muted)' }}>WALL OPACITY</span>
+              <span style={{ color: 'var(--accent-cobalt)' }}>{(wallOpacity * 100).toFixed(0)}%</span>
             </div>
-            <input 
-              type="range" 
-              min="0.1" 
-              max="1.0" 
-              step="0.05" 
-              value={wallOpacity} 
-              onChange={(e) => setWallOpacity(parseFloat(e.target.value))}
-              style={{
-                width: '100%',
-                background: 'rgba(10, 25, 47, 0.8)',
-                cursor: 'pointer',
-                accentColor: '#00b4ff',
-              }}
-            />
+            <input type="range" min="0.1" max="1.0" step="0.05" value={wallOpacity}
+              onChange={(e) => setWallOpacity(parseFloat(e.target.value))} style={sliderStyle} />
           </div>
 
           {/* FPS Limiter Slider */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
-              <span style={{ color: '#5a8aaa' }}>SCENE RE-POLL / FPS LIMIT</span>
-              <span style={{ color: '#00ffd5' }}>{fpsLimit} FPS</span>
+              <span style={{ color: 'var(--text-muted)' }}>SCENE RE-POLL / FPS LIMIT</span>
+              <span style={{ color: 'var(--accent-cobalt)' }}>{fpsLimit} FPS</span>
             </div>
-            <input 
-              type="range" 
-              min="1" 
-              max="30" 
-              step="1" 
-              value={fpsLimit} 
-              onChange={(e) => setFpsLimit(parseInt(e.target.value))}
-              style={{
-                width: '100%',
-                background: 'rgba(10, 25, 47, 0.8)',
-                cursor: 'pointer',
-                accentColor: '#00b4ff',
-              }}
-            />
+            <input type="range" min="1" max="30" step="1" value={fpsLimit}
+              onChange={(e) => setFpsLimit(parseInt(e.target.value))} style={sliderStyle} />
           </div>
 
           {/* Toggles and Buttons */}
@@ -452,16 +468,17 @@ function SettingsPanel() {
               disabled={clearing}
               style={{
                 width: '100%',
-                background: clearing ? '#ff3b3b44' : 'rgba(255, 59, 59, 0.1)',
-                border: `1px solid ${clearing ? '#ff3b3b' : 'rgba(255, 59, 59, 0.4)'}`,
+                background: 'var(--bg-card)',
+                border: '1px solid var(--accent-red)',
                 borderRadius: '4px',
-                color: '#ff8888',
+                color: 'var(--accent-red)',
                 padding: '8px',
                 fontSize: '11px',
                 cursor: clearing ? 'not-allowed' : 'pointer',
                 letterSpacing: '0.5px',
-                transition: 'all 0.2s',
+                transition: 'all 0.15s',
                 marginTop: '4px',
+                opacity: clearing ? 0.6 : 1,
               }}
             >
               {clearing ? 'COMMAND SENT...' : 'CLEAR TRACKING CACHE'}
@@ -469,7 +486,7 @@ function SettingsPanel() {
           </div>
         </div>
       )}
-      
+
     </div>
   )
 }
@@ -486,51 +503,42 @@ export default function Scene3D() {
   const showFloor0 = floorFilter === 'all' || floorFilter === 0
   const showFloor1 = floorFilter === 'all' || floorFilter === 1
 
-  // Dynamically calculate camera center Y coordinate based on floor view
-  const targetY = floorFilter === 'all' ? 3.0 : (floorFilter === 1 ? 4.5 : 1.5)
+  // Orbit target Y: mid-height of whichever floor(s) are shown. Room A centres at
+  // y≈1.7, Room B at y≈5.1, and the full stack at y≈3.4.
+  const targetY = floorFilter === 'all' ? 3.4 : (floorFilter === 1 ? 5.1 : 1.7)
 
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <Canvas
         shadows={{ type: THREE.PCFShadowMap }}
-        camera={{ position: [5, 8, 12], fov: 45, near: 0.1, far: 500 }}
+        camera={{ position: [13, 9, 15], fov: 45, near: 0.1, far: 500 }}
         gl={{ antialias: true, alpha: false }}
-        style={{ background: '#050a0f' }}
+        style={{ background: '#0b0e13' }}
         onClick={clearSelection}
       >
-        <Environment preset="city" /> 
+        <Environment preset="city" />
         <Lighting />
         <Floor showFloor0={showFloor0} showFloor1={showFloor1} />
         <RenderThrottler />
 
         <Suspense fallback={null}>
-          {/* FLOOR 0 (height = 0m to 3m) */}
+          {/* ROOM A — ground floor (zone_a), built in place spanning x∈[0,8], z∈[0,6] */}
           {showFloor0 && (
             <>
-              {/* ROOM A (Center at x=2, z=2.5) */}
-              <RigRoom positionOffset={[2, 0, 2.5]} rotationY={0} label="ZONE A (F0)" zoneId="zone_a" />
-              
-              {/* CORRIDOR (Center at x=5, z=2.5) */}
-              <CorridorBridge positionOffset={[5, 0.01, 2.5]} zoneId="corridor" />
-
-              {/* ROOM B (Center at x=8, z=2.5) */}
-              <RigRoom positionOffset={[8, 0, 2.5]} rotationY={Math.PI} label="ZONE B (F0)" zoneId="zone_b" />
+              <RigRoom baseY={0} zoneId="zone_a" isUpper={false} />
+              <Equipment zoneId="zone_a" />
             </>
           )}
 
-          {/* FLOOR 1 (height = 3m to 6m) */}
+          {/* ROOM B — first floor (zone_b), stacked directly above Room A at y=3.4 */}
           {showFloor1 && (
             <>
-              {/* ROOM A (Center at x=2, y=3, z=2.5) */}
-              <RigRoom positionOffset={[2, 3, 2.5]} rotationY={0} label="ZONE A (F1)" zoneId="zone_a_f1" />
-              
-              {/* CORRIDOR (Center at x=5, y=3, z=2.5) */}
-              <CorridorBridge positionOffset={[5, 3.01, 2.5]} zoneId="corridor_f1" />
-
-              {/* ROOM B (Center at x=8, y=3, z=2.5) */}
-              <RigRoom positionOffset={[8, 3, 2.5]} rotationY={Math.PI} label="ZONE B (F1)" zoneId="zone_b_f1" />
+              <RigRoom baseY={3.4} zoneId="zone_b" isUpper={true} />
+              <Equipment zoneId="zone_b" />
             </>
           )}
+
+
         </Suspense>
 
         {/* Zone Overlays */}
@@ -564,7 +572,10 @@ export default function Scene3D() {
 
           return (
             <group key={`zone-sensors-${idx}`}>
-              {zone.camera && <CameraIndicator camera={zone.camera} />}
+              {/* Each zone now has 2 overlapping cameras (cameras[]); render an indicator for each. */}
+              {(zone.cameras || []).map(camera => (
+                <CameraIndicator key={camera.id} camera={camera} />
+              ))}
               {(zone.sensors || []).map(sensor => (
                 <SensorIndicator key={sensor.id} sensor={sensor} />
               ))}
@@ -572,21 +583,20 @@ export default function Scene3D() {
           )
         })}
 
-        <OrbitControls 
-          target={[5, targetY, 2.5]} 
-          enableDamping dampingFactor={0.08} 
-          minDistance={2} maxDistance={50} 
-          minPolarAngle={0.1} maxPolarAngle={Math.PI / 2.1} 
-          makeDefault 
+        <OrbitControls
+          target={[4, targetY, 3]}
+          enableDamping dampingFactor={0.08}
+          minDistance={3} maxDistance={70}
+          minPolarAngle={0.1} maxPolarAngle={Math.PI / 2.05}
+          makeDefault
         />
         <GizmoHelper alignment="bottom-right" margin={[60, 60]}>
-          <GizmoViewport axisColors={['#ff3b3b', '#00e676', '#00b4ff']} labelColor="#fff" />
+          <GizmoViewport axisColors={['#e06054', '#46b17f', '#5b8def']} labelColor="#e6e9ef" />
         </GizmoHelper>
       </Canvas>
-      
+
       {/* Settings Overlay */}
       <SettingsPanel />
     </div>
   )
 }
-useGLTF.preload('/kitchen_interior/scene.gltf')

@@ -24,7 +24,7 @@
         "x":                { "type": "number", "description": "X position in meters (along room length)" },
         "y":                { "type": "number", "description": "Y position in meters (vertical, 0 = floor)" },
         "z":                { "type": "number", "description": "Z position in meters (along room width)" },
-        "zone":             { "type": "string", "enum": ["zone_a", "corridor", "zone_b", "unknown"], "description": "Which zone the person is in" },
+        "zone":             { "type": "string", "enum": ["zone_a", "zone_b", "unknown"], "description": "Which zone the person is in" },
         "posture":          { "type": "string", "enum": ["standing", "sitting", "bending", "lying", "unknown"], "description": "Estimated body posture" },
         "ppe":              { "$ref": "#/definitions/ppe_status" },
         "confidence":       { "type": "number", "minimum": 0, "maximum": 1, "description": "Detection confidence score" },
@@ -75,7 +75,7 @@
       "description": "An LLM diagnostic report for one zone, produced on-demand. Self-describing (carries its source alert's identity).",
       "properties": {
         "event_id":          { "type": "string", "description": "Source alert id, e.g. anom_<ts>_zone_a" },
-        "zone_id":           { "type": "string", "description": "Rig zone id (zone_a/zone_b/corridor/...)" },
+        "zone_id":           { "type": "string", "description": "Rig zone id (zone_a/zone_b)" },
         "severity":          { "type": "string", "enum": ["HIGH", "CRITICAL"], "description": "Severity of the breach" },
         "anomaly_detected":  { "type": "boolean", "description": "False ⇒ 'No issue detected' (anti-hallucination flag)" },
         "primary_diagnosis": { "type": "string", "description": "Failure mode, or 'No issue detected'" },
@@ -102,10 +102,9 @@
       "type": "object",
       "properties": {
         "zone_a":   { "$ref": "#/definitions/zone_state" },
-        "corridor": { "$ref": "#/definitions/zone_state" },
         "zone_b":   { "$ref": "#/definitions/zone_state" }
       },
-      "required": ["zone_a", "corridor", "zone_b"]
+      "required": ["zone_a", "zone_b"]
     },
 
     "rigvision:diagnostics": {

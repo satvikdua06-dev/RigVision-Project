@@ -272,6 +272,7 @@ def _match_pair(
     return matches
 
 
+
 def _single_camera_output(
     matching_state: Dict,
     cam_id: int,
@@ -286,6 +287,7 @@ def _single_camera_output(
             per_camera={cam_id: track},
         ))
     return result
+
 
 
 def _get_or_create_global_id(

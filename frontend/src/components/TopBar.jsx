@@ -11,12 +11,14 @@ export default function TopBar() {
   const warningZones   = Object.values(zones).filter(z => z.status === 'warning').length
   const alertPersons   = persons.filter(p => !p.ppe.hardhat || !p.ppe.vest || !p.ppe.goggles).length
 
+  // Status values map onto the Industrial Slate accent palette (no neon).
+  const OK = 'var(--text-primary)'
   const stats = [
-    { label:'Zones', value: Object.keys(zones).length, color:'#00b4ff' },
-    { label:'Critical', value: criticalZones, color: criticalZones > 0 ? '#ff3b3b' : '#00e676' },
-    { label:'Warnings', value: warningZones, color: warningZones > 0 ? '#ffb300' : '#00e676' },
-    { label:'Personnel', value: persons.length, color:'#00ffd5' },
-    { label:'PPE Alerts', value: alertPersons, color: alertPersons > 0 ? '#ff7043' : '#00e676' },
+    { label:'Zones', value: Object.keys(zones).length, color:'var(--text-primary)' },
+    { label:'Critical', value: criticalZones, color: criticalZones > 0 ? 'var(--accent-red)' : OK },
+    { label:'Warnings', value: warningZones, color: warningZones > 0 ? 'var(--accent-amber)' : OK },
+    { label:'Personnel', value: persons.length, color:'var(--accent-cobalt)' },
+    { label:'PPE Alerts', value: alertPersons, color: alertPersons > 0 ? 'var(--accent-red)' : OK },
   ]
 
   // Clean clock implementation that updates every second
@@ -32,37 +34,35 @@ export default function TopBar() {
 
   return (
     <div style={{
-      height: 52, display:'flex', alignItems:'center',
-      background:'rgba(5,10,20,0.96)',
-      borderBottom:'1px solid rgba(0,180,255,0.12)',
-      backdropFilter:'blur(20px)',
-      padding:'0 20px', gap:0, flexShrink:0,
-      userSelect:'none'
+      height: 54, display:'flex', alignItems:'center',
+      background:'var(--glass-panel)',
+      backdropFilter:'blur(16px) saturate(120%)',
+      WebkitBackdropFilter:'blur(16px) saturate(120%)',
+      borderBottom:'1px solid var(--border)',
+      padding:'0 22px', gap:0, flexShrink:0,
+      userSelect:'none', position:'relative', zIndex:5,
     }}>
       {/* Logo area */}
-      <div style={{ marginRight:28, flexShrink:0 }}>
+      <div style={{ marginRight:28, flexShrink:0, display:'flex', alignItems:'baseline', gap:8 }}>
         <span style={{
-          fontFamily:"'Barlow Condensed'", fontWeight:700, fontSize:18,
-          color:'#00b4ff', letterSpacing:3, textTransform:'uppercase',
-        }}>RIG<span style={{color:'#00ffd5'}}>VISION</span></span>
-        <span style={{ fontFamily:"'Share Tech Mono'", fontSize:9,
-          color:'#5a8aaa', marginLeft:8, letterSpacing:2 }}>v1.0 PHASE-1</span>
+          fontFamily:'var(--font-ui)', fontWeight:700, fontSize:17,
+          color:'var(--text-primary)', letterSpacing:0.5,
+        }}>RIG<span style={{color:'var(--accent-cobalt)'}}>VISION</span></span>
+        <span style={{ fontFamily:'var(--font-mono)', fontSize:9,
+          color:'var(--text-dim)', letterSpacing:1, textTransform:'uppercase' }}>v1.0 · Phase-1</span>
       </div>
 
-      <div style={{ width:1, height:28, background:'rgba(0,180,255,0.15)', marginRight:28 }} />
+      <div style={{ width:1, height:28, background:'var(--border)', marginRight:28 }} />
 
       {/* Stats row with Diagnostics Button */}
       <div style={{ display:'flex', gap:0, flex:1, alignItems:'center' }}>
         {stats.map((s, i) => (
-          <div key={i} style={{ paddingRight:24, borderRight: '1px solid rgba(0,180,255,0.1)',
+          <div key={i} style={{ paddingRight:24, borderRight:'1px solid var(--border)',
             marginRight:24 }}>
-            <div style={{ fontFamily:"'Share Tech Mono'", fontSize:9, color:'#5a8aaa',
-              letterSpacing:2, textTransform:'uppercase', marginBottom:1 }}>{s.label}</div>
-            <div style={{ fontFamily:"'Barlow Condensed'", fontSize:22, fontWeight:700,
-              color: s.color, lineHeight:1,
-              textShadow: s.value > 0 && s.color !== '#00b4ff' && s.color !== '#00ffd5'
-                ? `0 0 12px ${s.color}88` : 'none'
-            }}>{s.value}</div>
+            <div style={{ fontFamily:'var(--font-mono)', fontSize:9, color:'var(--text-muted)',
+              letterSpacing:1.5, textTransform:'uppercase', marginBottom:2 }}>{s.label}</div>
+            <div style={{ fontFamily:'var(--font-ui)', fontSize:22, fontWeight:600,
+              color: s.color, lineHeight:1 }}>{s.value}</div>
           </div>
         ))}
 
@@ -70,8 +70,8 @@ export default function TopBar() {
         <a
           href="#/sensors"
           style={{
-            background: 'rgba(0, 180, 255, 0.04)',
-            border: '1px solid rgba(0, 180, 255, 0.2)',
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border)',
             borderRadius: 6,
             padding: '4px 16px',
             display: 'flex',
@@ -80,14 +80,15 @@ export default function TopBar() {
             marginRight: 12,
             height: 38,
             boxSizing: 'border-box',
+            transition: 'border-color 0.15s',
           }}
-          onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'rgba(0, 180, 255, 0.5)' }}
-          onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'rgba(0, 180, 255, 0.2)' }}
+          onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--border-bright)' }}
+          onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border)' }}
         >
           <div style={{ textAlign: 'left' }}>
-            <div style={{ fontSize: 8.5, color: '#5a8aaa', letterSpacing: 1.5, lineHeight: 1, marginBottom: 2, fontFamily: "'Share Tech Mono'" }}>SENSOR INPUT</div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: '#00b4ff', fontFamily: "'Barlow Condensed'", lineHeight: 1, letterSpacing: 1 }}>
-              CONSOLE
+            <div style={{ fontSize: 8.5, color: 'var(--text-muted)', letterSpacing: 1.2, lineHeight: 1, marginBottom: 3, fontFamily: 'var(--font-mono)', textTransform:'uppercase' }}>Sensor Input</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'var(--font-ui)', lineHeight: 1, letterSpacing: 0.3 }}>
+              Console
             </div>
           </div>
         </a>
@@ -96,49 +97,45 @@ export default function TopBar() {
         <button
           onClick={() => setShowDiagnosticsModal(true)}
           style={{
-            background: 'rgba(0, 255, 213, 0.04)',
-            border: '1px solid rgba(0, 255, 213, 0.2)',
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border)',
             borderRadius: 6,
             padding: '4px 16px',
             display: 'flex',
             alignItems: 'center',
             gap: 12,
             cursor: 'pointer',
-            transition: 'all 0.2s ease-in-out',
-            fontFamily: "'Share Tech Mono', monospace",
+            transition: 'border-color 0.15s, background 0.15s',
+            fontFamily: 'var(--font-ui)',
             height: 38,
-            boxShadow: diagnostics.length > 0 ? '0 0 10px rgba(0, 255, 213, 0.1)' : 'none',
             outline: 'none',
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.background = 'rgba(0, 255, 213, 0.12)';
-            e.currentTarget.style.borderColor = 'rgba(0, 255, 213, 0.5)';
-            e.currentTarget.style.boxShadow = '0 0 15px rgba(0, 255, 213, 0.25)';
+            e.currentTarget.style.background = 'var(--bg-panel)';
+            e.currentTarget.style.borderColor = 'var(--border-bright)';
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'rgba(0, 255, 213, 0.04)';
-            e.currentTarget.style.borderColor = 'rgba(0, 255, 213, 0.2)';
-            e.currentTarget.style.boxShadow = diagnostics.length > 0 ? '0 0 10px rgba(0, 255, 213, 0.1)' : 'none';
+            e.currentTarget.style.background = 'var(--bg-card)';
+            e.currentTarget.style.borderColor = 'var(--border)';
           }}
         >
           <div style={{ textAlign: 'left' }}>
-            <div style={{ fontSize: 8.5, color: '#5a8aaa', letterSpacing: 1.5, lineHeight: 1, marginBottom: 2 }}>AI DIAGNOSTICS</div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: '#00ffd5', fontFamily: "'Barlow Condensed'", lineHeight: 1, letterSpacing: 1 }}>
-              VIEW REPORTS
+            <div style={{ fontSize: 8.5, color: 'var(--text-muted)', letterSpacing: 1.2, lineHeight: 1, marginBottom: 3, fontFamily:'var(--font-mono)', textTransform:'uppercase' }}>AI Diagnostics</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'var(--font-ui)', lineHeight: 1, letterSpacing: 0.3 }}>
+              View Reports
             </div>
           </div>
           {diagnostics.length > 0 && (
             <span style={{
-              background: '#00ffd5',
-              color: '#050a14',
-              fontFamily: "'Share Tech Mono'",
+              background: 'var(--accent-cobalt)',
+              color: 'var(--bg-deep)',
+              fontFamily: 'var(--font-mono)',
               fontSize: 10,
-              fontWeight: 'bold',
-              borderRadius: 10,
+              fontWeight: 600,
+              borderRadius: 4,
               padding: '2px 6px',
               minWidth: 16,
               textAlign: 'center',
-              boxShadow: '0 0 8px #00ffd5',
             }}>
               {diagnostics.length}
             </span>
@@ -147,8 +144,8 @@ export default function TopBar() {
       </div>
 
       {/* Right: clock */}
-      <div style={{ fontFamily:"'Share Tech Mono'", fontSize:13, color:'#00b4ff',
-        letterSpacing:2, flexShrink:0 }}>
+      <div style={{ fontFamily:'var(--font-mono)', fontSize:12, color:'var(--text-muted)',
+        letterSpacing:1, flexShrink:0 }}>
         {timeStr}
       </div>
     </div>

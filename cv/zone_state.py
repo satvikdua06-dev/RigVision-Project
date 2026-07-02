@@ -1,8 +1,7 @@
 """RigVision-3D — Zone assignment + sensor fusion (shared).
 
-Used by:
-  - pipeline.py (demo mode) to build zone states directly.
-  - location_service.py to assign zones to triangulated persons and fuse sensors.
+Used by cv/pipeline.py (both demo and live/video modes) to assign triangulated persons
+to zones and fuse current sensor readings into per-zone status.
 
 Sensor values come from the seam `rigvision:sensors:latest` (written by the Sensor
 Console now, MQTT bridge later). Manual readings never expire; live readings expire
