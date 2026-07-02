@@ -50,9 +50,18 @@ function SensorSlider({ sensor, value, onChange }) {
   return (
     <div style={{ marginBottom: 18 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-        <span style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 12, color: '#e0f4ff' }}>
+        <span
+          title={sensor.threshold_source ? sensor.threshold_source.reason : undefined}
+          style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 12, color: '#e0f4ff' }}
+        >
           {sensor.id}
           <span style={{ color: '#5a8aaa', fontSize: 10, marginLeft: 8 }}>{sensor.type}</span>
+          {sensor.threshold_source?.level === 'device_manual' && (
+            <span style={{ color: '#00bcd4', fontSize: 9, marginLeft: 6 }}>⚙ {sensor.threshold_source.device}</span>
+          )}
+          {sensor.threshold_source?.level === 'zone_environmental' && (
+            <span style={{ color: '#8a7bd8', fontSize: 9, marginLeft: 6 }}>⛨ HSE area limit</span>
+          )}
         </span>
         <span style={{ fontFamily: "'Barlow Condensed'", fontSize: 18, fontWeight: 700, color, minWidth: 70, textAlign: 'right' }}>
           {Number(value).toFixed(step < 1 ? 1 : 0)} <span style={{ fontSize: 11, color: '#5a8aaa' }}>{sensor.unit}</span>

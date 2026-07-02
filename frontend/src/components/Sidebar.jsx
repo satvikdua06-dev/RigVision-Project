@@ -7,25 +7,45 @@ const STATUS_COLOR = {
   critical: '#ff3b3b',
 }
 
-// Display config per sensor type. A zone only renders bars for the types it
-// actually has (zone.sensor_types), so absent sensors don't show as "NO DATA".
-const SENSOR_BAR_CONFIG = [
-  { type: 'temperature', label: 'Temperature', max: 100, unit: '°C',  warn: 45, crit: 70 },
-  { type: 'gas_h2s',     label: 'H₂S',         max: 25,  unit: 'ppm', warn: 10, crit: 20 },
-  { type: 'vibration',   label: 'Vibration',   max: 6,   unit: 'g',   warn: 3,  crit: 5 },
-  { type: 'noise',       label: 'Noise',       max: 120, unit: 'dB',  warn: 85, crit: 100 },
-  { type: 'pressure',    label: 'Pressure',    max: 150, unit: 'bar', warn: 20, crit: 25 },
-]
+// Labels per sensor type. Thresholds + bar bounds come from the zone's sensor_meta
+// (sourced from zone_definitions.json), so the sidebar matches the Sensor Console exactly.
+const SENSOR_LABELS = {
+  temperature: 'Temperature',
+  gas_h2s:     'H₂S',
+  vibration:   'Vibration',
+  noise:       'Noise',
+  pressure:    'Pressure',
+}
 
-function SensorBar({ label, value, max, unit, warn, crit }) {
+function SensorBar({ label, value, meta }) {
   const known = value != null && !Number.isNaN(value)
-  const pct = known ? Math.min(100, (value / max) * 100) : 0
-  const color = !known ? '#3a5a6a' : value >= crit ? '#ff3b3b' : value >= warn ? '#ffb300' : '#00e676'
+  const { min = 0, max = 100, warning, critical, unit = '', threshold_source } = meta || {}
+  // Same scale as the Sensor Console: fill across [min, max] (max = critical*1.2).
+  const pct = known ? Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100)) : 0
+  const color = !known ? '#3a5a6a'
+    : (critical != null && value >= critical) ? '#ff3b3b'
+    : (warning != null && value >= warning) ? '#ffb300'
+    : '#00e676'
+
+  const level = threshold_source?.level
+  const sourceIcon = level === 'device_manual' ? ' ⚙' : level === 'zone_environmental' ? ' ⛨' : ''
+  const tooltip = threshold_source?.reason || (warning != null || critical != null ? `Normal range: [${min}, ${max}]` : '')
+
   return (
-    <div style={{ marginBottom: 8 }}>
+    <div style={{ marginBottom: 8 }} title={tooltip}>
       <div style={{ display:'flex', justifyContent:'space-between', marginBottom:3,
         fontFamily:"'Share Tech Mono',monospace", fontSize:10.5 }}>
-        <span style={{ color:'#5a8aaa' }}>{label}</span>
+        <span style={{ color:'#5a8aaa' }}>
+          {label}
+          <span style={{ color: level === 'device_manual' ? '#00bcd4' : level === 'zone_environmental' ? '#8a7bd8' : '#3a5a6a', fontSize: 9 }}>
+            {sourceIcon}
+          </span>
+          {(warning != null || critical != null) && (
+            <span style={{ fontSize: 8.5, color: '#3a5a6a', marginLeft: 4 }}>
+              ({warning != null ? `w:${warning}` : '—'}/{critical != null ? `c:${critical}` : '—'})
+            </span>
+          )}
+        </span>
         <span style={{ color }}>{known ? `${value} ${unit}` : 'NO DATA'}</span>
       </div>
       <div style={{ height:4, background:'rgba(255,255,255,0.07)', borderRadius:2, overflow:'hidden' }}>
@@ -124,13 +144,11 @@ function ZonesTab() {
                 }}>{zone.status}</span>
               </div>
               {(() => {
-                const types = zone.sensor_types || ['temperature', 'gas_h2s', 'vibration', 'noise']
-                return SENSOR_BAR_CONFIG
-                  .filter(c => types.includes(c.type))
-                  .map(c => (
-                    <SensorBar key={c.type} label={c.label} value={zone[c.type]}
-                      max={c.max} unit={c.unit} warn={c.warn} crit={c.crit} />
-                  ))
+                const types = zone.sensor_types || ['temperature', 'gas_h2s', 'vibration', 'noise', 'pressure']
+                const meta = zone.sensor_meta || {}
+                return types.map(t => (
+                  <SensorBar key={t} label={SENSOR_LABELS[t] || t} value={zone[t]} meta={meta[t]} />
+                ))
               })()}
               <div style={{ display:'flex', justifyContent:'space-between', marginTop:8,
                 fontFamily:"'Share Tech Mono'", fontSize:10.5 }}>

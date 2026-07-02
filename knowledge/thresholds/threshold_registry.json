@@ -1,0 +1,301 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "RigVision-3D Threshold Registry",
+  "description": "Structured operating limits extracted from device manuals (knowledge/documents/ONGC_Device_Manuals.txt) by manual_threshold_extractor.py and reviewed by a human. Seeded into Neo4j as ThresholdSpec nodes by seed_graph.py; resolved at runtime by backend/services/threshold_resolver.py. Units always match the live sensor units from cad/zone_definitions.json.",
+  "version": "1.0.0",
+  "generated_by": "manual_threshold_extractor",
+
+  "manuals": [
+    {
+      "manual_id": "manual_ongc_mp_1600",
+      "title": "RV-MP-1600 Triplex Mud Pump O&M Manual",
+      "device_model": "RV-MP-1600",
+      "document_type": "operation_manual",
+      "version": "rev3",
+      "source_path": "knowledge/documents/ONGC_Device_Manuals.txt"
+    },
+    {
+      "manual_id": "manual_voltguard_cp_440",
+      "title": "VoltGuard CP-440 Control Panel Manual",
+      "device_model": "VoltGuard CP-440",
+      "document_type": "operation_manual",
+      "version": "rev1",
+      "source_path": "knowledge/documents/ONGC_Device_Manuals.txt"
+    },
+    {
+      "manual_id": "manual_acme_comp_2200",
+      "title": "ACME-COMP-2200 Rig Air Compressor Manual",
+      "device_model": "ACME-COMP-2200",
+      "document_type": "operation_manual",
+      "version": "rev2",
+      "source_path": "knowledge/documents/ONGC_Device_Manuals.txt"
+    },
+    {
+      "manual_id": "manual_wh_5000",
+      "title": "WH-5000 Series Wellhead Assembly Manual",
+      "device_model": "WH-5000 Series",
+      "document_type": "operation_manual",
+      "version": "rev4",
+      "source_path": "knowledge/documents/ONGC_Device_Manuals.txt"
+    },
+    {
+      "manual_id": "manual_hse_2025_04",
+      "title": "RigVision HSE Field Standard HSE-2025-04 (Occupied Work Areas)",
+      "device_model": null,
+      "document_type": "safety_standard",
+      "version": "2025-04",
+      "source_path": "knowledge/documents/ONGC_Device_Manuals.txt"
+    }
+  ],
+
+  "specs": [
+    {
+      "threshold_id": "thr_mp1600_temperature_001",
+      "scope": "device",
+      "device_model": "RV-MP-1600",
+      "sensor_type": "temperature",
+      "metric": "fluid_end_temperature",
+      "unit": "°C",
+      "normal_range": { "min": 20, "max": 55 },
+      "warning_min": 60,
+      "critical_min": 75,
+      "operating_mode": "continuous",
+      "source": {
+        "manual_id": "manual_ongc_mp_1600",
+        "section": "4.2 Operating Limits",
+        "text": "Fluid end temperature, continuous operation: 20C to 55C. Alarm at 60C. Emergency shutdown (trip) at 75C."
+      },
+      "confidence": 0.94,
+      "validated_by_human": true
+    },
+    {
+      "threshold_id": "thr_mp1600_vibration_001",
+      "scope": "device",
+      "device_model": "RV-MP-1600",
+      "sensor_type": "vibration",
+      "metric": "structural_vibration",
+      "unit": "g_rms",
+      "normal_range": { "min": 0, "max": 3.0 },
+      "warning_min": 5.5,
+      "critical_min": 9.0,
+      "operating_mode": "continuous",
+      "source": {
+        "manual_id": "manual_ongc_mp_1600",
+        "section": "4.2 Operating Limits",
+        "text": "Structural vibration, continuous operation: 0 to 3.0 g RMS. Alarm at 5.5 g RMS. Trip at 9.0 g RMS."
+      },
+      "confidence": 0.94,
+      "validated_by_human": true
+    },
+    {
+      "threshold_id": "thr_cp440_pressure_001",
+      "scope": "device",
+      "device_model": "VoltGuard CP-440",
+      "sensor_type": "pressure",
+      "metric": "hydraulic_control_line_pressure",
+      "unit": "bar",
+      "normal_range": { "min": 5, "max": 16 },
+      "warning_min": 18,
+      "critical_min": 22,
+      "operating_mode": "normal_operation",
+      "source": {
+        "manual_id": "manual_voltguard_cp_440",
+        "section": "3.1 Operating Limits",
+        "text": "Hydraulic control line pressure, normal operation: 5 to 16 bar. Alarm at 18 bar. Trip (relief) at 22 bar."
+      },
+      "confidence": 0.92,
+      "validated_by_human": true
+    },
+    {
+      "threshold_id": "thr_comp2200_temperature_001",
+      "scope": "device",
+      "device_model": "ACME-COMP-2200",
+      "sensor_type": "temperature",
+      "metric": "casing_temperature",
+      "unit": "°C",
+      "normal_range": { "min": 20, "max": 58 },
+      "warning_min": 58,
+      "critical_min": 72,
+      "operating_mode": "continuous",
+      "source": {
+        "manual_id": "manual_acme_comp_2200",
+        "section": "5.4 Operating Limits",
+        "text": "Casing temperature, continuous operation: 20C to 58C. Alarm at 58C. Trip at 72C."
+      },
+      "confidence": 0.93,
+      "validated_by_human": true
+    },
+    {
+      "threshold_id": "thr_comp2200_vibration_001",
+      "scope": "device",
+      "device_model": "ACME-COMP-2200",
+      "sensor_type": "vibration",
+      "metric": "frame_vibration",
+      "unit": "g_rms",
+      "normal_range": { "min": 0, "max": 2.8 },
+      "warning_min": 4.5,
+      "critical_min": 7.0,
+      "operating_mode": "continuous",
+      "source": {
+        "manual_id": "manual_acme_comp_2200",
+        "section": "5.4 Operating Limits",
+        "text": "Frame vibration: 0 to 2.8 g RMS. Alarm at 4.5 g RMS. Trip at 7.0 g RMS."
+      },
+      "confidence": 0.93,
+      "validated_by_human": true
+    },
+    {
+      "threshold_id": "thr_comp2200_pressure_001",
+      "scope": "device",
+      "device_model": "ACME-COMP-2200",
+      "sensor_type": "pressure",
+      "metric": "discharge_pressure",
+      "unit": "bar",
+      "normal_range": { "min": 6, "max": 16 },
+      "warning_min": 19,
+      "critical_min": 24,
+      "operating_mode": "rated_load",
+      "source": {
+        "manual_id": "manual_acme_comp_2200",
+        "section": "5.4 Operating Limits",
+        "text": "Discharge pressure, rated: 6 to 16 bar. Alarm at 19 bar. Trip at 24 bar."
+      },
+      "confidence": 0.93,
+      "validated_by_human": true
+    },
+    {
+      "threshold_id": "thr_wh5000_gas_h2s_001",
+      "scope": "device",
+      "device_model": "WH-5000 Series",
+      "sensor_type": "gas_h2s",
+      "metric": "wellhead_h2s_concentration",
+      "unit": "ppm",
+      "normal_range": { "min": 0, "max": 5 },
+      "warning_min": 8,
+      "critical_min": 12,
+      "operating_mode": "continuous",
+      "source": {
+        "manual_id": "manual_wh_5000",
+        "section": "7.2 Operating Limits",
+        "text": "H2S concentration at the wellhead: 0 to 5 ppm normal. Alarm at 8 ppm. Evacuation / emergency shutdown at 12 ppm."
+      },
+      "confidence": 0.95,
+      "validated_by_human": true
+    },
+    {
+      "threshold_id": "thr_wh5000_noise_001",
+      "scope": "device",
+      "device_model": "WH-5000 Series",
+      "sensor_type": "noise",
+      "metric": "acoustic_noise_1m",
+      "unit": "dB",
+      "normal_range": { "min": 40, "max": 88 },
+      "warning_min": 92,
+      "critical_min": 102,
+      "operating_mode": "continuous",
+      "source": {
+        "manual_id": "manual_wh_5000",
+        "section": "7.2 Operating Limits",
+        "text": "Acoustic noise at one meter: 40 to 88 dB normal. Alarm at 92 dB. Critical at 102 dB."
+      },
+      "confidence": 0.91,
+      "validated_by_human": true
+    },
+
+    {
+      "threshold_id": "thr_env_temperature_001",
+      "scope": "zone",
+      "device_model": null,
+      "sensor_type": "temperature",
+      "metric": "ambient_air_temperature",
+      "unit": "°C",
+      "normal_range": { "min": 18, "max": 45 },
+      "warning_min": 48,
+      "critical_min": 60,
+      "operating_mode": "occupied_area",
+      "source": {
+        "manual_id": "manual_hse_2025_04",
+        "section": "2 Area Limits",
+        "text": "Ambient air temperature: 18C to 45C normal. Warning at 48C. Critical at 60C (heat-stress evacuation)."
+      },
+      "confidence": 0.96,
+      "validated_by_human": true
+    },
+    {
+      "threshold_id": "thr_env_gas_h2s_001",
+      "scope": "zone",
+      "device_model": null,
+      "sensor_type": "gas_h2s",
+      "metric": "area_h2s_concentration",
+      "unit": "ppm",
+      "normal_range": { "min": 0, "max": 5 },
+      "warning_min": 10,
+      "critical_min": 15,
+      "operating_mode": "occupied_area",
+      "source": {
+        "manual_id": "manual_hse_2025_04",
+        "section": "2 Area Limits",
+        "text": "H2S concentration, general area: 0 to 5 ppm normal. Warning at 10 ppm. Critical at 15 ppm (mandatory evacuation, OSHA ceiling)."
+      },
+      "confidence": 0.96,
+      "validated_by_human": true
+    },
+    {
+      "threshold_id": "thr_env_noise_001",
+      "scope": "zone",
+      "device_model": null,
+      "sensor_type": "noise",
+      "metric": "continuous_noise_exposure",
+      "unit": "dB",
+      "normal_range": { "min": 40, "max": 85 },
+      "warning_min": 95,
+      "critical_min": 105,
+      "operating_mode": "occupied_area",
+      "source": {
+        "manual_id": "manual_hse_2025_04",
+        "section": "2 Area Limits",
+        "text": "Continuous noise exposure: 40 to 85 dB normal. Warning at 95 dB. Critical at 105 dB."
+      },
+      "confidence": 0.96,
+      "validated_by_human": true
+    },
+    {
+      "threshold_id": "thr_env_pressure_001",
+      "scope": "zone",
+      "device_model": null,
+      "sensor_type": "pressure",
+      "metric": "service_line_pressure",
+      "unit": "bar",
+      "normal_range": { "min": 5, "max": 15 },
+      "warning_min": 20,
+      "critical_min": 25,
+      "operating_mode": "occupied_area",
+      "source": {
+        "manual_id": "manual_hse_2025_04",
+        "section": "2 Area Limits",
+        "text": "Service line pressure in occupied areas: 5 to 15 bar normal. Warning at 20 bar. Critical at 25 bar."
+      },
+      "confidence": 0.9,
+      "validated_by_human": true
+    },
+    {
+      "threshold_id": "thr_env_vibration_001",
+      "scope": "zone",
+      "device_model": null,
+      "sensor_type": "vibration",
+      "metric": "structural_vibration",
+      "unit": "g_rms",
+      "normal_range": { "min": 0, "max": 2.5 },
+      "warning_min": 5.0,
+      "critical_min": 8.0,
+      "operating_mode": "occupied_area",
+      "source": {
+        "manual_id": "manual_hse_2025_04",
+        "section": "2 Area Limits",
+        "text": "Structural vibration in occupied areas: 0 to 2.5 g RMS normal. Warning at 5.0 g RMS. Critical at 8.0 g RMS."
+      },
+      "confidence": 0.9,
+      "validated_by_human": true
+    }
+  ]
+}

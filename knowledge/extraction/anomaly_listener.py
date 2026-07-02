@@ -79,6 +79,9 @@ def process_anomaly_message(payload_str):
                 report["severity"] = full_telemetry_data.get("severity")
                 report["triggered_sensors"] = full_telemetry_data.get("triggered_sensors")
                 report["telemetry_snapshot"] = full_telemetry_data.get("telemetry_snapshot")
+                # Manual-grounded explanation of WHY each sensor was flagged
+                # (which device/manual threshold fired) — carried to the frontend.
+                report["threshold_context"] = full_telemetry_data.get("threshold_context")
                 report["timestamp"] = int(time.time() * 1000)
                 diagnostic_report_json = json.dumps(report)
             except (json.JSONDecodeError, TypeError):

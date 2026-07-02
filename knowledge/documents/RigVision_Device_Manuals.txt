@@ -1,51 +1,143 @@
---- AC UNIT MANUAL ---
-Device: AC Unit
-Model: RigCool 9000 Series
-General Operating Parameters: 
-- Normal Operating Temperature: 60C to 68C.
-- Normal Structural Vibration: 1.0 mm/s to 2.5 mm/s.
-Diagnostics & Protocols:
-1. Compressor Failure: The compressor is the most critical mechanical component. If the ambient temperature exceeds 80C AND structural vibration spikes beyond 10.0 mm/s, compressor failure is imminent and catastrophic. The system is entering a lethal threshold and could trigger an electrical fire. 
-- Required Action: Immediately 'Replace Compressor' and isolate power.
-2. Refrigerant Leak: If the temperature spikes above 80C but the structural vibration remains relatively normal (under 5.0 mm/s), the compressor is working overtime but is not mechanically failing. This strongly indicates a Refrigerant Leak.
-- Required Action: 'Recharge Refrigerant' and inspect copper lines for micro-fractures.
+--- MUD PUMP MANUAL ---
+Device: Triplex Mud Pump
+Model: RV-MP-1600
+Manufacturer: RigVision Systems
+Equipment Class: rotating / reciprocating
+Document: RV-MP-1600 Triplex Mud Pump O&M Manual, rev3
 
---- CEILING FAN MANUAL ---
-Device: Ceiling Fan
-Model: AeroFlow Industrial 500
-General Operating Parameters:
-- Normal Operating Temperature: 30C to 40C.
-- Normal Structural Vibration: 0.5 mm/s to 2.0 mm/s.
-Diagnostics & Protocols:
-1. Motor Degradation: Ceiling fan motors rely on electromagnetic coils. Due to their lightweight mounting, even in complete mechanical failure, a ceiling fan will rarely exceed 5.0 mm/s of vibration. If temperature exceeds 55C and vibration is between 3.5 mm/s and 5.0 mm/s, the internal friction is destroying the coil insulation. 
-- Required Action: 'Rewind Motor Coils' and lubricate the primary bearing. Do not replace the entire unit unless the housing is cracked.
+Specifications:
+- Type: Triplex single-acting reciprocating piston pump
+- Rated power: 1600 HP at 120 strokes per minute
+- Drive: AC motor through reduction gearbox, chain final drive
+- Fluid end: forged steel, replaceable liners 5" to 7"
+- Lubrication: splash-fed power end with pressurized auxiliary loop
 
---- EXHAUST FAN MANUAL ---
-Device: Exhaust Fan
-Model: VentMaster Pro Heavy Duty
-General Operating Parameters:
-- Normal Operating Temperature: 40C to 50C (depending on exhaust air).
-- Normal Acoustic Noise: 45 dB to 55 dB.
-Diagnostics & Protocols:
-1. Motor Burnout: Exhaust fans operate in high-stress environments. If the acoustic noise level exceeds 80 dB (a loud grinding or screeching sound) AND the motor casing temperature exceeds 75C, the internal bearings have disintegrated, leading to immediate Motor Burnout. The fan will seize completely within minutes.
-- Required Action: 'Replace Motor'. Do not attempt to rewind; the internal housing is likely warped.
+Section 4.2 — Operating Limits:
+- Fluid end temperature, continuous operation: 20C to 55C. Alarm at 60C. Emergency shutdown (trip) at 75C.
+- Structural vibration, continuous operation: 0 to 3.0 g RMS. Alarm at 5.5 g RMS. Trip at 9.0 g RMS.
+- Operation above alarm levels is permitted only for controlled shutdown, never for continued drilling.
 
---- GAS STOVE MANUAL ---
-Device: Gas Stove
-Model: Ignis Commercial Range
-General Operating Parameters:
-- Ambient Temperature (Near Valve): 25C to 35C.
-- Gas Concentration: 0 PPM (Parts Per Million). Any detected gas is an anomaly.
-Diagnostics & Protocols:
-1. Valve Leak: The commercial gas valve is rated for high pressure. If the gas sensor detects ANY trace of combustible gas (> 50 PPM), this is a critical life-safety event. Secondary indicators include an anomalous rise in localized temperature (> 55C near the manifold) without the burners being actively lit, indicating a pressurized micro-leak reacting with ambient heat.
-- Required Action: Immediately trigger emergency shutoff and 'Fix Valve'. Evacuate the immediate zone until PPM returns to 0.
+Section 4.3 — Diagnostics & Failure Modes:
+1. Main Bearing Seizure: If fluid end temperature exceeds the 60C alarm level AND vibration rises above 5.5 g RMS simultaneously, the main crankshaft bearing is running dry and seizure is imminent. Continued operation past the 75C trip point will crack the power-end housing. Listen for a low-frequency rumble that rises with stroke rate.
+- Required Action: 'Replace Main Bearing Assembly'. Lock out and tag out the drive motor, drain the power-end oil and inspect it for bronze flakes, and inspect the crankshaft journal for scoring before re-assembly.
+2. Liner Wash (Piston/Liner Wear): A worn liner lets drilling mud cut past the piston. The signature is rising vibration (above 5.5 g RMS) with broadly normal fluid end temperature (below 60C), often accompanied by a rhythmic knocking synchronized to the stroke rate and a measurable drop in discharge volume.
+- Required Action: 'Replace Liner and Piston'. Verify rod alignment and re-torque the liner clamp to specification after replacement.
+3. Packing Gland Failure: Worn stuffing-box packing leaks high-pressure mud past the rod. The signature is a sharp hissing/spraying noise rising with pump speed, together with elevated vibration as the rod loses support. Fluid end temperature usually remains normal.
+- Required Action: 'Repack Stuffing Box'. Replace all packing rings as a set, inspect the rod surface for grooving, and re-tighten the gland nut to the running torque in Table 9.
 
---- LIGHT FIXTURE MANUAL ---
-Device: Light Fixture
-Model: LumiTech Industrial LED Array
-General Operating Parameters:
-- Normal Operating Temperature: 30C to 45C.
-- Normal Acoustic Noise: < 20 dB (Completely silent).
-Diagnostics & Protocols:
-1. Ballast Failure: Modern LED fixtures use electronic drivers (often referred to colloquially as ballasts). These solid-state devices do not vibrate, but when their internal capacitors fail, they emit a highly specific high-frequency electrical hum. If acoustic noise spikes above 50 dB (humming/buzzing) AND the heat sink temperature exceeds 65C, the driver is in thermal runaway. 
-- Required Action: 'Replace LED Driver' before the thermal load melts the optical casing.
+Section 6 — Maintenance Schedule:
+- Every shift: check power-end oil level, listen for knocking, check packing leak rate.
+- Weekly: grease the crosshead, verify the vibration baseline is under 3.0 g RMS.
+- Monthly: pull and inspect one liner, calibrate the fluid end temperature probe.
+
+--- CONTROL PANEL MANUAL ---
+Device: Rig Control Panel
+Model: VoltGuard CP-440
+Manufacturer: VoltGuard
+Equipment Class: static / electrical-hydraulic
+Document: VoltGuard CP-440 Control Panel Manual, rev1
+
+Specifications:
+- Supply: 440 V three-phase, 60 A
+- Hydraulic section: 22 bar rated control circuit with integral relief valve
+- Enclosure: IP65, forced ventilation with replaceable dust filter
+- Controls: motor starters, BOP control solenoids, emergency stop chain
+
+Section 3.1 — Operating Limits:
+- Hydraulic control line pressure, normal operation: 5 to 16 bar. Alarm at 18 bar. Trip (relief) at 22 bar.
+- Internal panel air temperature must remain within the ambient room limits; the panel has no independent temperature transmitter.
+
+Section 3.4 — Diagnostics & Failure Modes:
+1. Hydraulic Line Blockage: A blocked or kinked control line causes pressure to climb steadily above the 18 bar alarm point while actuator response becomes sluggish. Pressure trapped above 22 bar risks bursting the line.
+- Required Action: 'Flush Hydraulic Control Line'. Depressurize via the bleed port first, then back-flush the line and replace the inline filter element.
+2. Relief Valve Failure: If line pressure exceeds 18 bar and does NOT relieve at the rated 22 bar set point, the relief valve has seized. This is a containment-critical condition.
+- Required Action: 'Replace Relief Valve'. Isolate the HPU, verify zero trapped pressure, replace the valve cartridge, and re-certify the set point with a calibrated dead-weight tester.
+3. Panel Overheating (Ventilation Blockage): A clogged dust filter or failed ventilation fan lets the room-side temperature climb around the panel. Sustained ambient temperature above the area warning level near the panel degrades contactor life and can nuisance-trip the starters.
+- Required Action: 'Clear Panel Ventilation and Replace Filter'. De-energize the panel, replace the filter mat, verify fan rotation, and thermal-scan the busbars before returning to service.
+
+Section 5 — Maintenance Schedule:
+- Monthly: replace ventilation filter mat, exercise the emergency stop chain.
+- Quarterly: verify relief valve set point, torque-check power terminations.
+
+--- COMPRESSOR MANUAL ---
+Device: Rig Air Compressor
+Model: ACME-COMP-2200
+Manufacturer: ACME
+Equipment Class: rotating
+Document: ACME-COMP-2200 Rig Air Compressor Manual, rev2
+
+Specifications:
+- Type: two-stage reciprocating air compressor
+- Rated delivery: 2200 L/min FAD at 16 bar
+- Drive: direct-coupled 75 kW induction motor
+- Cooling: air-cooled, finned intercooler and aftercooler
+
+Section 5.4 — Operating Limits:
+- Casing temperature, continuous operation: 20C to 58C. Alarm at 58C. Trip at 72C.
+- Frame vibration: 0 to 2.8 g RMS. Alarm at 4.5 g RMS. Trip at 7.0 g RMS.
+- Discharge pressure, rated: 6 to 16 bar. Alarm at 19 bar. Trip at 24 bar.
+
+Section 5.6 — Diagnostics & Failure Modes:
+1. Motor Burnout: If casing temperature exceeds the 58C alarm AND frame vibration exceeds 4.5 g RMS, the drive motor windings are overheating under mechanical load. Past the 72C trip point the winding insulation fails permanently and the rotor may seize.
+- Required Action: 'Replace Motor'. Do not attempt a rewind; the rotor is likely warped. Megger-test the replacement before coupling and verify alignment to within 0.05 mm.
+2. Discharge Valve Failure: Discharge pressure climbing above the 19 bar alarm with elevated casing temperature (above 58C) but near-normal vibration indicates the discharge valve plates are leaking and re-compressing hot air.
+- Required Action: 'Replace Valve Plate Assembly'. Inspect the unloader mechanism and replace the head gasket while the head is off.
+3. Bearing Wear: Frame vibration alone climbing past 4.5 g RMS, with temperature and discharge pressure inside normal limits, indicates progressive main bearing wear. The vibration spectrum shows a characteristic 2x running-speed component.
+- Required Action: 'Replace Bearings'. Re-grease to specification and verify shaft end-float after replacement.
+
+Section 7 — Maintenance Schedule:
+- Daily: drain receiver condensate, check oil level.
+- Every 500 hours: replace air filter, sample oil, record vibration baseline.
+- Every 2000 hours: replace valve plates, inspect intercooler for fouling.
+
+--- WELLHEAD MANUAL ---
+Device: Wellhead Assembly
+Model: WH-5000 Series
+Manufacturer: WH Industries
+Equipment Class: static / pressure-containing
+Document: WH-5000 Series Wellhead Assembly Manual, rev4
+
+Specifications:
+- Rated working pressure: 5000 psi
+- Configuration: casing head, tubing head, christmas tree with master valve, wing valve, adjustable choke
+- Seals: annular elastomer seals, H2S (sour) service rated per NACE MR0175
+
+Section 7.2 — Operating Limits:
+- H2S concentration at the wellhead: 0 to 5 ppm normal. Alarm at 8 ppm. Evacuation / emergency shutdown at 12 ppm. (Stricter than the general area standard because the wellhead is the most probable leak source.)
+- Acoustic noise at one meter: 40 to 88 dB normal. Alarm at 92 dB. Critical at 102 dB.
+
+Section 7.5 — Diagnostics & Failure Modes:
+1. Annular Seal Leak: ANY sustained H2S reading above the 8 ppm alarm at the wellhead indicates the annular seal is passing formation gas. This is a life-safety event. Above 12 ppm the area must be evacuated immediately.
+- Required Action: 'Activate Emergency Shutdown and Replace Annular Seal'. Evacuate the zone, close the master valve, and re-enter only with SCBA until H2S returns to 0 ppm. Replace the seal as a complete energized-seal kit.
+2. Choke Erosion: A rising high-pitched flow noise above the 92 dB alarm point, without an accompanying gas reading, indicates the choke bean is eroding and flow is cutting the body.
+- Required Action: 'Replace Choke Bean'. Inspect the choke body for wash-out and verify downstream pipework wall thickness ultrasonically.
+3. Master Valve Passing: A continuous low-frequency flow noise above the 92 dB alarm with a simultaneous trace H2S reading (above 8 ppm) downstream of a closed master valve indicates the gate is not sealing and gas is passing the valve.
+- Required Action: 'Lap or Replace Master Valve Gate'. Confirm with a downstream pressure build-up test, then service the gate and seats; replace the valve if seat pockets are washed.
+
+Section 9 — Maintenance Schedule:
+- Daily: walk-down for hissing, bubbling, or paint blistering at flanges.
+- Monthly: function-test master and wing valves, bump-test the H2S detector.
+- Annually: full pressure test to rated working pressure, seal kit inspection.
+
+--- ZONE ENVIRONMENTAL SAFETY STANDARD ---
+Document: RigVision HSE Field Standard HSE-2025-04 (Occupied Work Areas)
+Scope: Applies to ambient, room-level sensors in any occupied zone (work rooms and corridors). These limits protect personnel, not specific equipment. Device-mounted sensors must use their device manual limits instead.
+
+Section 2 — Area Limits:
+- Ambient air temperature: 18C to 45C normal. Warning at 48C. Critical at 60C (heat-stress evacuation).
+- H2S concentration, general area: 0 to 5 ppm normal. Warning at 10 ppm. Critical at 15 ppm (mandatory evacuation, OSHA ceiling).
+- Continuous noise exposure: 40 to 85 dB normal. Warning at 95 dB. Critical at 105 dB (double hearing protection plus time limits).
+- Service line pressure in occupied areas: 5 to 15 bar normal. Warning at 20 bar. Critical at 25 bar.
+- Structural vibration in occupied areas: 0 to 2.5 g RMS normal. Warning at 5.0 g RMS. Critical at 8.0 g RMS.
+
+Section 3 — Area Hazard Responses:
+1. Area H2S Gas Accumulation: Any area H2S warning (above 10 ppm) means formation gas is accumulating in the occupied space, from a leak or from poor ventilation. Above 15 ppm evacuation is mandatory.
+- Required Action: 'Evacuate Zone and Ventilate'. Account for all personnel, start forced ventilation, cross-check with a portable detector, and identify the leak source before re-entry.
+2. Heat Stress Hazard: Sustained ambient temperature above the 48C warning level creates a heat-stress risk and usually indicates an equipment heat source or failed cooling in the zone.
+- Required Action: 'Remove Heat Source and Ventilate'. Limit occupancy time, identify the radiating equipment, and restore cooling or ventilation before normal work resumes.
+3. Excessive Area Noise: Continuous noise above the 95 dB warning level exceeds safe daily exposure even with single hearing protection.
+- Required Action: 'Enforce Hearing Protection and Locate Noise Source'. Mandate double protection above 105 dB, limit exposure time, and inspect rotating equipment in the zone for the source.
+4. Structural Vibration Hazard: Area vibration above 5.0 g RMS indicates a machine transmitting abnormal vibration into the structure; above 8.0 g RMS there is risk to walkways and supports.
+- Required Action: 'Stop Equipment and Inspect Structure'. Identify and stop the offending machine, then inspect anchor bolts, skid welds, and grating before restart.
+5. Service Line Overpressure: Area service line pressure above the 20 bar warning level exceeds the rating of utility hoses and quick-connects in occupied areas.
+- Required Action: 'Isolate and Depressurize Service Line'. Close the upstream isolation valve, bleed the line to a safe location, and verify the regulator set point before restoring supply.

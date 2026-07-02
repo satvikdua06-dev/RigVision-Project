@@ -6,6 +6,7 @@ import { useRigStore } from './stores/useRigStore.js'
 import CameraFeeds from './components/CameraFeeds.jsx'
 import DiagnosticsModal from './components/DiagnosticsModal.jsx'
 import SensorConsole from './components/SensorConsole.jsx'
+import NotificationAlert from './components/NotificationAlert.jsx'
 
 export default function App() {
   const connectToBackend = useRigStore(s => s.connectToBackend)
@@ -63,6 +64,9 @@ export default function App() {
 
       {/* Diagnostics Modal Window rendered at root level */}
       <DiagnosticsModal />
+
+      {/* Real-time Anomaly Notification Toast Overlay */}
+      <NotificationAlert />
     </div>
   )
 }
