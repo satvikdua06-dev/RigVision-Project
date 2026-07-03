@@ -179,18 +179,42 @@ def match_cross_camera(
     all_matched = []
     used_tracks = {cam_id: set() for cam_id in camera_ids}
 
-    # ── Pass 1: ArUco identity ────────────────────────────────────────────────
-    # Build a simple dict: aruco_id → {cam_id: track}
-    # One track per camera per aruco_id — no duplicate handling needed.
+    # ── Pass 0: BoT-SORT history lookup ───────────────────────────────────────
+    # If (cam_id, track_id) is already in previous_matches, its global identity
+    # is known from a prior frame — reuse it directly, skipping ArUco and
+    # epipolar checks entirely.
+    # Two cameras can both carry entries pointing to the same global_id (they
+    # were cross-matched in a prior frame), so we collect by global_id first
+    # and emit one MatchedPerson per identity.
 
-    aruco_groups = {}
+    known: Dict[int, Dict[int, TrackedPerson]] = {}
     for cam_id in camera_ids:
         for track in per_camera_tracks[cam_id]:
+            key = (cam_id, track.track_id)
+            if key in previous_matches:
+                gid = previous_matches[key]
+                known.setdefault(gid, {})[cam_id] = track
+                used_tracks[cam_id].add(track.track_id)
+
+    for gid, per_camera in known.items():
+        if gid not in assigned_in_frame:
+            all_matched.append(MatchedPerson(global_id=gid, per_camera=per_camera))
+            assigned_in_frame.add(gid)
+            for cam_id, track in per_camera.items():
+                last_seen[(cam_id, track.track_id)] = now
+
+    # ── Pass 1: ArUco identity ────────────────────────────────────────────────
+    # Only runs on tracks not resolved by Pass 0.
+    # Build a simple dict: aruco_id → {cam_id: track}
+
+    aruco_groups: Dict[int, Dict[int, TrackedPerson]] = {}
+    for cam_id in camera_ids:
+        for track in per_camera_tracks[cam_id]:
+            if track.track_id in used_tracks[cam_id]:
+                continue
             if track.aruco_id is None:
                 continue
-            if track.aruco_id not in aruco_groups:
-                aruco_groups[track.aruco_id] = {}
-            aruco_groups[track.aruco_id][cam_id] = track
+            aruco_groups.setdefault(track.aruco_id, {})[cam_id] = track
 
     for aruco_id, per_camera in aruco_groups.items():
         global_id = _get_or_create_aruco_global_id(matching_state, aruco_id, per_camera, assigned_in_frame)
@@ -294,8 +318,25 @@ def _single_camera_output(
     assigned_in_frame: Set[int],
 ) -> List[MatchedPerson]:
     """Convert one-camera tracks to global records when no cross-camera match is possible."""
+    import time
+    now = time.time()
+    previous_matches = matching_state.setdefault("previous_matches", {})
+    last_seen = matching_state.setdefault("last_seen", {})
+
     result = []
     for track in tracks:
+        key = (cam_id, track.track_id)
+
+        # Pass 0: known BoT-SORT track — reuse existing global identity
+        if key in previous_matches:
+            gid = previous_matches[key]
+            if gid not in assigned_in_frame:
+                last_seen[key] = now
+                assigned_in_frame.add(gid)
+                result.append(MatchedPerson(global_id=gid, per_camera={cam_id: track}))
+                continue
+
+        # New track — establish identity via ArUco, else assign a fresh global_id
         if track.aruco_id is not None:
             global_id = _get_or_create_aruco_global_id(
                 matching_state, track.aruco_id, {cam_id: track}, assigned_in_frame
@@ -304,10 +345,7 @@ def _single_camera_output(
             global_id = _get_or_create_global_id(
                 matching_state, cam_id, track.track_id, assigned_in_frame=assigned_in_frame
             )
-        result.append(MatchedPerson(
-            global_id=global_id,
-            per_camera={cam_id: track},
-        ))
+        result.append(MatchedPerson(global_id=global_id, per_camera={cam_id: track}))
     return result
 
 
