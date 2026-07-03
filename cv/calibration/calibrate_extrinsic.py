@@ -1,31 +1,17 @@
 """
-RigVision-3D — Extrinsic Camera Calibration
-=============================================
+RigVision-3D — Extrinsic Stereo Camera Calibration
 
-Calculates the relative 3D spatial transformation (Rotation and Translation)
-between two mounted smartphones. This script complies with the specification
-in CALIBRATION_RULES.md.
+Solves the relative pose (R, T) between a zone's two cameras from synchronized
+chessboard image pair(s). Output is `configs/extrinsics_{master}_to_{target}.npz`,
+consumed by the CV pipeline's per-zone stereo calibration loader.
 
-USAGE:
-    # Calculate transform from camera 0 (master) to camera 1 (target)
-    python calibrate_extrinsic.py --master_id 0 --target_id 1
+INPUT
+    data/stereo_pairs/{zone}/cam_{master}.* + cam_{target}.*           (single pair)
+    data/stereo_pairs/{zone}/pair_NN/cam_{master}.* + cam_{target}.*   (multi-pair)
 
-PREREQUISITES:
-    1. Intrinsic calibration must be completed for both cameras using
-       `calibrate_intrinsic.py`.
-    2. A single pair of strictly synchronized photos (one from each camera)
-       viewing the exact same standard chessboard must be available.
-
-INPUT:
-    - `intrinsics_cam_{id}.npz` files for both master and target cameras.
-    - A synchronized image pair, e.g., `data/stereo_pairs/cam_0.jpg` and
-      `data/stereo_pairs/cam_1.jpg`.
-
-OUTPUT:
-    Saves the resulting Rotation Matrix `R` and Translation Vector `T` to
-    `extrinsics_{master_id}_to_{target_id}.npz`.
+USAGE
+    python calibrate_extrinsic.py --master_id 0 --target_id 1 --zone zone_a
 """
-
 from __future__ import annotations
 
 import argparse
@@ -35,128 +21,116 @@ import cv2
 import numpy as np
 
 
-TARGET_RESOLUTION = (1920, 1080)
-CHESSBOARD_DIM = (9, 6)
-SQUARE_SIZE_M = 0.025
+CHESSBOARD_DIM = (10, 7)
+SQUARE_SIZE_M = 0.035
 
 
-def calibrate_extrinsic(master_id: int, target_id: int, intrinsics_dir: str, input_dir: str, output_dir: str) -> None:
-    """
-    Calculates the relative 3D spatial transformation (Rotation and Translation)
-    between two cameras (master and target).
-    """
+def _find_image(directory: str, stem: str) -> str | None:
+    for ext in (".png", ".jpg", ".jpeg"):
+        p = os.path.join(directory, stem + ext)
+        if os.path.exists(p):
+            return p
+    return None
 
+
+def calibrate_extrinsic(master_id: int, target_id: int, intrinsics_dir: str,
+                        input_dir: str, output_dir: str) -> None:
     try:
         with np.load(os.path.join(intrinsics_dir, f'intrinsics_cam_{master_id}.npz')) as data:
-            K_master = data['camera_matrix']
-            dist_master = data['dist_coeffs']
+            K_master, dist_master = data['camera_matrix'], data['dist_coeffs']
         with np.load(os.path.join(intrinsics_dir, f'intrinsics_cam_{target_id}.npz')) as data:
-            K_target = data['camera_matrix']
-            dist_target = data['dist_coeffs']
+            K_target, dist_target = data['camera_matrix'], data['dist_coeffs']
     except FileNotFoundError as e:
-        print(f"Error: Could not load intrinsic file. Make sure you have run calibrate_intrinsic.py for both cameras. Details: {e}")
+        print(f"Error: missing intrinsics ({e}). Run calibrate_intrinsic.py first.")
         return
 
+    pair_dirs: list[str] = []
+    if _find_image(input_dir, f'cam_{master_id}') is not None:
+        pair_dirs.append(input_dir)
+    elif os.path.isdir(input_dir):
+        for entry in sorted(os.listdir(input_dir)):
+            sub = os.path.join(input_dir, entry)
+            if os.path.isdir(sub) and _find_image(sub, f'cam_{master_id}') is not None:
+                pair_dirs.append(sub)
 
-    img_master_path = os.path.join(input_dir, f'cam_{master_id}.jpg')
-    img_target_path = os.path.join(input_dir, f'cam_{target_id}.jpg')
-
-    img_master = cv2.imread(img_master_path)
-    img_target = cv2.imread(img_target_path)
-
-    if img_master is None or img_target is None:
-        print("Error: Could not load synchronized image pair.")
-        print(f"  - Looked for: {img_master_path}")
-        print(f"  - Looked for: {img_target_path}")
+    if not pair_dirs:
+        print(f"Error: no stereo pairs in {input_dir}")
         return
-
-    print(f"Loaded synchronized images for master ({master_id}) and target ({target_id}).")
-
-
-    if img_master.shape[1::-1] != TARGET_RESOLUTION:
-        img_master = cv2.resize(img_master, TARGET_RESOLUTION, interpolation=cv2.INTER_AREA)
-    if img_target.shape[1::-1] != TARGET_RESOLUTION:
-        img_target = cv2.resize(img_target, TARGET_RESOLUTION, interpolation=cv2.INTER_AREA)
-
-    frame_size = (img_master.shape[1], img_master.shape[0])
-    gray_master = cv2.cvtColor(img_master, cv2.COLOR_BGR2GRAY)
-    gray_target = cv2.cvtColor(img_target, cv2.COLOR_BGR2GRAY)
-
 
     objp = np.zeros((CHESSBOARD_DIM[0] * CHESSBOARD_DIM[1], 3), np.float32)
     objp[:, :2] = np.mgrid[0:CHESSBOARD_DIM[0], 0:CHESSBOARD_DIM[1]].T.reshape(-1, 2)
     objp = objp * SQUARE_SIZE_M
 
-    ret_master, corners_master = cv2.findChessboardCorners(gray_master, CHESSBOARD_DIM, None)
-    ret_target, corners_target = cv2.findChessboardCorners(gray_target, CHESSBOARD_DIM, None)
-
-    if not (ret_master and ret_target):
-        print("Error: Chessboard not detected in one or both images. Cannot compute extrinsics.")
-        return
-
-    print("Chessboard detected in both images. Refining corners...")
-
+    cb_flags = (cv2.CALIB_CB_ADAPTIVE_THRESH |
+                cv2.CALIB_CB_NORMALIZE_IMAGE |
+                cv2.CALIB_CB_FILTER_QUADS)
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
-    corners_master_refined = cv2.cornerSubPix(gray_master, corners_master, (11, 11), (-1, -1), criteria)
-    corners_target_refined = cv2.cornerSubPix(gray_target, corners_target, (11, 11), (-1, -1), criteria)
 
-    print("Computing stereo calibration...")
-    flags = cv2.CALIB_FIX_INTRINSIC
+    objpoints: list[np.ndarray] = []
+    pts_master: list[np.ndarray] = []
+    pts_target: list[np.ndarray] = []
+    frame_size: tuple[int, int] | None = None
 
-    objpoints = [objp]
-    imgpoints_master = [corners_master_refined]
-    imgpoints_target = [corners_target_refined]
+    for pd in pair_dirs:
+        mp = _find_image(pd, f'cam_{master_id}')
+        tp = _find_image(pd, f'cam_{target_id}')
+        im = cv2.imread(mp) if mp else None
+        it = cv2.imread(tp) if tp else None
+        if im is None or it is None:
+            continue
+        if frame_size is None:
+            frame_size = (im.shape[1], im.shape[0])
+        elif (im.shape[1], im.shape[0]) != frame_size:
+            continue
+        gm = cv2.cvtColor(im, cv2.COLOR_BGR2GRAY)
+        gt = cv2.cvtColor(it, cv2.COLOR_BGR2GRAY)
+        rm, cm = cv2.findChessboardCorners(gm, CHESSBOARD_DIM, cb_flags)
+        rt, ct = cv2.findChessboardCorners(gt, CHESSBOARD_DIM, cb_flags)
+        if not (rm and rt):
+            continue
+        cm = cv2.cornerSubPix(gm, cm, (11, 11), (-1, -1), criteria)
+        ct = cv2.cornerSubPix(gt, ct, (11, 11), (-1, -1), criteria)
+        objpoints.append(objp)
+        pts_master.append(cm)
+        pts_target.append(ct)
 
-    ret, _, _, _, _, R, T, E, F = cv2.stereoCalibrate(
-        objpoints,
-        imgpoints_master,
-        imgpoints_target,
-        K_master,
-        dist_master,
-        K_target,
-        dist_target,
-        frame_size,
-        flags=flags,
-        criteria=criteria
-    )
-
-    if not ret:
-        print("Error: Stereo calibration failed.")
+    if not objpoints:
+        print("Error: no valid pairs.")
         return
 
-
-    output_path = os.path.join(output_dir, f'extrinsics_{master_id}_to_{target_id}.npz')
-    os.makedirs(output_dir, exist_ok=True)
-    np.savez_compressed(
-        output_path,
-        R=R,
-        T=T,
-        F=F,
-        reprojection_error=ret
+    ret, _, _, _, _, R, T, _, F = cv2.stereoCalibrate(
+        objpoints, pts_master, pts_target,
+        K_master, dist_master, K_target, dist_target,
+        frame_size,
+        flags=cv2.CALIB_FIX_INTRINSIC,
+        criteria=criteria,
     )
 
-    print("\nExtrinsic calibration successful.")
-    print(f"  - Reprojection Error: {ret:.4f}")
-    print(f"  - Rotation Matrix (R):\n{R}")
-    print(f"  - Translation Vector (T):\n{T}")
-    print(f"  - Fundamental Matrix (F):\n{F}")
-    print(f"\nExtrinsics saved to: {output_path}")
+    os.makedirs(output_dir, exist_ok=True)
+    output_path = os.path.join(output_dir, f'extrinsics_{master_id}_to_{target_id}.npz')
+    np.savez_compressed(output_path, R=R, T=T, F=F, reprojection_error=ret)
+
+    print(f"\nStereo {master_id}->{target_id}: reprojection error = {ret:.4f} px  ({len(objpoints)} pair(s))")
+    print(f"  baseline |T| = {np.linalg.norm(T):.3f} m")
+    print(f"Saved -> {output_path}")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="RigVision-3D: Extrinsic Stereo Camera Calibration")
-    parser.add_argument("--master_id", type=int, required=True, help="ID of the master camera.")
-    parser.add_argument("--target_id", type=int, required=True, help="ID of the target camera.")
-    parser.add_argument("--intrinsics_dir", type=str, default="configs", help="Directory containing intrinsic .npz files.")
-    parser.add_argument("--input_dir", type=str, default="data/stereo_pairs", help="Directory with synchronized image pairs.")
-    parser.add_argument("--output_dir", type=str, default="configs", help="Directory to save the output extrinsic .npz file.")
+    parser.add_argument("--master_id", type=int, required=True)
+    parser.add_argument("--target_id", type=int, required=True)
+    parser.add_argument("--zone", type=str, required=True)
+    parser.add_argument("--intrinsics_dir", type=str, default="configs")
+    parser.add_argument("--input_dir", type=str, default="data/stereo_pairs")
+    parser.add_argument("--output_dir", type=str, default="configs")
     args = parser.parse_args()
 
     if args.master_id == args.target_id:
-        print("Error: Master and Target camera IDs cannot be the same.")
+        print("Error: master and target IDs must differ.")
         return
 
-    calibrate_extrinsic(args.master_id, args.target_id, args.intrinsics_dir, args.input_dir, args.output_dir)
+    zone_dir = os.path.join(args.input_dir, args.zone)
+    calibrate_extrinsic(args.master_id, args.target_id, args.intrinsics_dir, zone_dir, args.output_dir)
 
 
 if __name__ == "__main__":
