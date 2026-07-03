@@ -52,7 +52,6 @@ import base64
 import json
 import math
 import os
-import queue
 import signal
 import sys
 import threading
@@ -148,103 +147,177 @@ def make_aruco():
     return detector, dictionary, params
 
 
-# ── Redis camera-frame uploader (MJPEG feed for the dashboard) ──────────────────
-def create_redis_uploader(redis_client: redis.Redis, upload_queue: queue.Queue) -> threading.Thread:
-    """Background thread that JPEG-encodes annotated frames and writes them to
-    rigvision:camera:frame:<cam_id> (expiring after 2s) so the dashboard can show a
-    live, boxed video feed without blocking the main CV loop."""
-    import cv2
+# ── Phase 3: decoupled MJPEG feed ───────────────────────────────────────────────
+# Before Phase 3, JPEG-encoding the annotated frame happened on the main YOLO loop,
+# which meant the dashboard's "live" feed only updated as fast as YOLO finished — about
+# 8–12 Hz. That made the feed look laggy even when cameras were running at 25 Hz.
+#
+# Phase 3 splits the MJPEG path off the YOLO clock entirely:
+#
+#   • LatestTracks holds the most recent tracks per camera (produced by the YOLO loop).
+#   • DisplayLoop is one thread per camera that pulls the freshest frame from its
+#     ThreadedCamera, overlays the LatestTracks for that camera (which may be a few
+#     hundred ms stale — fine for a visual feed), JPEG-encodes, and writes Redis at
+#     the camera's native FPS.
+#
+# The YOLO loop never touches a JPEG anymore — it only swaps in the latest track list.
 
-    def _uploader():
-        while not shutdown_event.is_set():
-            try:
-                item = upload_queue.get(timeout=1.0)
-            except queue.Empty:
+class LatestTracks:
+    """Thread-safe per-camera track snapshot. YOLO loop is the only writer; display
+    threads are readers. We swap whole lists rather than mutate in place, so a reader
+    always sees a consistent snapshot without holding the lock during draw."""
+    def __init__(self) -> None:
+        self._tracks: Dict[int, list] = {}
+        self._lock = threading.Lock()
+
+    def set(self, cam_id: int, tracks: list) -> None:
+        with self._lock:
+            self._tracks[cam_id] = tracks
+
+    def get(self, cam_id: int) -> list:
+        with self._lock:
+            return self._tracks.get(cam_id, [])
+
+
+class DisplayLoop:
+    """One thread per camera. Reads the latest frame from a ThreadedCamera, overlays
+    the latest known tracks, JPEG-encodes, and writes to rigvision:camera:frame:<id>.
+    Runs at the camera's native rate (capped at target_fps), independent of YOLO.
+
+    Frame de-dupe via the camera's monotonic frame_seq means we don't re-encode the
+    same image twice when the camera is briefly idle.
+    """
+    def __init__(
+        self,
+        redis_client: redis.Redis,
+        cam_id: int,
+        cam: ThreadedCamera,
+        latest_tracks: LatestTracks,
+        target_fps: float = 25.0,
+        jpeg_quality: int = 75,
+    ) -> None:
+        self.redis = redis_client
+        self.cam_id = cam_id
+        self.cam = cam
+        self.tracks = latest_tracks
+        self.frame_interval = 1.0 / target_fps
+        self.jpeg_quality = jpeg_quality
+        self.running = True
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self._frames_published = 0
+
+    def start(self) -> "DisplayLoop":
+        self.thread.start()
+        return self
+
+    def stop(self) -> None:
+        self.running = False
+        self.thread.join(timeout=1.0)
+
+    def _run(self) -> None:
+        import cv2
+        key = f"rigvision:camera:frame:{self.cam_id}"
+        last_seq = -1
+        t_log = time.time()
+        while self.running and not shutdown_event.is_set():
+            t_start = time.time()
+            ret, frame, seq = self.cam.read_with_seq()
+            if not ret or frame is None or seq == last_seq:
+                # No new frame yet; sleep a fraction of a frame interval and try again.
+                time.sleep(min(0.01, self.frame_interval * 0.5))
                 continue
-            if item is None:
-                upload_queue.task_done()
-                break
-            cam_id, frame = item
+            last_seq = seq
+
+            tracks = self.tracks.get(self.cam_id)
+            if tracks:
+                annotated = frame.copy()
+                for t in tracks:
+                    x1, y1, x2, y2 = map(int, t.bbox)
+                    cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 200, 255), 2)
+                    label = f"#{t.track_id}"
+                    if getattr(t, "aruco_id", None) is not None:
+                        label += f" (ARUCO {t.aruco_id})"
+                    cv2.putText(annotated, label, (x1, max(0, y1 - 8)),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 200, 255), 2)
+            else:
+                # No tracks yet (first ticks before YOLO finishes); show the raw frame.
+                annotated = frame
+
             try:
-                ok, jpeg = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+                ok, jpeg = cv2.imencode('.jpg', annotated,
+                                        [int(cv2.IMWRITE_JPEG_QUALITY), self.jpeg_quality])
                 if ok:
-                    redis_client.set(f"rigvision:camera:frame:{cam_id}",
-                                     base64.b64encode(jpeg.tobytes()).decode('utf-8'), ex=2)
+                    self.redis.set(key, base64.b64encode(jpeg.tobytes()).decode('utf-8'), ex=2)
+                    self._frames_published += 1
             except Exception as e:
-                print(f"Uploader error: {e}")
-            finally:
-                upload_queue.task_done()
+                print(f"[display] cam{self.cam_id} encode/redis error: {e}")
 
-    t = threading.Thread(target=_uploader, daemon=True)
-    t.start()
-    return t
+            # Heartbeat: log feed FPS every 5s so it's easy to spot capture starvation.
+            now = time.time()
+            if now - t_log >= 5.0:
+                fps = self._frames_published / (now - t_log)
+                print(f"  [display] cam{self.cam_id} feed_fps={fps:.1f}")
+                self._frames_published = 0
+                t_log = now
 
-
-def _queue_latest_frame(upload_queue: queue.Queue, cam_id: int, frame: np.ndarray) -> None:
-    """Enqueue a frame, dropping the oldest if the queue is full (we only care about the
-    freshest frame for the live feed — never let encoding lag stall the CV loop)."""
-    try:
-        upload_queue.put_nowait((cam_id, frame))
-        return
-    except queue.Full:
-        pass
-    try:
-        upload_queue.get_nowait()
-        upload_queue.task_done()
-    except queue.Empty:
-        pass
-    try:
-        upload_queue.put_nowait((cam_id, frame))
-    except queue.Full:
-        pass
-
-
-def annotate_and_enqueue(frame: np.ndarray, cam_id: int, tracks: list, upload_queue: queue.Queue) -> None:
-    """Draw track boxes/IDs on a copy of the frame and hand it to the uploader thread."""
-    import cv2
-    annotated = frame.copy()
-    for t in tracks:
-        x1, y1, x2, y2 = map(int, t.bbox)
-        cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 200, 255), 2)
-        label = f"#{t.track_id}"
-        if getattr(t, "aruco_id", None) is not None:
-            label += f" (ARUCO {t.aruco_id})"
-        cv2.putText(annotated, label, (x1, max(0, y1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 200, 255), 2)
-    _queue_latest_frame(upload_queue, cam_id, annotated)
-
-
-def _shutdown_uploader(upload_queue: queue.Queue, uploader_thread: threading.Thread) -> None:
-    try:
-        upload_queue.put(None, timeout=1.0)
-    except queue.Full:
-        pass
-    uploader_thread.join(timeout=1.0)
+            # Cap at target_fps so we don't burn CPU during high-FPS sources.
+            sleep = self.frame_interval - (time.time() - t_start)
+            if sleep > 0:
+                time.sleep(sleep)
 
 
 # ── Threaded camera with auto-reconnect ─────────────────────────────────────────
 class ThreadedCamera:
     """Grabs frames in a background thread and always exposes the LATEST one.
 
-    This decouples capture from processing: a slow camera (or a slow YOLO tick) never
-    causes frames to pile up — we simply read the most recent frame each tick and drop
-    the rest. That keeps end-to-end latency bounded, at the cost of dropping stale frames.
+    Capture decoupled from processing: a slow YOLO tick (or any slow consumer) never
+    causes frames to pile up — every reader gets the most recent frame and drops the
+    rest. End-to-end latency stays bounded, at the cost of dropping stale frames.
+
+    Handles three source kinds uniformly:
+      • USB index    (--cameras 0 1 ...)
+      • RTSP / URL   (--cameras rtsp://...)
+      • Video file   (--mode video, --cameras a.mp4 b.mp4 ...)
+
+    Video files are special: we throttle the reader to the file's native FPS (otherwise
+    they'd play at thousands of frames/sec) and loop on EOF, so the dashboard sees a
+    continuous "live-like" stream regardless of how often the YOLO loop samples it.
+    Live sources reconnect after a disconnect; video sources just seek to frame 0.
     """
-    def __init__(self, source: str) -> None:
+    def __init__(self, source: str, *, is_video: bool = False, resize_width: Optional[int] = None) -> None:
         import cv2
         self.source = source
+        self.is_video = is_video
         self.is_usb = False
-        try:
-            self.cap = cv2.VideoCapture(int(source))
-            self.is_usb = True
-        except ValueError:
+        self.resize_width = resize_width
+
+        if is_video:
             self.cap = cv2.VideoCapture(source)
+        else:
+            try:
+                self.cap = cv2.VideoCapture(int(source))
+                self.is_usb = True
+            except ValueError:
+                self.cap = cv2.VideoCapture(source)
+
         if not self.cap.isOpened():
-            raise RuntimeError(f"Cannot open camera: {source}")
+            raise RuntimeError(f"Cannot open camera/source: {source}")
+
         self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         if self.is_usb:
             self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
             self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+
+        # Pace video files at their native FPS so the simulated stream behaves like
+        # real cameras — otherwise the file plays as fast as the disk allows and the
+        # dashboard feed looks like a fast-forward. Live sources self-pace.
+        self.frame_interval = 0.0
+        if is_video:
+            fps = self.cap.get(cv2.CAP_PROP_FPS) or 25.0
+            self.frame_interval = 1.0 / fps
+
         self.ret, self.frame, self.running = False, None, True
+        self.frame_seq = 0   # monotonic counter so readers can de-dupe identical frames
         self.lock = threading.Lock()
         self.thread = threading.Thread(target=self._update, daemon=True)
         self.thread.start()
@@ -252,12 +325,23 @@ class ThreadedCamera:
     def _update(self) -> None:
         import cv2
         while self.running:
+            t_start = time.time()
             ret, frame = self.cap.read()
             if ret:
+                if self.resize_width and frame is not None:
+                    h, w = frame.shape[:2]
+                    if w > self.resize_width:
+                        frame = cv2.resize(frame, (self.resize_width, int(self.resize_width * (h / w))), interpolation=cv2.INTER_LINEAR)
                 with self.lock:
-                    self.ret, self.frame = ret, frame.copy() if frame is not None else None
+                    self.ret = True
+                    self.frame = frame.copy() if frame is not None else None
+                    self.frame_seq += 1
+            elif self.is_video:
+                # End of file → loop back to the start; no reconnect dance needed.
+                self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                continue
             else:
-                # Lost the stream (phone disconnected): release and retry in 2s.
+                # Live stream dropped (phone disconnected): release and retry in 2s.
                 with self.lock:
                     self.ret = False
                 self.cap.release()
@@ -270,10 +354,23 @@ class ThreadedCamera:
                 except Exception as e:
                     print(f"Reconnect error: {e}")
                 time.sleep(1.0)
+                continue
+
+            # Honor the per-source frame interval (video only).
+            if self.frame_interval > 0:
+                sleep = self.frame_interval - (time.time() - t_start)
+                if sleep > 0:
+                    time.sleep(sleep)
 
     def read(self) -> Tuple[bool, Optional[np.ndarray]]:
         with self.lock:
             return self.ret, self.frame
+
+    def read_with_seq(self) -> Tuple[bool, Optional[np.ndarray], int]:
+        """Same as read() but also returns the monotonic frame counter, so a display
+        loop can avoid re-encoding the same frame twice."""
+        with self.lock:
+            return self.ret, self.frame, self.frame_seq
 
     def release(self) -> None:
         self.running = False
@@ -348,16 +445,12 @@ def run_demo_mode(redis_client: redis.Redis, zone_defs: dict) -> None:
 
 
 # ── LIVE / VIDEO MODE (per-zone-group, in-process, direct-to-Redis) ─────────────
-def _grab_frame(cap, is_video: bool, resize_width: Optional[int]):
-    """Read one frame from a source (looping videos), optionally downscaled."""
+def _grab_frame(cap: ThreadedCamera, resize_width: Optional[int]):
+    """Read the latest frame from a ThreadedCamera, optionally downscaled. Video EOF
+    handling and native-FPS pacing both live inside ThreadedCamera now, so this helper
+    is the same for live and video sources."""
     import cv2
-    if is_video:
-        ret, frame = cap.read()
-        if not ret:                       # loop the file when it ends
-            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-            ret, frame = cap.read()
-    else:
-        ret, frame = cap.read()
+    ret, frame = cap.read()
     if not ret or frame is None:
         return None
     if resize_width:
@@ -414,23 +507,26 @@ def run_producer_mode(
     # global ids never collide between rooms.
     matching_state: dict = {"previous_matches": {}, "aruco_matches": {}, "next_global_id": 100000}
 
-    # Open every camera referenced by the zone groups.
-    caps: Dict[int, object] = {}
+    # Open every camera referenced by the zone groups. Both modes go through
+    # ThreadedCamera now — video files are paced to native FPS and looped on EOF
+    # inside the threaded reader, so the main loop sees the same "always-latest-frame"
+    # API regardless of source kind.
+    caps: Dict[int, ThreadedCamera] = {}
     for cam_id, src in sources.items():
-        if is_video:
-            if not os.path.exists(src):
-                print(f"Video not found: {src}")
-                sys.exit(1)
-            cap = cv2.VideoCapture(src)
-            if not cap.isOpened():
-                print(f"Cannot open: {src}")
-                sys.exit(1)
-            caps[cam_id] = cap
-        else:
-            caps[cam_id] = ThreadedCamera(src)
+        if is_video and not os.path.exists(src):
+            print(f"Video not found: {src}")
+            sys.exit(1)
+        caps[cam_id] = ThreadedCamera(src, is_video=is_video, resize_width=resize_width)
 
-    upload_queue: queue.Queue = queue.Queue(maxsize=30)
-    uploader_thread = create_redis_uploader(redis_client, upload_queue)
+    # Phase 3: decoupled MJPEG. One display thread per camera publishes annotated
+    # frames at the camera's native FPS, independent of YOLO. The YOLO loop just
+    # swaps the latest tracks into `latest_tracks` — no JPEG work on the hot path.
+    latest_tracks = LatestTracks()
+    display_fps = float(os.getenv("DISPLAY_FPS", "25"))
+    display_loops = [
+        DisplayLoop(redis_client, cid, cap, latest_tracks, target_fps=display_fps).start()
+        for cid, cap in caps.items()
+    ]
 
     frame_count = 0
     while not shutdown_event.is_set():
@@ -443,13 +539,14 @@ def run_producer_mode(
             zone_floor = zdef.get("floor", 0)
 
             # 1. Grab the latest frame from each of this zone's cameras (one tick).
+            #    Uniform across live/video — ThreadedCamera always serves the freshest
+            #    frame and handles looping/reconnect underneath.
             frames: Dict[int, np.ndarray] = {}
             for cam_id in cam_ids:
                 cap = caps.get(cam_id)
                 if cap is None:
                     continue
-                f = (_grab_frame(cap, True, resize_width) if is_video
-                     else (lambda r: r[1] if r[0] else None)(cap.read()))
+                f = _grab_frame(cap, resize_width)
                 if f is not None:
                     frames[cam_id] = f
             if not frames:
@@ -518,9 +615,11 @@ def run_producer_mode(
                     "camera_ids": cams_in_view,
                 })
 
-            # Annotated frames for the live MJPEG feed.
-            for cam_id, frame in frames.items():
-                annotate_and_enqueue(frame, cam_id, per_camera_tracks.get(cam_id, []), upload_queue)
+            # Phase 3: instead of JPEG-encoding here (which would chain encoder cost to
+            # the YOLO loop), publish the latest tracks for each camera. The per-camera
+            # DisplayLoop threads will pick these up and overlay them at native FPS.
+            for cam_id in frames.keys():
+                latest_tracks.set(cam_id, per_camera_tracks.get(cam_id, []))
 
         # ── Fuse sensors + occupancy into zone state and publish to Redis ───────
         sensor_readings = read_sensor_readings(redis_client)
@@ -539,7 +638,8 @@ def run_producer_mode(
         if max_fps:
             time.sleep(max(0, (1.0 / max_fps) - elapsed))
 
-    _shutdown_uploader(upload_queue, uploader_thread)
+    for dl in display_loops:
+        dl.stop()
     for cap in caps.values():
         cap.release()
 
@@ -554,7 +654,7 @@ def main() -> None:
     parser.add_argument("--confidence", type=float, default=0.5)
     parser.add_argument("--model", default="yolov8l.pt")
     parser.add_argument("--device", default=None)
-    parser.add_argument("--resize-width", type=int, default=None)
+    parser.add_argument("--resize-width", type=int, default=960)
     parser.add_argument("--max-fps", type=float, default=None)
     parser.add_argument("--redis-host", default=os.getenv("REDIS_HOST", "localhost"))
     parser.add_argument("--redis-port", type=int, default=int(os.getenv("REDIS_PORT", "6379")))

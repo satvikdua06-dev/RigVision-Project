@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "rigvision-frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "frontend", "exec", "vite", "--", "--root", "frontend", "--port", "5189", "--strictPort"],
+      "port": 5189,
+      "autoPort": false
+    }
+  ]
+}

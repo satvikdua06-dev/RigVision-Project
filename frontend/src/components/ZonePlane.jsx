@@ -122,12 +122,25 @@ export default function ZonePlane({ zoneId, zone, staticDef }) {
               ['🔊', 'Noise','noise',       zone.noise,       'dB'],
               ['⚙',  'Pres', 'pressure',    zone.pressure,    'bar'],
             ].filter(([, , type]) => (zone.sensor_types || ['temperature','gas_h2s','vibration','noise']).includes(type))
-             .map(([icon, lbl, , val, unit]) => (
-              <div key={lbl} style={{ display:'flex', justifyContent:'space-between' }}>
-                <span style={{ color:'var(--text-muted)' }}>{icon} {lbl}</span>
-                <span>{val != null ? `${val} ${unit}` : '—'}</span>
-              </div>
-            ))}
+             .map(([icon, lbl, type, val, unit]) => {
+              // Threshold-tint per sensor row: red >= critical, amber >= warning, else
+              // neutral. Limits come from the zone's sensor_meta (same source as the
+              // Sidebar/console), so colors stay consistent across the UI.
+              const meta = zone.sensor_meta?.[type]
+              let valueColor = 'var(--text-primary)'
+              if (val != null && meta) {
+                if (meta.critical != null && val >= meta.critical) valueColor = 'var(--accent-red)'
+                else if (meta.warning != null && val >= meta.warning) valueColor = 'var(--accent-amber)'
+              }
+              return (
+                <div key={lbl} style={{ display:'flex', justifyContent:'space-between' }}>
+                  <span style={{ color:'var(--text-muted)' }}>{icon} {lbl}</span>
+                  <span style={{ color: valueColor, fontWeight: valueColor !== 'var(--text-primary)' ? 600 : 400 }}>
+                    {val != null ? `${val} ${unit}` : '—'}
+                  </span>
+                </div>
+              )
+            })}
           </div>
         </Html>
       )}
