@@ -155,11 +155,25 @@ def match_cross_camera(
     if len(camera_ids) == 0:
         return []
 
+    # Prune stale tracks from history (older than 10.0 seconds) to prevent ID reuse collisions
+    import time
+    now = time.time()
+    last_seen = matching_state.setdefault("last_seen", {})
+    previous_matches = matching_state.setdefault("previous_matches", {})
+    stale_keys = [k for k, last_t in last_seen.items() if now - last_t > 10.0]
+    for k in stale_keys:
+        last_seen.pop(k, None)
+        previous_matches.pop(k, None)
+
+    # Set to ensure that every returned MatchedPerson has a strictly unique global_id in the current frame
+    assigned_in_frame = set()
+
     if len(camera_ids) == 1:
         return _single_camera_output(
             matching_state,
             camera_ids[0],
-            per_camera_tracks[camera_ids[0]]
+            per_camera_tracks[camera_ids[0]],
+            assigned_in_frame
         )
 
     all_matched = []
@@ -179,7 +193,7 @@ def match_cross_camera(
             aruco_groups[track.aruco_id][cam_id] = track
 
     for aruco_id, per_camera in aruco_groups.items():
-        global_id = _get_or_create_aruco_global_id(matching_state, aruco_id, per_camera)
+        global_id = _get_or_create_aruco_global_id(matching_state, aruco_id, per_camera, assigned_in_frame)
         all_matched.append(MatchedPerson(global_id=global_id, per_camera=per_camera))
         for cam_id, track in per_camera.items():
             used_tracks[cam_id].add(track.track_id)
@@ -205,7 +219,7 @@ def match_cross_camera(
 
             for track_a, track_b in matches:
                 global_id = _get_or_create_global_id(
-                    matching_state, cam_a, track_a.track_id, cam_b, track_b.track_id
+                    matching_state, cam_a, track_a.track_id, cam_b, track_b.track_id, assigned_in_frame
                 )
                 all_matched.append(MatchedPerson(
                     global_id=global_id,
@@ -223,11 +237,11 @@ def match_cross_camera(
                 continue
             if track.aruco_id is not None:
                 global_id = _get_or_create_aruco_global_id(
-                    matching_state, track.aruco_id, {cam_id: track}
+                    matching_state, track.aruco_id, {cam_id: track}, assigned_in_frame
                 )
             else:
                 global_id = _get_or_create_global_id(
-                    matching_state, cam_id, track.track_id
+                    matching_state, cam_id, track.track_id, assigned_in_frame=assigned_in_frame
                 )
             all_matched.append(MatchedPerson(
                 global_id=global_id,
@@ -277,11 +291,19 @@ def _single_camera_output(
     matching_state: Dict,
     cam_id: int,
     tracks: List[TrackedPerson],
+    assigned_in_frame: Set[int],
 ) -> List[MatchedPerson]:
     """Convert one-camera tracks to global records when no cross-camera match is possible."""
     result = []
     for track in tracks:
-        global_id = _get_or_create_global_id(matching_state, cam_id, track.track_id)
+        if track.aruco_id is not None:
+            global_id = _get_or_create_aruco_global_id(
+                matching_state, track.aruco_id, {cam_id: track}, assigned_in_frame
+            )
+        else:
+            global_id = _get_or_create_global_id(
+                matching_state, cam_id, track.track_id, assigned_in_frame=assigned_in_frame
+            )
         result.append(MatchedPerson(
             global_id=global_id,
             per_camera={cam_id: track},
@@ -296,23 +318,47 @@ def _get_or_create_global_id(
     track_id: int,
     cam_id2: Optional[int] = None,
     track_id2: Optional[int] = None,
+    assigned_in_frame: Optional[Set[int]] = None,
 ) -> int:
     """Get or create a fallback global ID for tracks without ArUco identity."""
+    if assigned_in_frame is None:
+        assigned_in_frame = set()
+
     key = (cam_id, track_id)
     previous_matches = matching_state.setdefault("previous_matches", {})
+    last_seen = matching_state.setdefault("last_seen", {})
+    import time
+    now = time.time()
     
+    # 1. Try to find a valid global_id from history that is NOT already assigned in this frame
+    global_id = None
     if key in previous_matches:
-        global_id = previous_matches[key]
-    elif cam_id2 is not None and (cam_id2, track_id2) in previous_matches:
-        global_id = previous_matches[(cam_id2, track_id2)]
-    else:
-        global_id = matching_state.setdefault("next_global_id", 100000)
-        matching_state["next_global_id"] = global_id + 1
+        candidate = previous_matches[key]
+        if candidate not in assigned_in_frame:
+            global_id = candidate
+            
+    if global_id is None and cam_id2 is not None and (cam_id2, track_id2) in previous_matches:
+        candidate = previous_matches[(cam_id2, track_id2)]
+        if candidate not in assigned_in_frame:
+            global_id = candidate
 
+    # 2. If no valid historical ID exists (or it's already assigned in this frame), generate a new one
+    if global_id is None:
+        while True:
+            candidate = matching_state.setdefault("next_global_id", 100000)
+            matching_state["next_global_id"] = candidate + 1
+            if candidate not in assigned_in_frame:
+                global_id = candidate
+                break
+
+    # 3. Update history and return
     previous_matches[(cam_id, track_id)] = global_id
+    last_seen[(cam_id, track_id)] = now
     if cam_id2 is not None and track_id2 is not None:
         previous_matches[(cam_id2, track_id2)] = global_id
+        last_seen[(cam_id2, track_id2)] = now
 
+    assigned_in_frame.add(global_id)
     return global_id
 
 
@@ -320,15 +366,35 @@ def _get_or_create_aruco_global_id(
     matching_state: Dict,
     aruco_id: int,
     per_camera: Dict[int, TrackedPerson],
+    assigned_in_frame: Optional[Set[int]] = None,
 ) -> int:
     """Use the ArUco marker ID as the stable cross-camera global ID."""
+    if assigned_in_frame is None:
+        assigned_in_frame = set()
+
     global_id = int(aruco_id)
+    
+    # If the ArUco global ID is already assigned in this frame, we cannot reuse it
+    # for another separate matched person. We must allocate a new unique fallback ID.
+    if global_id in assigned_in_frame:
+        first_cam = list(per_camera.keys())[0]
+        first_track = per_camera[first_cam]
+        return _get_or_create_global_id(
+            matching_state, first_cam, first_track.track_id, assigned_in_frame=assigned_in_frame
+        )
+
     aruco_matches = matching_state.setdefault("aruco_matches", {})
     aruco_matches[aruco_id] = global_id
     
     previous_matches = matching_state.setdefault("previous_matches", {})
+    last_seen = matching_state.setdefault("last_seen", {})
+    import time
+    now = time.time()
+    
     for cam_id, track in per_camera.items():
         previous_matches[(cam_id, track.track_id)] = global_id
+        last_seen[(cam_id, track.track_id)] = now
 
+    assigned_in_frame.add(global_id)
     return global_id
 

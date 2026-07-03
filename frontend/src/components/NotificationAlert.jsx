@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useRigStore } from '../stores/useRigStore.js'
 
 const SEVERITY_COLOR = {
@@ -12,302 +12,258 @@ const ZONE_TO_KG = {
   "zone_a": "room_1", "zone_b": "room_2",
 }
 
-export default function NotificationAlert() {
-  try {
-    const zones = useRigStore(s => s.zones) || {}
-    const diagnostics = useRigStore(s => s.diagnostics) || []
-    const setShowModal = useRigStore(s => s.setShowDiagnosticsModal)
-
-    const [dismissedSignature, setDismissedSignature] = useState('')
-    const [anomalyState, setAnomalyState] = useState({
-      signature: '',
-      startedAt: 0,
-      isReady: false,
-    })
-
-    // Find if there is any active sensor anomaly in the zones
-    const activeZoneId = Object.keys(zones).find(k => {
-      const zone = zones[k]
-      if (!zone || (zone.status !== 'warning' && zone.status !== 'critical')) return false
-
-      // Check if it has actual sensor breaches
-      if (zone.sensor_meta) {
-        for (const [stype, meta] of Object.entries(zone.sensor_meta)) {
-          const val = zone[stype]
-          if (val !== undefined && val !== null) {
-            if ((meta.critical !== null && val >= meta.critical) ||
-                (meta.warning !== null && val >= meta.warning)) {
-              return true
-            }
-          }
-        }
-      }
-      return false
-    })
-
-    const activeZone = activeZoneId ? zones[activeZoneId] : null
-    const breachedSensors = []
-    if (activeZone && activeZone.sensor_meta) {
-      for (const [stype, meta] of Object.entries(activeZone.sensor_meta)) {
-        const val = activeZone[stype]
-        if (val !== undefined && val !== null) {
-          if ((meta.critical !== null && val >= meta.critical) ||
-              (meta.warning !== null && val >= meta.warning)) {
-            breachedSensors.push(stype)
-          }
+// Does this zone currently have at least one sensor over its warning/critical limit?
+function sensorsBreached(zone) {
+  const out = []
+  if (zone && zone.sensor_meta) {
+    for (const [stype, meta] of Object.entries(zone.sensor_meta)) {
+      const val = zone[stype]
+      if (val !== undefined && val !== null) {
+        if ((meta.critical !== null && val >= meta.critical) ||
+            (meta.warning !== null && val >= meta.warning)) {
+          out.push(stype)
         }
       }
     }
+  }
+  return out
+}
 
-    const breachSignature = activeZoneId
-      ? `${activeZoneId}:${activeZone.status}:${breachedSensors.slice().sort().join(',')}`
-      : ''
+function findDiag(diagnostics, zoneId) {
+  return diagnostics.find(
+    d => d && (d.zone_id === zoneId || (ZONE_TO_KG[zoneId] && d.zone_id === ZONE_TO_KG[zoneId]))
+  )
+}
 
-    // Sync anomalyState with active anomaly changes
-    useEffect(() => {
-      if (!breachSignature) {
-        if (anomalyState.signature !== '') {
-          setAnomalyState({ signature: '', startedAt: 0, isReady: false })
-        }
-        return
-      }
+// ── A single anomaly card ────────────────────────────────────────────────────
+function AnomalyToast({ entry, diag, isAnalyzing, onOpen, onClose }) {
+  const { zone, zoneId, status } = entry
+  const color = SEVERITY_COLOR[status] || '#e06054'
 
-      if (anomalyState.signature !== breachSignature) {
-        // Find latest diagnostic report for this zone
-        const latestDiag = diagnostics.find(
-          d => d && (d.zone_id === activeZoneId || (ZONE_TO_KG[activeZoneId] && d.zone_id === ZONE_TO_KG[activeZoneId]))
-        )
-        // Check if a report is already ready (covers all currently breached sensors)
-        const reportSensors = latestDiag?.triggered_sensors || []
-        const coversBreached = breachedSensors.every(s => reportSensors.includes(s))
-        const initiallyReady = latestDiag && coversBreached
+  // Parent only passes a diag that exactly matches the current breach and is fresh
+  // (i.e. published after this signature started). When analyzing, parent sends null.
+  // So here we just show "Analyzing…" while the report is in flight, otherwise show it.
+  const displayDiag = !isAnalyzing ? diag : null
 
-        setAnomalyState({
-          signature: breachSignature,
-          startedAt: Date.now(),
-          isReady: !!initiallyReady,
-        })
-      } else if (!anomalyState.isReady) {
-        // Look for the report to arrive
-        const latestDiag = diagnostics.find(
-          d => d && (d.zone_id === activeZoneId || (ZONE_TO_KG[activeZoneId] && d.zone_id === ZONE_TO_KG[activeZoneId]))
-        )
-        if (latestDiag) {
-          const reportSensors = latestDiag.triggered_sensors || []
-          const coversBreached = breachedSensors.every(s => reportSensors.includes(s))
-          const age = Date.now() - anomalyState.startedAt
-          const diagTime = latestDiag.timestamp ? new Date(latestDiag.timestamp).getTime() : 0
+  let safetyStep = '', repairStep = ''
+  if (displayDiag?.recommended_action) {
+    const steps = displayDiag.recommended_action.split(/\d+\)\s+/).map(s => s.trim()).filter(Boolean)
+    safetyStep = steps[0] || ''
+    repairStep = steps[1] || ''
+  }
 
-          // Mark ready if the report covers the breach and is recent, or fallback to ready after a timeout to prevent being stuck
-          if (coversBreached && (diagTime >= anomalyState.startedAt - 8000 || age > 15000)) {
-            setAnomalyState(prev => ({ ...prev, isReady: true }))
-          }
-        } else {
-          // Timeout fallback
-          const age = Date.now() - anomalyState.startedAt
-          if (age > 15000) {
-            setAnomalyState(prev => ({ ...prev, isReady: true }))
-          }
-        }
-      }
-    }, [breachSignature, activeZoneId, breachedSensors, diagnostics, anomalyState])
-
-    if (!activeZoneId || !zones[activeZoneId]) {
-      return null
-    }
-
-    const zone = zones[activeZoneId]
-    const zoneStatus = zone.status // 'warning' or 'critical'
-
-    // If the user has dismissed this specific telemetry alert instance, suppress the overlay
-    if (dismissedSignature === breachSignature) {
-      return null
-    }
-
-    const latestDiag = diagnostics.find(
-      d => d && (d.zone_id === activeZoneId || (ZONE_TO_KG[activeZoneId] && d.zone_id === ZONE_TO_KG[activeZoneId]))
-    )
-
-    // Only display the cached report if it is relevant to the currently breached sensors
-    const reportSensors = latestDiag?.triggered_sensors || []
-    const coversBreached = breachedSensors.every(s => reportSensors.includes(s))
-    const displayDiag = (latestDiag && coversBreached) ? latestDiag : null
-
-    const isAnalyzing = !anomalyState.isReady
-    const color = SEVERITY_COLOR[zoneStatus] || '#e06054'
-
-    // Extract concise steps from the recommended action if available
-    let safetyStep = ""
-    let repairStep = ""
-
-    if (displayDiag && displayDiag.recommended_action) {
-      const steps = displayDiag.recommended_action.split(/\d+\)\s+/)
-      const filteredSteps = steps.map(s => s.trim()).filter(Boolean)
-      if (filteredSteps.length > 0) {
-        safetyStep = filteredSteps[0]
-      }
-      if (filteredSteps.length > 1) {
-        repairStep = filteredSteps[1]
-      }
-    }
-
-    const handleAlertClick = () => {
-      setShowModal(true)
-    }
-
-    const handleClose = (e) => {
-      e.stopPropagation()
-      setDismissedSignature(breachSignature)
-    }
-
-    return (
-      <div
-        onClick={handleAlertClick}
-        style={{
-          position: 'fixed',
-          top: 24,
-          right: 24,
-          width: 380,
-          zIndex: 99999,
-          background: 'var(--glass-panel)',
-          backdropFilter: 'blur(16px) saturate(120%)',
-          WebkitBackdropFilter: 'blur(16px) saturate(120%)',
-          border: '1px solid var(--border)',
-          borderLeft: `3px solid ${color}`,
-          borderRadius: 'var(--radius)',
-          padding: '16px 20px',
-          boxSizing: 'border-box',
-          boxShadow: 'var(--shadow-panel), var(--inner-hi)',
-          cursor: 'pointer',
-          fontFamily: 'var(--font-ui)',
-          color: 'var(--text-primary)',
-          transition: 'border-color 0.2s ease',
-        }}
-      >
-        {/* Subtle opacity pulse for the loading state (no neon glow) */}
-        <style>{`
-          @keyframes pulseFade {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.45; }
-          }
-          .pulse-alert { animation: pulseFade 1.5s infinite ease-in-out; }
-          .alert-btn:hover {
-            background: var(--bg-card) !important;
-            border-color: ${color} !important;
-            color: var(--text-primary) !important;
-          }
-        `}</style>
-
-        {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-          <div style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: 12,
-            fontWeight: 600,
-            color: color,
-            letterSpacing: 1,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6
-          }}>
-            <span className={isAnalyzing ? "pulse-alert" : ""} style={{ fontSize: 14 }}>🚨</span>
-            <span>{zoneStatus.toUpperCase()} ANOMALY: {(zone.name || activeZoneId).toUpperCase()}</span>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            {isAnalyzing && (
-              <span className="pulse-alert" style={{
-                fontSize: 9,
-                fontFamily: 'var(--font-mono)',
-                color: 'var(--accent-amber)',
-                background: 'var(--bg-card)',
-                border: '1px solid var(--border)',
-                padding: '1px 6px',
-                borderRadius: 4,
-                letterSpacing: 1
-              }}>
-                ANALYZING...
-              </span>
-            )}
-            <button
-              onClick={handleClose}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--text-muted)',
-                cursor: 'pointer',
-                fontSize: 16,
-                padding: 0,
-                lineHeight: 1
-              }}
-            >
-              ×
-            </button>
-          </div>
+  return (
+    <div
+      onClick={onOpen}
+      style={{
+        width: 380,
+        background: 'var(--glass-panel)',
+        backdropFilter: 'blur(16px) saturate(120%)',
+        WebkitBackdropFilter: 'blur(16px) saturate(120%)',
+        border: '1px solid var(--border)',
+        borderLeft: `3px solid ${color}`,
+        borderRadius: 'var(--radius)',
+        padding: '16px 20px',
+        boxSizing: 'border-box',
+        boxShadow: 'var(--shadow-panel), var(--inner-hi)',
+        cursor: 'pointer',
+        fontFamily: 'var(--font-ui)',
+        color: 'var(--text-primary)',
+        transition: 'border-color 0.2s ease',
+      }}
+    >
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+        <div style={{
+          fontFamily: 'var(--font-mono)', fontSize: 12, fontWeight: 600, color,
+          letterSpacing: 1, display: 'flex', alignItems: 'center', gap: 6,
+        }}>
+          <span className={isAnalyzing ? 'pulse-alert' : ''} style={{ fontSize: 14 }}>🚨</span>
+          <span>{status.toUpperCase()} ANOMALY: {(zone.name || zoneId).toUpperCase()}</span>
         </div>
 
-        {/* Content */}
-        {!displayDiag ? (
-          <div className="pulse-alert" style={{ margin: '10px 0' }}>
-            <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
-              Analyzing Telemetry...
-            </div>
-            <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.4 }}>
-              Breach detected on sensors. AI diagnostic agent is generating root-cause report...
-            </div>
-          </div>
-        ) : (
-          <div>
-            {/* Issue title */}
-            <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8, lineHeight: 1.2 }}>
-              {displayDiag.primary_diagnosis || 'Unclassified failure mode'}
-            </div>
-
-            {/* Quick steps split */}
-            <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.5, marginBottom: 12 }}>
-              {safetyStep && (
-                <div style={{ marginBottom: 6 }}>
-                  <strong style={{ color: color, fontSize: 11, fontFamily: 'var(--font-mono)', textTransform: 'uppercase', display: 'block' }}>
-                    Immediate Action:
-                  </strong>
-                  {safetyStep.replace(/^(Immediate Safety & Isolation Protocol:|Immediate Safety:)/i, '').trim()}
-                </div>
-              )}
-              {repairStep && (
-                <div>
-                  <strong style={{ color: 'var(--accent-cobalt)', fontSize: 11, fontFamily: 'var(--font-mono)', textTransform: 'uppercase', display: 'block' }}>
-                    Repair Procedure:
-                  </strong>
-                  {repairStep.replace(/^(Core Repair Procedures:|Core Repair:)/i, '').trim()}
-                </div>
-              )}
-            </div>
-
-            {/* Button to show full diagnostics modal */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
-              <div
-                className="alert-btn"
-                style={{
-                  fontSize: 11,
-                  fontFamily: 'var(--font-mono)',
-                  color: color,
-                  border: `1px solid ${color}`,
-                  borderRadius: 4,
-                  padding: '4px 10px',
-                  background: 'var(--bg-card)',
-                  transition: 'all 0.2s',
-                  letterSpacing: 0.5
-                }}
-              >
-                VIEW FULL REPORT →
-              </div>
-            </div>
-          </div>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {isAnalyzing && (
+            <span className="pulse-alert" style={{
+              fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--accent-amber)',
+              background: 'var(--bg-card)', border: '1px solid var(--border)',
+              padding: '1px 6px', borderRadius: 4, letterSpacing: 1,
+            }}>
+              ANALYZING...
+            </span>
+          )}
+          <button
+            onClick={(e) => { e.stopPropagation(); onClose() }}
+            style={{
+              background: 'transparent', border: 'none', color: 'var(--text-muted)',
+              cursor: 'pointer', fontSize: 16, padding: 0, lineHeight: 1,
+            }}
+          >
+            ×
+          </button>
+        </div>
       </div>
-    )
-  } catch (err) {
-    console.error("Error in NotificationAlert render loop:", err)
-    return null
-  }
+
+      {/* Content */}
+      {!displayDiag ? (
+        <div className="pulse-alert" style={{ margin: '10px 0' }}>
+          <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
+            Analyzing Telemetry...
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.4 }}>
+            Breach detected on {entry.breachedSensors.join(', ') || 'sensors'}. AI diagnostic agent is generating a root-cause report...
+          </div>
+        </div>
+      ) : (
+        <div>
+          <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8, lineHeight: 1.2 }}>
+            {displayDiag.primary_diagnosis || 'Unclassified failure mode'}
+          </div>
+
+          <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.5, marginBottom: 12 }}>
+            {safetyStep && (
+              <div style={{ marginBottom: 6 }}>
+                <strong style={{ color, fontSize: 11, fontFamily: 'var(--font-mono)', textTransform: 'uppercase', display: 'block' }}>
+                  Immediate Action:
+                </strong>
+                {safetyStep.replace(/^(Immediate Safety & Isolation Protocol:|Immediate Safety:)/i, '').trim()}
+              </div>
+            )}
+            {repairStep && (
+              <div>
+                <strong style={{ color: 'var(--accent-cobalt)', fontSize: 11, fontFamily: 'var(--font-mono)', textTransform: 'uppercase', display: 'block' }}>
+                  Repair Procedure:
+                </strong>
+                {repairStep.replace(/^(Core Repair Procedures:|Core Repair:)/i, '').trim()}
+              </div>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
+            <div className="alert-btn" style={{
+              fontSize: 11, fontFamily: 'var(--font-mono)', color,
+              border: `1px solid ${color}`, borderRadius: 4, padding: '4px 10px',
+              background: 'var(--bg-card)', transition: 'all 0.2s', letterSpacing: 0.5,
+            }}>
+              VIEW FULL REPORT →
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Stack of all currently-active anomalies ──────────────────────────────────
+export default function NotificationAlert() {
+  const zones = useRigStore(s => s.zones) || {}
+  const diagnostics = useRigStore(s => s.diagnostics) || []
+  const setShowModal = useRigStore(s => s.setShowDiagnosticsModal)
+
+  // Signatures the user has dismissed (per breach instance, keyed by signature).
+  const [dismissed, setDismissed] = useState({})
+  // Per-zone analyzing/ready bookkeeping: { [zoneId]: { signature, startedAt, isReady } }.
+  const [anomalyStates, setAnomalyStates] = useState({})
+
+  // Every zone that currently has a real sensor breach (NOT just .find — all of them).
+  const activeList = useMemo(() => {
+    const list = []
+    for (const [zoneId, zone] of Object.entries(zones)) {
+      if (!zone || (zone.status !== 'warning' && zone.status !== 'critical')) continue
+      const breachedSensors = sensorsBreached(zone)
+      if (breachedSensors.length === 0) continue
+      const signature = `${zoneId}:${zone.status}:${breachedSensors.slice().sort().join(',')}`
+      list.push({ zoneId, zone, status: zone.status, breachedSensors, signature })
+    }
+    return list
+  }, [zones])
+
+  // Reconcile analyzing state for each active zone. The store updates ~10Hz, so this
+  // effect re-runs often enough to flip "Analyzing…" → ready once a report arrives
+  // (or after a 15s fallback). Functional update returns the same ref when unchanged,
+  // so there's no render loop.
+  //
+  // STALENESS RULE: when the breach signature changes (e.g. {temp,vib} → {vib}), the
+  // previous report is by definition stale, even if its triggered_sensors is still a
+  // SUPERSET of the new breached set. We never accept a diagnostic that was published
+  // before this signature started — only fresh ones (timestamp >= startedAt, with a
+  // small clock-skew slack). The 15s fallback still applies if no fresh diag arrives.
+  useEffect(() => {
+    setAnomalyStates(prev => {
+      const next = {}
+      let changed = Object.keys(prev).length !== activeList.length
+      for (const a of activeList) {
+        const diag = findDiag(diagnostics, a.zoneId)
+        const reportSensors = diag?.triggered_sensors || []
+        // Exact match (not superset): the report's triggered sensors equal the
+        // currently-breached ones. Prevents a stale "temp+vib" report from being
+        // accepted as the diagnosis for a current "vib only" breach.
+        const matchesExactly = reportSensors.length === a.breachedSensors.length &&
+          a.breachedSensors.every(s => reportSensors.includes(s))
+        const cur = prev[a.zoneId]
+        if (!cur || cur.signature !== a.signature) {
+          // New signature → don't pre-accept any cached diag (even an exact-match one),
+          // because we can't yet know if it was published in response to THIS state.
+          // The next reconciler tick will accept it once `diag.timestamp >= startedAt`.
+          next[a.zoneId] = { signature: a.signature, startedAt: Date.now(), isReady: false }
+          changed = true
+        } else {
+          let isReady = cur.isReady
+          if (!isReady) {
+            const age = Date.now() - cur.startedAt
+            const diagTime = diag?.timestamp ? new Date(diag.timestamp).getTime() : 0
+            const fresh = diag && matchesExactly && diagTime >= cur.startedAt - 1500
+            if (fresh || age > 15000) isReady = true
+          }
+          next[a.zoneId] = { ...cur, isReady }
+          if (isReady !== cur.isReady) changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [activeList, diagnostics])
+
+  const visible = activeList.filter(a => !dismissed[a.signature])
+  if (visible.length === 0) return null
+
+  return (
+    <div style={{
+      position: 'fixed', top: 24, right: 24, zIndex: 99999,
+      display: 'flex', flexDirection: 'column', gap: 12,
+      maxHeight: 'calc(100vh - 48px)', overflowY: 'auto',
+    }}>
+      {/* Shared animations + button hover (rendered once for the whole stack) */}
+      <style>{`
+        @keyframes pulseFade { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+        .pulse-alert { animation: pulseFade 1.5s infinite ease-in-out; }
+        .alert-btn:hover { background: var(--bg-card) !important; border-color: var(--border-bright) !important; color: var(--text-primary) !important; }
+      `}</style>
+
+      {visible.map(entry => {
+        const diag = findDiag(diagnostics, entry.zoneId)
+        const tracked = anomalyStates[entry.zoneId]
+        const signatureKnown = tracked && tracked.signature === entry.signature
+        // Exact-match (not superset) + freshness (arrived after the breach started):
+        // both guards must hold to accept the cached diag as the live notification.
+        // This is what prevents a stale "temp+vib" report from being shown when the
+        // current breach is just "vib".
+        const reportSensors = diag?.triggered_sensors || []
+        const matchesExactly = reportSensors.length === entry.breachedSensors.length &&
+          entry.breachedSensors.every(s => reportSensors.includes(s))
+        const diagTime = diag?.timestamp ? new Date(diag.timestamp).getTime() : 0
+        const fresh = signatureKnown && matchesExactly && diagTime >= tracked.startedAt - 1500
+        const isAnalyzing = !(signatureKnown && (tracked.isReady || fresh))
+        return (
+          <AnomalyToast
+            key={entry.zoneId}
+            entry={entry}
+            diag={fresh || tracked?.isReady ? diag : null}
+            isAnalyzing={isAnalyzing}
+            onOpen={() => setShowModal(true)}
+            onClose={() => setDismissed(prev => ({ ...prev, [entry.signature]: true }))}
+          />
+        )
+      })}
+    </div>
+  )
 }

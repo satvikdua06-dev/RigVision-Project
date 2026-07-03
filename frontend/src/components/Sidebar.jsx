@@ -216,14 +216,14 @@ function PersonsTab() {
           fontSize: 12, padding: 20
         }}>No personnel found</div>
       ) : (
-        filteredPersons.map(p => {
+        filteredPersons.map((p, idx) => {
           const ppe = p.ppe || {}
           const hasAlert  = ppe.hardhat === false || ppe.vest === false || ppe.goggles === false
           const hasUnknown = ppe.hardhat == null || ppe.vest == null || ppe.goggles == null
           const isSelected = selectedPerson === p.id
           const accent = isSelected ? 'var(--accent-cobalt)' : hasAlert ? 'var(--accent-red)' : 'var(--border-bright)'
           return (
-            <div key={p.id} onClick={() => selectPerson(p.id)}
+            <div key={`${p.id}-${idx}`} onClick={() => selectPerson(p.id)}
               style={{
                 background: isSelected ? 'var(--bg-elev)' : 'var(--glass-card)',
                 border:`1px solid ${isSelected ? 'var(--border-bright)' : 'var(--border)'}`,
