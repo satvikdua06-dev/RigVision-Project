@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 class LLMDiagnosticAgent:
     def __init__(self, api_key: str = None):
-        self.api_key = api_key or os.environ.get("GEMINI_API_KEY")
+        self.api_key = "AIzaSyC-uieabR3Ep0H9CHrWUBKyTA13ts1Joiw"
         if not self.api_key:
             raise ValueError("GEMINI_API_KEY is missing!")
         

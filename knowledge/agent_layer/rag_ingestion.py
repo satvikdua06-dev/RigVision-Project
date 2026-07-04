@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-api_key = os.environ.get("GEMINI_API_KEY")
+api_key = "AIzaSyC-uieabR3Ep0H9CHrWUBKyTA13ts1Joiw"
 if not api_key:
     raise ValueError("GEMINI_API_KEY is not set!")
 
