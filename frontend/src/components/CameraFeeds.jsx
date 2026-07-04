@@ -10,10 +10,10 @@ const POSTURE_COLORS = {
   unknown:  'var(--text-muted)',
 }
 
-function ppeStatus(val) {
-  if (val === true) return { label: '✓', color: 'var(--accent-green)' }
-  if (val === false) return { label: '✗', color: 'var(--accent-red)' }
-  return { label: '?', color: 'var(--text-muted)' }
+function ppeStatus(status) {
+  if (status === 'detected') return { label: '✓', color: 'var(--accent-green)' }
+  if (status === 'missing')  return { label: '✗', color: 'var(--accent-red)' }
+  return { label: '?', color: 'var(--text-muted)' }   // unknown | null
 }
 
 const host = window.location.hostname === 'localhost' ? '127.0.0.1' : window.location.hostname
@@ -63,12 +63,11 @@ export default function CameraFeeds() {
   const person = persons.find(p => p.id === selectedPerson)
 
   const ppe = person?.ppe || {}
-  const hatStatus = ppeStatus(ppe.hardhat)
-  const vestStatus = ppeStatus(ppe.vest)
-  const gogglesStatus = ppeStatus(ppe.goggles)
+  const bodyStatus = ppeStatus(ppe.backpack)
+  const hatStatus = ppeStatus(ppe.hat)
 
-  const hasAlert = ppe.hardhat === false || ppe.vest === false || ppe.goggles === false
-  const hasUnknown = ppe.hardhat == null || ppe.vest == null || ppe.goggles == null
+  const hasAlert = ppe.backpack === 'missing' || ppe.hat === 'missing'
+  const hasUnknown = ppe.backpack == null || ppe.backpack === 'unknown' || ppe.hat == null || ppe.hat === 'unknown'
 
   // Small flat status pill helper (sharp border, no glow).
   const pill = (text, color) => (
@@ -128,9 +127,8 @@ export default function CameraFeeds() {
 
             <div style={{ display: 'flex', gap: 6, fontFamily: 'var(--font-mono)', fontSize: 11 }}>
               {[
-                { label: '🪖 Hat', status: hatStatus },
-                { label: '🦺 Vest', status: vestStatus },
-                { label: '🥽 Goggles', status: gogglesStatus },
+                { label: '🎒 Body Gear', status: bodyStatus },
+                { label: '⛑ Hat', status: hatStatus },
               ].map(({ label, status }) => (
                 <div key={label} style={{
                   flex: 1,

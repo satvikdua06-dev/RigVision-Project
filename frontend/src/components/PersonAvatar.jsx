@@ -15,11 +15,11 @@ const POSTURE_COLORS = {
 }
 
 function ppeAlert(ppe) {
-  return ppe.hardhat === false || ppe.vest === false || ppe.goggles === false
+  return ppe.backpack === 'missing' || ppe.hat === 'missing'
 }
 
 function ppeUnknown(ppe) {
-  return ppe.hardhat == null || ppe.vest == null || ppe.goggles == null
+  return ppe.backpack == null || ppe.backpack === 'unknown' || ppe.hat == null || ppe.hat === 'unknown'
 }
 
 export default function PersonAvatar({ person }) {
@@ -81,8 +81,8 @@ export default function PersonAvatar({ person }) {
         <meshStandardMaterial color="#ffccaa" roughness={0.6} />
       </mesh>
 
-      {/* Hard hat */}
-      {ppe.hardhat === true && (
+      {/* Hard hat — shown when head protection is detected */}
+      {ppe.hat === 'detected' && (
         <mesh position={[0, 1.14, 0]} userData={{ isAvatar: true, personId: person.id }}>
           <cylinderGeometry args={[0.2, 0.18, 0.08, 12]} />
           <meshStandardMaterial color="#ffdd00" roughness={0.3} metalness={0.2} />

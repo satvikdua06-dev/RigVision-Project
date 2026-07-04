@@ -14,6 +14,9 @@ export const useRigStore = create((set, get) => ({
     zone_b: { status: 'normal', temperature: 26, vibration: 0, noise: 45, gas_h2s: 0, pressure: 1, person_count: 0, ppe_violations: [], updated_at: Date.now() }
   },
   diagnostics: [],
+  // PPE detection demo (cv/ppe_demo.py → rigvision:ppe:latest). Per-item status:
+  // detected | missing | no_person | unknown. `proof` is set on a "missing" commit.
+  ppe: { person_present: false },
   connected: false,
   // Selection & UI State
   selectedPerson: null,
@@ -47,6 +50,7 @@ export const useRigStore = create((set, get) => ({
             persons: raw.persons !== undefined ? raw.persons : state.persons,
             zones: raw.zones !== undefined ? raw.zones : state.zones,
             diagnostics: raw.diagnostics !== undefined ? raw.diagnostics : state.diagnostics,
+            ppe: raw.ppe !== undefined ? raw.ppe : state.ppe,
             _latestRawData: null,
             _lastRenderTime: now,
           });
@@ -89,6 +93,7 @@ export const useRigStore = create((set, get) => ({
             persons: data.persons,
             zones: data.zones,
             diagnostics: data.diagnostics,
+            ppe: data.ppe,
           };
           set(nextState);
         } else {

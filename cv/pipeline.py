@@ -56,6 +56,7 @@ import signal
 import sys
 import threading
 import time
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Dict, List, Optional, Tuple
 
@@ -68,6 +69,16 @@ os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp"
 # Make sibling modules (zone_state, detection/, tracking/) importable when this file
 # is run directly as a script.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# Load .env from repo root (two levels up from cv/) so env vars like PPE_CAMERA_IDS
+# are available whether the script is run from cv/ or the project root.
+try:
+    from dotenv import load_dotenv
+    _env_path = Path(__file__).resolve().parent.parent / ".env"
+    if _env_path.exists():
+        load_dotenv(dotenv_path=_env_path, override=False)  # shell vars take priority
+except ImportError:
+    pass
 
 from zone_state import (
     load_zone_definitions, build_zone_states, read_sensor_readings,
@@ -574,10 +585,33 @@ def run_producer_mode(
         for cid, cap in caps.items()
     ]
 
+    # ── Optional: PPE compliance monitor (shares this pipeline's cameras) ────────
+    # A second OIV7 model judges eye/head protection per person across one or more feeds.
+    # A person's item shows DETECTED if ANY feed sees it (OR-merge in process_multi).
+    # Throttled to every Nth tick (the debounce uses wall-clock time, so a slower sample
+    # rate doesn't change the 3s windows).
+    ppe_monitor = None
+    # PPE_CAMERA_IDS is a comma list (e.g. "0,1"); PPE_CAMERA_ID kept as a fallback alias.
+    _ppe_ids_env = os.getenv("PPE_CAMERA_IDS", os.getenv("PPE_CAMERA_ID", "0"))
+    ppe_cam_ids = {int(x) for x in _ppe_ids_env.split(",") if x.strip() != ""}
+    ppe_every_n = max(1, int(os.getenv("PPE_EVERY_N_FRAMES", "3")))
+    if os.getenv("PPE_ENABLED", "1") not in ("0", "false", "False"):
+        try:
+            from ppe_monitor import PPEMonitor
+            ppe_monitor = PPEMonitor(device=device)
+            print(f"[*] PPE monitor enabled on cams {sorted(ppe_cam_ids)} (every {ppe_every_n} frames)")
+        except Exception as e:
+            print(f"[warn] PPE monitor disabled: {e}")
+
     frame_count = 0
     while not shutdown_event.is_set():
         t_start = time.time()
         persons_all: List[dict] = []
+        # PPE feeds for this tick, accumulated across zones: {cam_id: frame} and
+        # {person_id: {cam_id: box}}. Run once after the zone loop so a person seen on
+        # multiple feeds is OR-merged into a single per-person verdict.
+        ppe_frames: Dict[int, np.ndarray] = {}
+        ppe_person_cam_boxes: Dict[int, Dict[int, Tuple[float, float, float, float]]] = {}
 
         # ── Process each zone's camera pair INDEPENDENTLY ───────────────────────
         for zone_id, cam_ids in zone_groups.items():
@@ -615,6 +649,18 @@ def run_producer_mode(
             calib = zone_calibs.get(zone_id)
             fundamentals = calib.fundamental if calib else {}
             matched = match_cross_camera(per_camera_tracks, matching_state, fundamentals)
+
+            # 4b. Per-person PPE: stash this zone's PPE-camera frames + each person's box
+            #     on those cameras. The OR-merge across feeds happens after the zone loop.
+            if ppe_monitor is not None and frame_count % ppe_every_n == 0:
+                for cam_id in cam_ids:
+                    if cam_id in ppe_cam_ids and cam_id in frames:
+                        ppe_frames[cam_id] = frames[cam_id]
+                for mp in matched:
+                    for cam_id in ppe_cam_ids:
+                        tp = mp.per_camera.get(cam_id)
+                        if tp is not None:
+                            ppe_person_cam_boxes.setdefault(int(mp.global_id), {})[cam_id] = tp.bbox
 
             # 5. Triangulate each matched person from this zone's pair, then place them
             #    in the known room.
@@ -661,13 +707,21 @@ def run_producer_mode(
                                  round((mn["z"] + mx["z"]) / 2, 2))
 
                 best = max(seen.values(), key=lambda tr: tr.confidence)
+                # Per-person PPE (glasses/hat) from the monitor's latest debounced status,
+                # keyed by this person's global id. Unknown until they're seen on the PPE
+                # camera for the debounce window.
+                if ppe_monitor is not None:
+                    person_ppe = ppe_monitor.last_person_status.get(
+                        int(mp.global_id), dict(DEFAULT_PPE))
+                else:
+                    person_ppe = dict(DEFAULT_PPE)
                 persons_all.append({
                     "id": int(mp.global_id),
                     "x": pos_world[0], "y": pos_world[1], "z": pos_world[2],
                     "zone": zone_id,                       # exact: group-derived, not guessed
                     "floor": zone_floor,
                     "posture": getattr(best, "posture", "standing"),
-                    "ppe": dict(DEFAULT_PPE),              # PPE detection not yet integrated
+                    "ppe": person_ppe,                     # {"glasses": ..., "hat": ...}
                     "confidence": round(float(best.confidence), 2),
                     "cameras_visible": len(seen),
                     "camera_ids": cams_in_view,
@@ -678,6 +732,13 @@ def run_producer_mode(
             # DisplayLoop threads will pick these up and overlay them at native FPS.
             for cam_id in frames.keys():
                 latest_tracks.set(cam_id, per_camera_tracks.get(cam_id, []))
+
+        # ── PPE: OR-merge each person across all feeds, one debounce step per tick ──
+        if ppe_monitor is not None and ppe_frames and frame_count % ppe_every_n == 0:
+            try:
+                ppe_monitor.process_multi(ppe_frames, ppe_person_cam_boxes, redis_client)
+            except Exception as e:
+                print(f"[ppe] process error: {e}")
 
         # ── Fuse sensors + occupancy into zone state and publish to Redis ───────
         sensor_readings = read_sensor_readings(redis_client)
