@@ -520,6 +520,28 @@ export default function Scene3D() {
         <Lighting />
         <Floor showFloor0={showFloor0} showFloor1={showFloor1} />
         <RenderThrottler />
+        
+        {/* Origin Indicator Dot */}
+        <mesh position={[0, 0, 0]}>
+          <sphereGeometry args={[0.08, 16, 16]} />
+          <meshBasicMaterial color="#e06054" toneMapped={false} />
+          <Html distanceFactor={8} position={[0, 0.2, 0]} center>
+            <div style={{
+              background: 'rgba(20, 24, 31, 0.85)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              padding: '2px 6px',
+              borderRadius: '4px',
+              fontFamily: 'var(--font-mono)',
+              fontSize: '9px',
+              color: 'var(--text-primary)',
+              whiteSpace: 'nowrap',
+              pointerEvents: 'none',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.5)'
+            }}>
+              ORIGIN (0,0,0)
+            </div>
+          </Html>
+        </mesh>
 
         <Suspense fallback={null}>
           {/* ROOM A — ground floor (zone_a), built in place spanning x∈[0,8], z∈[0,6] */}
