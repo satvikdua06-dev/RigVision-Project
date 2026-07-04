@@ -105,21 +105,49 @@ def derive_zone_groups(zone_defs: dict) -> Dict[str, List[int]]:
     return groups
 
 
+def undistort_point(
+    pt: Tuple[float, float],
+    K: "np.ndarray",
+    dist: "np.ndarray",
+) -> Tuple[float, float]:
+    """Remove lens distortion from a single image point, returning pixel-space coords.
+
+    cv2.undistortPoints with P=K maps distorted pixels → undistorted pixels (same space
+    as the projection matrix P = K @ [R|t]), so DLT can be applied directly.
+    """
+    import cv2, numpy as np_local
+    pts = np_local.array([[[pt[0], pt[1]]]], dtype=np_local.float64)  # (1, 1, 2)
+    out = cv2.undistortPoints(pts, K, dist, P=K)
+    return float(out[0, 0, 0]), float(out[0, 0, 1])
+
+
 def place_in_zone(pos_local: Tuple[float, float, float], zdef: dict) -> Tuple[float, float, float]:
     """Map a zone-local (master-camera-frame) triangulated point into the room's world
     bounding box, for display only.
 
-    Zone identity is already exact (it's whichever camera group saw the person), so this
-    function does NOT decide the zone — it just decides where inside the known room to
-    draw the avatar. Without a surveyed world pose for the master camera we can't do an
-    exact world transform, so we treat the metric local X/Z as an offset from the room
-    corner, clamp into the room's footprint, and pin Y to the room's floor. Replace this
-    with a real world transform once the master-camera world pose is calibrated.
+    The local stereo frame has cam0 (master) at its origin. We add cam0's room position as
+    an offset before clamping, so a person directly under cam0 maps to room X=cam0.x rather
+    than room X=0. This is still an approximation (no rotation) but much better than before.
+    Without a full world-pose calibration the Y-axis tilt of the cameras means depth (local Z)
+    slightly underestimates room Z, but the error is small for typical camera tilt angles.
     """
     b = zdef["bounds"]
     mn, mx = b["min"], b["max"]
-    x = mn["x"] + min(max(pos_local[0], 0.0), mx["x"] - mn["x"])
-    z = mn["z"] + min(max(pos_local[2], 0.0), mx["z"] - mn["z"])
+
+    # Use the master camera's room position as the local→world offset.
+    # zdef["cameras"][0] is always the master camera for this zone group.
+    cams = zdef.get("cameras", [])
+    cam0_pos = cams[0].get("position", {"x": mn["x"], "z": mn["z"]}) if cams else {"x": mn["x"], "z": mn["z"]}
+    cam0_x = cam0_pos.get("x", mn["x"])
+    cam0_z = cam0_pos.get("z", mn["z"])
+
+    world_x = cam0_x + pos_local[0]
+    world_z = cam0_z + pos_local[2]
+
+    # The 3D model origin is at the corner DIAGONAL to where the real cameras are mounted,
+    # so mirror both axes to land in the correct corner of the model.
+    x = min(max(mx["x"] - world_x, mn["x"]), mx["x"])
+    z = min(max(mx["z"] - world_z, mn["z"]), mx["z"])
     y = mn["y"] + 0.05  # stand on the room floor (floor 0 -> y≈0.05, floor 1 -> y≈3.05)
     return round(x, 2), round(y, 2), round(z, 2)
 
@@ -467,6 +495,7 @@ def run_producer_mode(
     model_path: str = "yolov8l.pt",
     device: Optional[str] = None,
     resize_width: Optional[int] = None,
+    triag_width: Optional[int] = None,
     max_fps: Optional[float] = None,
     is_video: bool = False,
 ) -> None:
@@ -487,8 +516,14 @@ def run_producer_mode(
     # Per-zone stereo calibration. Real .npz configs override the synthetic fallback,
     # so dropping calibrated files into cv/calibration/configs/ upgrades a zone live.
     configs_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "calibration", "configs")
-    zone_calibs = load_zone_calibrations(zone_groups, configs_dir)
-    reproj_threshold = float(os.getenv("REPROJ_THRESHOLD", "15.0"))
+    # Triangulation width is independent of YOLO resize width. Foot-points from YOLO
+    # (in resize_width pixel space) are scaled up to triag_width before DLT, so the
+    # effective focal length doubles and depth uncertainty halves — with zero extra cost
+    # to YOLO inference. Calibration K/F are also loaded at triag_width.
+    _triag_width = triag_width or (resize_width or 960)
+    _foot_scale = _triag_width / (resize_width or _triag_width)
+    zone_calibs = load_zone_calibrations(zone_groups, configs_dir, _triag_width)
+    reproj_threshold = float(os.getenv("REPROJ_THRESHOLD", "40.0"))
 
     # ONE detector for all cameras (batched), ONE ArUco detector, ONE BoT-SORT tracker
     # PER camera (each camera has its own persistent track-id space).
@@ -581,15 +616,27 @@ def run_producer_mode(
                     cal_a, cal_b = calib.cameras.get(a), calib.cameras.get(b)
                     if cal_a is not None and cal_b is not None:
                         try:
-                            pt_a = seen[a].foot_point
-                            pt_b = seen[b].foot_point
+                            # Scale foot-points from YOLO's resize_width space to
+                            # triag_width space. Same ray, larger f → halved depth error.
+                            pt_a = (seen[a].foot_point[0] * _foot_scale,
+                                    seen[a].foot_point[1] * _foot_scale)
+                            pt_b = (seen[b].foot_point[0] * _foot_scale,
+                                    seen[b].foot_point[1] * _foot_scale)
+                            # Undistort before DLT: corrects k2≈-0.9 barrel/pincushion
+                            # and the anamorphic fx/fy warp on cams calibrated via DroidCam.
+                            pt_a = undistort_point(pt_a, cal_a.K, cal_a.dist_coeffs)
+                            pt_b = undistort_point(pt_b, cal_b.K, cal_b.dist_coeffs)
                             pos_local = triangulate_dlt(pt_a, pt_b, cal_a.P, cal_b.P)
                             # Reprojection gate: if the two cameras were matched to
                             # different people, the 3D point won't reproject cleanly.
                             err = compute_reprojection_avg(pos_local, cal_a, cal_b, pt_a, pt_b)
                             if err < reproj_threshold:
                                 pos_world = place_in_zone(pos_local, zdef)
-                        except Exception:
+                                print(f"[triangulation] Person {mp.global_id} OK: err={err:.2f}px pos={pos_world}")
+                            else:
+                                print(f"[triangulation] Person {mp.global_id} REJECTED: err={err:.2f}px >= thresh={reproj_threshold}")
+                        except Exception as e:
+                            print(f"[triangulation] Person {mp.global_id} failed with exception: {e}")
                             pos_world = None
 
                 # Single-camera sightings (or a rejected triangulation) have no metric
@@ -655,6 +702,10 @@ def main() -> None:
     parser.add_argument("--model", default="yolov8l.pt")
     parser.add_argument("--device", default=None)
     parser.add_argument("--resize-width", type=int, default=960)
+    parser.add_argument("--triag-width", type=int, default=1920,
+                        help="Pixel width used for triangulation math only (not YOLO). "
+                             "Foot-points are scaled from resize-width to this before DLT. "
+                             "Higher = better depth precision, no YOLO speed cost.")
     parser.add_argument("--max-fps", type=float, default=None)
     parser.add_argument("--redis-host", default=os.getenv("REDIS_HOST", "localhost"))
     parser.add_argument("--redis-port", type=int, default=int(os.getenv("REDIS_PORT", "6379")))
@@ -688,7 +739,7 @@ def main() -> None:
     run_producer_mode(
         redis_client=redis_client, zone_defs=zone_defs, sources=sources,
         confidence=args.confidence, model_path=args.model, device=args.device,
-        resize_width=args.resize_width, max_fps=args.max_fps,
+        resize_width=args.resize_width, triag_width=args.triag_width, max_fps=args.max_fps,
         is_video=(args.mode == "video"),
     )
 

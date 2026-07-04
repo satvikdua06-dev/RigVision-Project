@@ -43,9 +43,9 @@ function findAvatarInIntersections(intersections) {
 }
 
 // ── Facility dimensions (one bay) ───────────────────────────────────────────────
-// Each room is an 8m (X) × 6m (Z) bay, 3.4m tall. Built procedurally in local space
-// spanning x∈[0,8], z∈[0,6], y∈[0,3.4]; the group is shifted up by `baseY` per floor.
-const BAY_W = 8, BAY_D = 6, BAY_H = 3.4
+// Each room is a 5m (X) × 3.85m (Z) bay, 3m tall. Built procedurally in local space
+// spanning x∈[0,5], z∈[0,3.85], y∈[0,3]; the group is shifted up by `baseY` per floor.
+const BAY_W = 5, BAY_D = 3.85, BAY_H = 3.0
 
 // Shared material presets (memo-friendly plain objects fed to <meshStandardMaterial/>).
 const STEEL_DARK = { color: '#262c35', metalness: 0.85, roughness: 0.5 }
@@ -283,12 +283,12 @@ function Lighting() {
       />
       
       {/* Warm orange-gold key fill point lights inside the rooms to illuminate the machines */}
-      <pointLight position={[4, 1.2, 3]} intensity={80} distance={15} decay={2} color="#ffd4a3" /> {/* Room A Key Fill */}
-      <pointLight position={[4, 4.6, 3]} intensity={80} distance={15} decay={2} color="#ffb480" /> {/* Room B Key Fill */}
-      
+      <pointLight position={[2.5, 1.2, 1.9]} intensity={60} distance={10} decay={2} color="#ffd4a3" /> {/* Room A Key Fill */}
+      <pointLight position={[2.5, 4.2, 1.9]} intensity={60} distance={10} decay={2} color="#ffb480" /> {/* Room B Key Fill */}
+
       {/* Cool cyan-blue fill point lights to bounce back and provide dual-colored aesthetic reflections on the metal equipment */}
-      <pointLight position={[2, 2.2, 4]} intensity={50} distance={12} decay={2} color="#5b8def" /> {/* Room A Cool Fill */}
-      <pointLight position={[6, 5.6, 2]} intensity={50} distance={12} decay={2} color="#5b8def" /> {/* Room B Cool Fill */}
+      <pointLight position={[1.2, 2.2, 3.2]} intensity={35} distance={9} decay={2} color="#5b8def" /> {/* Room A Cool Fill */}
+      <pointLight position={[3.8, 5.2, 0.8]} intensity={35} distance={9} decay={2} color="#5b8def" /> {/* Room B Cool Fill */}
       
       {/* Hemisphere light for ground bounce and sky glow contrast */}
       <hemisphereLight skyColor="#1a2b4c" groundColor="#0a0f1d" intensity={0.7} />
@@ -297,26 +297,26 @@ function Lighting() {
 }
 
 function Floor({ showFloor0, showFloor1 }) {
-  // Rooms share the 8×6m footprint centred at x=4, z=3. Floor-0 grid sits at y=0
-  // (Room A), floor-1 grid at y=3.4 (Room B's deck / Room A's ceiling line).
+  // Rooms share the 5×3.85m footprint centred at x=2.5, z=1.925. Floor-0 grid sits at y=0
+  // (Room A), floor-1 grid at y=3.0 (Room B's deck / Room A's ceiling line).
   return (
     <>
       {/* Background ground plane */}
       {showFloor0 && (
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[4, -0.01, 3]} receiveShadow>
-          <planeGeometry args={[48, 36]} />
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[2.5, -0.01, 1.925]} receiveShadow>
+          <planeGeometry args={[36, 28]} />
           <meshStandardMaterial color="#070b11" roughness={0.4} metalness={0.7} />
         </mesh>
       )}
 
       {/* Grid for Floor 0 (Room A) */}
       {showFloor0 && (
-        <Grid position={[4, 0, 3]} args={[BAY_W, BAY_D]} cellSize={1} cellThickness={0.4} cellColor="#14202d" sectionSize={4} sectionThickness={0.8} sectionColor="#243a4f" fadeDistance={42} fadeStrength={2.5} infiniteGrid={false} />
+        <Grid position={[2.5, 0, 1.925]} args={[BAY_W, BAY_D]} cellSize={1} cellThickness={0.4} cellColor="#14202d" sectionSize={2.5} sectionThickness={0.8} sectionColor="#243a4f" fadeDistance={30} fadeStrength={2.5} infiniteGrid={false} />
       )}
 
-      {/* Grid for Floor 1 (Room B, stacked 3.4m above) */}
+      {/* Grid for Floor 1 (Room B, stacked 3m above) */}
       {showFloor1 && (
-        <Grid position={[4, 3.26, 3]} args={[BAY_W, BAY_D]} cellSize={1} cellThickness={0.4} cellColor="#14202d" sectionSize={4} sectionThickness={0.8} sectionColor="#243a4f" fadeDistance={42} fadeStrength={2.5} infiniteGrid={false} />
+        <Grid position={[2.5, 2.86, 1.925]} args={[BAY_W, BAY_D]} cellSize={1} cellThickness={0.4} cellColor="#14202d" sectionSize={2.5} sectionThickness={0.8} sectionColor="#243a4f" fadeDistance={30} fadeStrength={2.5} infiniteGrid={false} />
       )}
     </>
   )
@@ -504,14 +504,14 @@ export default function Scene3D() {
   const showFloor1 = floorFilter === 'all' || floorFilter === 1
 
   // Orbit target Y: mid-height of whichever floor(s) are shown. Room A centres at
-  // y≈1.7, Room B at y≈5.1, and the full stack at y≈3.4.
-  const targetY = floorFilter === 'all' ? 3.4 : (floorFilter === 1 ? 5.1 : 1.7)
+  // y≈1.5, Room B at y≈4.5, and the full stack at y≈3.0.
+  const targetY = floorFilter === 'all' ? 3.0 : (floorFilter === 1 ? 4.5 : 1.5)
 
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <Canvas
         shadows={{ type: THREE.PCFShadowMap }}
-        camera={{ position: [13, 9, 15], fov: 45, near: 0.1, far: 500 }}
+        camera={{ position: [9, 7, 10], fov: 45, near: 0.1, far: 500 }}
         gl={{ antialias: true, alpha: false }}
         style={{ background: '#0b0e13' }}
         onClick={clearSelection}
@@ -530,10 +530,10 @@ export default function Scene3D() {
             </>
           )}
 
-          {/* ROOM B — first floor (zone_b), stacked directly above Room A at y=3.4 */}
+          {/* ROOM B — first floor (zone_b), stacked directly above Room A at y=3.0 */}
           {showFloor1 && (
             <>
-              <RigRoom baseY={3.4} zoneId="zone_b" isUpper={true} />
+              <RigRoom baseY={3.0} zoneId="zone_b" isUpper={true} />
               <Equipment zoneId="zone_b" />
             </>
           )}
@@ -584,7 +584,7 @@ export default function Scene3D() {
         })}
 
         <OrbitControls
-          target={[4, targetY, 3]}
+          target={[2.5, targetY, 1.925]}
           enableDamping dampingFactor={0.08}
           minDistance={3} maxDistance={70}
           minPolarAngle={0.1} maxPolarAngle={Math.PI / 2.05}

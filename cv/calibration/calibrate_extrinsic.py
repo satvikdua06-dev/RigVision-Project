@@ -21,9 +21,8 @@ import cv2
 import numpy as np
 
 
-CHESSBOARD_DIM = (10, 7)
-SQUARE_SIZE_M = 0.035
-
+CHESSBOARD_DIM = (11, 8)
+SQUARE_SIZE_M = 0.045
 
 def _find_image(directory: str, stem: str) -> str | None:
     for ext in (".png", ".jpg", ".jpeg"):

@@ -18,7 +18,7 @@ import cv2
 import numpy as np
 
 
-CHESSBOARD_DIM = (10, 7)  # inner corners (cols, rows)
+CHESSBOARD_DIM = (11, 8)  # inner corners (cols, rows)
 SQUARE_SIZE_M = 0.035     # measured side length of one square
 
 
