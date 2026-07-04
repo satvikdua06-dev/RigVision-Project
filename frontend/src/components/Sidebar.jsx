@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useRigStore } from '../stores/useRigStore.js'
+import { ProofLightbox, ppeChipStyle, personPpeItems, ppeHasAlert } from './PPEPanel.jsx'
 
 // Status → accent variable (Industrial Slate palette). Standalone color values only,
 // so they slot straight into `color`/`borderColor` without alpha concatenation.
@@ -169,6 +170,7 @@ function ZonesTab() {
 
 function PersonsTab() {
   const [search, setSearch] = useState('')
+  const [proofItem, setProofItem] = useState(null)
   const persons       = useRigStore(s => s.persons)
   const selectPerson  = useRigStore(s => s.selectPerson)
   const selectedPerson = useRigStore(s => s.selectedPerson)
@@ -217,9 +219,9 @@ function PersonsTab() {
         }}>No personnel found</div>
       ) : (
         filteredPersons.map((p, idx) => {
-          const ppe = p.ppe || {}
-          const hasAlert  = ppe.hardhat === false || ppe.vest === false || ppe.goggles === false
-          const hasUnknown = ppe.hardhat == null || ppe.vest == null || ppe.goggles == null
+          const ppeItems = personPpeItems(p.id, p.ppe)
+          const hasAlert  = ppeHasAlert(p.ppe)
+          const hasUnknown = ppeItems.some(i => i.status == null || i.status === 'unknown')
           const isSelected = selectedPerson === p.id
           const accent = isSelected ? 'var(--accent-cobalt)' : hasAlert ? 'var(--accent-red)' : 'var(--border-bright)'
           return (
@@ -256,24 +258,29 @@ function PersonsTab() {
                 <div><span style={{color:'var(--text-muted)'}}>Cams </span>
                   <span style={{color:'var(--text-primary)'}}>{p.cameras_visible}</span></div>
               </div>
-              {/* PPE indicators */}
+              {/* PPE indicators — live per-person Body Gear + Hat detection */}
               <div style={{ display:'flex', gap:8, fontFamily:'var(--font-mono)', fontSize:10.5 }}>
-                {[
-                  { label:'🪖 Hat', val: ppe.hardhat },
-                  { label:'🦺 Vest', val: ppe.vest },
-                  { label:'🥽 Goggles', val: ppe.goggles },
-                ].map(({ label, val }) => {
-                  const isUnknown = val == null
-                  const ok = val === true
-                  const tone = isUnknown ? 'var(--text-muted)' : ok ? 'var(--accent-green)' : 'var(--accent-red)'
+                {ppeItems.map(({ key, label, status, proof }) => {
+                  const { tone, mark } = ppeChipStyle(status)
+                  const isMissing = status === 'missing'
                   return (
-                    <span key={label} style={{
+                    <span key={key} style={{
+                      display:'inline-flex', alignItems:'center', gap:6,
                       padding:'2px 8px', borderRadius:4, fontSize:10,
-                      background: 'var(--bg-card)',
-                      border:`1px solid ${isUnknown ? 'var(--border)' : tone}`,
-                      color: tone,
+                      background: 'var(--bg-card)', border:`1px solid ${tone}`, color: tone,
                     }}>
-                      {label} {isUnknown ? '?' : ok ? '✓' : '✗'}
+                      {label} {mark}
+                      {isMissing && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setProofItem({ item: proof, since: Date.now() }) }}
+                          title="View proof frame"
+                          style={{
+                            background:'transparent', border:`1px solid ${tone}`, color: tone,
+                            borderRadius:3, fontSize:8, padding:'0 4px', cursor:'pointer', letterSpacing:0.5,
+                          }}>
+                          PROOF
+                        </button>
+                      )}
                     </span>
                   )
                 })}
@@ -281,6 +288,14 @@ function PersonsTab() {
             </div>
           )
         })
+      )}
+
+      {proofItem && (
+        <ProofLightbox
+          item={proofItem.item}
+          since={proofItem.since}
+          onClose={() => setProofItem(null)}
+        />
       )}
     </div>
   )
@@ -298,7 +313,8 @@ export default function Sidebar() {
   const toggleSensors = useRigStore(s => s.toggleSensors)
 
   const criticalCount = Object.values(zones).filter(z => z.status === 'critical').length
-  const alertPersons  = persons.filter(p => p.ppe?.hardhat === false || p.ppe?.vest === false || p.ppe?.goggles === false).length
+  // PPE alerts come from live per-person Body Gear/Hat detection (p.ppe.{backpack,hat}).
+  const alertPersons = persons.filter(p => p.ppe?.backpack === 'missing' || p.ppe?.hat === 'missing').length
 
   const tabs = [
     { id:'zones',      label:'Zones',      badge: criticalCount },

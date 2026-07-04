@@ -17,7 +17,7 @@ import redis.asyncio as aioredis
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
 logging.basicConfig(
@@ -166,12 +166,13 @@ async def redis_to_websocket_bridge():
     while True:
         try:
             if manager.active_connections:
-                p_raw, z_raw, d_raw = await asyncio.gather(
+                p_raw, z_raw, d_raw, ppe_raw = await asyncio.gather(
                     r.get("rigvision:persons"),
                     r.get("rigvision:zones"),
                     r.get("rigvision:diagnostics"),
+                    r.get("rigvision:ppe:latest"),
                 )
-                cur_hash = hash((p_raw, z_raw, d_raw))
+                cur_hash = hash((p_raw, z_raw, d_raw, ppe_raw))
                 if cur_hash != _prev_hash:
                     _prev_hash = cur_hash
                     msg = {
@@ -180,6 +181,7 @@ async def redis_to_websocket_bridge():
                         "persons": json.loads(p_raw) if p_raw else [],
                         "zones": json.loads(z_raw) if z_raw else {},
                         "diagnostics": json.loads(d_raw) if d_raw else [],
+                        "ppe": json.loads(ppe_raw) if ppe_raw else {},
                     }
                     await manager.broadcast(json.dumps(msg))
             await asyncio.sleep(0.1)
@@ -288,6 +290,20 @@ async def get_zones():
 async def get_diagnostics():
     raw = await get_redis().get("rigvision:diagnostics")
     return json.loads(raw) if raw else []
+
+@app.get("/api/ppe")
+async def get_ppe():
+    """Current PPE detection status (cv/ppe_demo.py → rigvision:ppe:latest)."""
+    raw = await get_redis().get("rigvision:ppe:latest")
+    return json.loads(raw) if raw else {}
+
+@app.get("/api/ppe/proof/{item}")
+async def get_ppe_proof(item: str):
+    """Latest 'missing' proof JPEG for a PPE item (base64 in Redis → image/jpeg)."""
+    raw = await get_redis().get(f"rigvision:ppe:proof:{item}")
+    if not raw:
+        raise HTTPException(status_code=404, detail="No proof frame for this item")
+    return Response(content=base64.b64decode(raw), media_type="image/jpeg")
 
 
 @app.get("/api/video/mjpeg/{camera_id}")
