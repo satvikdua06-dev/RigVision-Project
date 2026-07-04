@@ -140,8 +140,9 @@ def compute_reprojection_avg(point_3d: Tuple[float, float, float],
 
 
 # ── Calibration loading ───────────────────────────────────────────────────────
-def _load_intrinsics(configs_dir: str, cam_id: int) -> Optional[CameraCalibration]:
-    """Load intrinsics_cam_{id}.npz (written by calibrate_intrinsic.py) if present."""
+def _load_intrinsics(configs_dir: str, cam_id: int, target_width: Optional[int] = None) -> Optional[CameraCalibration]:
+    """Load intrinsics_cam_{id}.npz (written by calibrate_intrinsic.py) if present,
+    scaling parameters to match runtime target_width if specified."""
     path = os.path.join(configs_dir, f"intrinsics_cam_{cam_id}.npz")
     if not os.path.exists(path):
         return None
@@ -153,15 +154,27 @@ def _load_intrinsics(configs_dir: str, cam_id: int) -> Optional[CameraCalibratio
         # so (2*cx, 2*cy) recovers the calibration resolution well enough for our use.
         w = int(round(2 * K[0, 2])) or 640
         h = int(round(2 * K[1, 2])) or 480
+        
+        if target_width is not None and target_width != w:
+            scale = target_width / w
+            K = K.copy()
+            K[0, 0] *= scale  # fx
+            K[1, 1] *= scale  # fy
+            K[0, 2] *= scale  # cx
+            K[1, 2] *= scale  # cy
+            w = target_width
+            h = int(round(h * scale))
+            
         cam = CameraCalibration.create_default(cam_id, (w, h))
-        return CameraCalibration(cam_id, K, dist, cam.R, cam.t, cam.K @ np.hstack([cam.R, cam.t]), (w, h))
+        return CameraCalibration(cam_id, K, dist, cam.R, cam.t, K @ np.hstack([cam.R, cam.t]), (w, h))
     except Exception as e:
         print(f"{LOG_PREFIX} failed to load intrinsics for cam {cam_id}: {e}")
         return None
 
 
-def _load_extrinsics(configs_dir: str, master_id: int, target_id: int):
-    """Load extrinsics_{master}_to_{target}.npz (R, t, F) if present."""
+def _load_extrinsics(configs_dir: str, master_id: int, target_id: int, target_width: Optional[int] = None):
+    """Load extrinsics_{master}_to_{target}.npz (R, t, F) if present,
+    scaling the fundamental matrix F to match target_width if specified."""
     path = os.path.join(configs_dir, f"extrinsics_{master_id}_to_{target_id}.npz")
     if not os.path.exists(path):
         return None
@@ -170,22 +183,39 @@ def _load_extrinsics(configs_dir: str, master_id: int, target_id: int):
             R = np.asarray(data["R"], dtype=np.float64).reshape(3, 3)
             T = np.asarray(data["T"], dtype=np.float64).reshape(3, 1)
             F = np.asarray(data["F"], dtype=np.float64).reshape(3, 3) if "F" in data else None
+            
+        if target_width is not None and F is not None:
+            master_path = os.path.join(configs_dir, f"intrinsics_cam_{master_id}.npz")
+            if os.path.exists(master_path):
+                with np.load(master_path) as m_data:
+                    K_master = np.asarray(m_data["camera_matrix"], dtype=np.float64)
+                orig_w = int(round(2 * K_master[0, 2])) or 640
+                if orig_w != target_width:
+                    scale = target_width / orig_w
+                    S_inv = np.array([
+                        [1.0 / scale, 0.0, 0.0],
+                        [0.0, 1.0 / scale, 0.0],
+                        [0.0, 0.0, 1.0]
+                    ], dtype=np.float64)
+                    F = S_inv.T @ F @ S_inv
         return R, T, F
     except Exception as e:
         print(f"{LOG_PREFIX} failed to load extrinsics {master_id}->{target_id}: {e}")
         return None
 
 
-def _synthetic_zone_calib(zone_id: str, cam_ids: List[int]) -> ZoneCalib:
+def _synthetic_zone_calib(zone_id: str, cam_ids: List[int], target_width: Optional[int] = None) -> ZoneCalib:
     """A working stereo pair when no real calibration exists yet: identical default
     intrinsics, the second camera shifted 0.5 m along X to provide parallax, and a
     fundamental matrix derived from that synthetic geometry. Triangulation will be
     only roughly metric, but the pipeline runs end-to-end and zone tagging is exact."""
     master_id, target_id = cam_ids[0], cam_ids[1]
-    master = CameraCalibration.create_default(master_id)               # R=I, t=0 (origin)
+    w = target_width or 640
+    h = int(round(w * 0.75))  # fallback to 4:3 aspect ratio
+    master = CameraCalibration.create_default(master_id, (w, h))               # R=I, t=0 (origin)
     R = np.eye(3, dtype=np.float64)
     t = np.array([[0.5], [0.0], [0.0]], dtype=np.float64)              # 0.5 m baseline
-    target = CameraCalibration.create_default(target_id).with_pose(R, t)
+    target = CameraCalibration.create_default(target_id, (w, h)).with_pose(R, t)
 
     # Fundamental matrix for the synthetic pair: F = K_b^-T [t]_x R K_a^-1.
     tx = np.array([[0, -t[2, 0], t[1, 0]],
@@ -201,8 +231,9 @@ def _synthetic_zone_calib(zone_id: str, cam_ids: List[int]) -> ZoneCalib:
 
 
 def load_zone_calibrations(zone_groups: Dict[str, List[int]],
-                           configs_dir: str) -> Dict[str, ZoneCalib]:
-    """Build a ZoneCalib for every zone group.
+                           configs_dir: str,
+                           target_width: Optional[int] = None) -> Dict[str, ZoneCalib]:
+    """Build a ZoneCalib for every zone group, scaling cameras/fundamentals to target_width.
 
     For each zone (e.g. "zone_a": [0, 1]):
       1. Load real intrinsics for both cameras and the stereo extrinsics for the pair.
@@ -223,12 +254,12 @@ def load_zone_calibrations(zone_groups: Dict[str, List[int]],
             continue
         master_id, target_id = cam_ids[0], cam_ids[1]
 
-        master = _load_intrinsics(configs_dir, master_id)
-        target = _load_intrinsics(configs_dir, target_id)
-        extr = _load_extrinsics(configs_dir, master_id, target_id)
+        master = _load_intrinsics(configs_dir, master_id, target_width)
+        target = _load_intrinsics(configs_dir, target_id, target_width)
+        extr = _load_extrinsics(configs_dir, master_id, target_id, target_width)
 
         if master is None or target is None or extr is None:
-            out[zone_id] = _synthetic_zone_calib(zone_id, cam_ids)
+            out[zone_id] = _synthetic_zone_calib(zone_id, cam_ids, target_width)
             print(f"{LOG_PREFIX} zone {zone_id}: using SYNTHETIC calibration "
                   f"(missing real configs for cams {master_id}/{target_id})")
             continue

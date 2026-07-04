@@ -194,14 +194,16 @@ def match_cross_camera(
             if key in previous_matches:
                 gid = previous_matches[key]
                 known.setdefault(gid, {})[cam_id] = track
-                used_tracks[cam_id].add(track.track_id)
 
     for gid, per_camera in known.items():
-        if gid not in assigned_in_frame:
-            all_matched.append(MatchedPerson(global_id=gid, per_camera=per_camera))
-            assigned_in_frame.add(gid)
-            for cam_id, track in per_camera.items():
-                last_seen[(cam_id, track.track_id)] = now
+        # Only reuse the historical match directly if it is matched across both cameras (i.e. not a singleton)
+        if len(per_camera) >= 2:
+            if gid not in assigned_in_frame:
+                all_matched.append(MatchedPerson(global_id=gid, per_camera=per_camera))
+                assigned_in_frame.add(gid)
+                for cam_id, track in per_camera.items():
+                    used_tracks[cam_id].add(track.track_id)
+                    last_seen[(cam_id, track.track_id)] = now
 
     # ── Pass 1: ArUco identity ────────────────────────────────────────────────
     # Only runs on tracks not resolved by Pass 0.
@@ -295,10 +297,9 @@ def _match_pair(
         for j, tb in enumerate(tracks_b):
             epi_dist = compute_epipolar_distance(ta.foot_point, tb.foot_point, F)
             app_dist = compute_appearance_distance(ta, tb)
-            cost_matrix[i][j] = (
-                epipolar_weight * epi_dist +
-                appearance_weight * app_dist
-            )
+            cost = epipolar_weight * epi_dist + appearance_weight * app_dist
+            cost_matrix[i][j] = cost
+            print(f"[CCM] cam pair: ta={ta.track_id} (foot={ta.foot_point}) tb={tb.track_id} (foot={tb.foot_point}) cost={cost:.2f} (epi={epi_dist:.2f}, app={app_dist:.2f})")
 
     row_idx, col_idx = linear_sum_assignment(cost_matrix)
 
