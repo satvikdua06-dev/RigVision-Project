@@ -27,8 +27,8 @@ export const ZONES = {
       { id: 'pipe_rack_01', name: 'Pipe Rack',     type: 'storage',       position: [0.6, 1.1, 3.2], size: [0.6, 1.8, 1.0], color: '#7d7160' },
     ],
     cameras: [
-      { id: 'cam0', position: [0.3, 2.7, 0.3], lookAt: [3.1, 0.9, 2.6] },
-      { id: 'cam1', position: [4.7, 2.7, 0.3], lookAt: [1.9, 0.9, 2.6] },
+      { id: 'cam0', position: [0.3, 2.7, 0.6], lookAt: [4.0, 0.9, 1.9] },
+      { id: 'cam1', position: [0.3, 2.7, 3.25], lookAt: [4.0, 0.9, 1.9] },
     ],
     sensors: [
       { id: 'temp_a',     type: 'temperature', position: [1.3, 1.9, 1.3] },
@@ -52,8 +52,8 @@ export const ZONES = {
       { id: 'tool_cabinet_01',name: 'Tool Cabinet',      type: 'storage',       position: [0.6, 3.7, 3.2], size: [0.6, 1.4, 0.7], color: '#6f6555' },
     ],
     cameras: [
-      { id: 'cam2', position: [0.3, 5.7, 0.3], lookAt: [3.1, 3.9, 2.6] },
-      { id: 'cam3', position: [4.7, 5.7, 0.3], lookAt: [1.9, 3.9, 2.6] },
+      { id: 'cam2', position: [0.3, 5.7, 0.6], lookAt: [4.0, 3.9, 1.9] },
+      { id: 'cam3', position: [0.3, 5.7, 3.25], lookAt: [4.0, 3.9, 1.9] },
     ],
     sensors: [
       { id: 'temp_b',     type: 'temperature', position: [1.6, 4.9, 1.3] },

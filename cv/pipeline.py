@@ -122,33 +122,44 @@ def undistort_point(
 
 
 def place_in_zone(pos_local: Tuple[float, float, float], zdef: dict) -> Tuple[float, float, float]:
-    """Map a zone-local (master-camera-frame) triangulated point into the room's world
-    bounding box, for display only.
+    """Map a zone-local (master-camera-frame) triangulated point into room world coordinates.
 
-    The local stereo frame has cam0 (master) at its origin. We add cam0's room position as
-    an offset before clamping, so a person directly under cam0 maps to room X=cam0.x rather
-    than room X=0. This is still an approximation (no rotation) but much better than before.
-    Without a full world-pose calibration the Y-axis tilt of the cameras means depth (local Z)
-    slightly underestimates room Z, but the error is small for typical camera tilt angles.
+    Cameras are on the short wall (X≈0) looking down the 5m length, but at a diagonal angle
+    because both cameras share the same look_at point. The DLT local frame axes therefore
+    contain a mix of room X and Z — a simple swap is insufficient. Instead we derive the
+    camera's right and forward unit vectors in room space from position/look_at, then project
+    pos_local through those vectors to recover true room X and Z.
+
+        room_X = cam0_x + local[0]*right_x + local[2]*fwd_x
+        room_Z = cam0_z + local[0]*right_z + local[2]*fwd_z
     """
+    import numpy as _np
+
     b = zdef["bounds"]
     mn, mx = b["min"], b["max"]
 
-    # Use the master camera's room position as the local→world offset.
-    # zdef["cameras"][0] is always the master camera for this zone group.
     cams = zdef.get("cameras", [])
-    cam0_pos = cams[0].get("position", {"x": mn["x"], "z": mn["z"]}) if cams else {"x": mn["x"], "z": mn["z"]}
-    cam0_x = cam0_pos.get("x", mn["x"])
-    cam0_z = cam0_pos.get("z", mn["z"])
+    if cams:
+        c = cams[0]
+        cp = c["position"]
+        la = c.get("look_at", cp)
+        cam_pos = _np.array([cp["x"], cp["y"], cp["z"]], dtype=_np.float64)
+        fwd = _np.array([la["x"] - cp["x"], la["y"] - cp["y"], la["z"] - cp["z"]], dtype=_np.float64)
+        fwd /= _np.linalg.norm(fwd)
+        # Camera X axis (image right) = cross(fwd, world_up), normalised
+        world_up = _np.array([0.0, 1.0, 0.0])
+        right = _np.cross(fwd, world_up)
+        right /= _np.linalg.norm(right)
+        world_x = float(cam_pos[0] + pos_local[0] * right[0] + pos_local[2] * fwd[0])
+        world_z = float(cam_pos[2] + pos_local[0] * right[2] + pos_local[2] * fwd[2])
+    else:
+        # Fallback: simple swap (cameras assumed to look straight along X)
+        world_x = mn["x"] + pos_local[2]
+        world_z = mn["z"] + pos_local[0]
 
-    world_x = cam0_x + pos_local[0]
-    world_z = cam0_z + pos_local[2]
-
-    # The 3D model origin is at the corner DIAGONAL to where the real cameras are mounted,
-    # so mirror both axes to land in the correct corner of the model.
-    x = min(max(mx["x"] - world_x, mn["x"]), mx["x"])
-    z = min(max(mx["z"] - world_z, mn["z"]), mx["z"])
-    y = mn["y"] + 0.05  # stand on the room floor (floor 0 -> y≈0.05, floor 1 -> y≈3.05)
+    x = min(max(world_x, mn["x"]), mx["x"])
+    z = min(max(world_z, mn["z"]), mx["z"])
+    y = mn["y"] + 0.05
     return round(x, 2), round(y, 2), round(z, 2)
 
 
