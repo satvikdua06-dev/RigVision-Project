@@ -27,15 +27,15 @@
       "cameras": [
         {
           "id": "cam0",
-          "position": { "x": 0.3, "y": 2.7, "z": 0.3 },
-          "look_at": { "x": 3.1, "y": 0.9, "z": 2.6 },
-          "comment": "Phone 1 — front-left corner, looking across the bay."
+          "position": { "x": 0.3, "y": 2.7, "z": 0.6 },
+          "look_at": { "x": 4.0, "y": 0.9, "z": 1.9 },
+          "comment": "Phone 1 — short wall, near Z=0 corner, looking down the 5m length."
         },
         {
           "id": "cam1",
-          "position": { "x": 4.7, "y": 2.7, "z": 0.3 },
-          "look_at": { "x": 1.9, "y": 0.9, "z": 2.6 },
-          "comment": "Phone 2 — front-right corner, overlapping cam0's view for stereo triangulation."
+          "position": { "x": 0.3, "y": 2.7, "z": 3.25 },
+          "look_at": { "x": 4.0, "y": 0.9, "z": 1.9 },
+          "comment": "Phone 2 — short wall, near Z=3.85 corner, overlapping cam0 for stereo."
         }
       ],
       "equipment": [
@@ -89,15 +89,15 @@
       "cameras": [
         {
           "id": "cam2",
-          "position": { "x": 0.3, "y": 5.7, "z": 0.3 },
-          "look_at": { "x": 3.1, "y": 3.9, "z": 2.6 },
-          "comment": "Phone 3 — front-left corner of the upper deck."
+          "position": { "x": 0.3, "y": 5.7, "z": 0.6 },
+          "look_at": { "x": 4.0, "y": 3.9, "z": 1.9 },
+          "comment": "Phone 3 — short wall, near Z=0 corner of upper deck."
         },
         {
           "id": "cam3",
-          "position": { "x": 4.7, "y": 5.7, "z": 0.3 },
-          "look_at": { "x": 1.9, "y": 3.9, "z": 2.6 },
-          "comment": "Phone 4 — front-right corner, overlapping cam2's view for stereo triangulation."
+          "position": { "x": 0.3, "y": 5.7, "z": 3.25 },
+          "look_at": { "x": 4.0, "y": 3.9, "z": 1.9 },
+          "comment": "Phone 4 — short wall, near Z=3.85 corner, overlapping cam2 for stereo."
         }
       ],
       "equipment": [
