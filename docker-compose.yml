@@ -1,8 +1,7 @@
-# ──────────────────────────────────────────────────────────
-# RigVision-3D — Docker Compose
-# ──────────────────────────────────────────────────────────
+version: "3.9"
 
 services:
+
   redis:
     image: redis:7-alpine
     container_name: rigvision-redis
@@ -54,7 +53,7 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
-    
+
   chromadb:
     image: chromadb/chroma:latest
     container_name: rigvision-chromadb
@@ -89,15 +88,28 @@ services:
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
-    restart: unless-stopped
     healthcheck:
       test: ["CMD", "kafka-broker-api-versions.sh", "--bootstrap-server", "localhost:9092"]
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
+
+  mongodb:
+    image: mongo:7
+    container_name: rigvision-mongodb
+    ports:
+      - "27018:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: strong_password
+    volumes:
+      - mongodb_data:/data/db
+    restart: unless-stopped
 
 volumes:
   redis_data:
   postgres_data:
   neo4j_data:
   chroma_data:
+  mongodb_data:
