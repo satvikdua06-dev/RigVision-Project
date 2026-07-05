@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useRigStore } from '../stores/useRigStore.js'
+import { AgentPlanning } from './AgentPlanning.jsx'
+import PipelineBeam from './ui/PipelineBeam.jsx'
+import CircularGauge from './ui/CircularGauge.jsx'
 
 // Backend progress stages → a monotonic order so the UI can tell what's done.
 const STAGE_ORDER = {
@@ -134,6 +137,7 @@ export default function DiagnosticsLive() {
         @keyframes spin { to { transform: rotate(360deg) } }
         .spin { animation: spin 0.9s linear infinite; }
         .diag-row:hover { border-color: var(--border-bright) !important; }
+        @keyframes orbSpin { from{stroke-dashoffset:0} to{stroke-dashoffset:-188} }
       `}</style>
 
       {/* Header */}
@@ -217,52 +221,115 @@ export default function DiagnosticsLive() {
 // ── Live staged pipeline (in-flight event) ───────────────────────────────────
 function LivePipeline({ sel, shownOrder, isError, accent, hasReport }) {
   const p = sel._progress || {}
+
   const stepStatus = (step) => {
     if (isError && shownOrder < step.doneAt) return shownOrder >= step.reachedAt ? 'error' : 'pending'
-    if (shownOrder >= step.doneAt) return 'done'
+    if (shownOrder >= step.doneAt) return 'success'
     if (shownOrder >= step.reachedAt) return 'active'
     return 'pending'
   }
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: 24, padding: 28 }}>
-      <div>
-        <div style={sectionTitle}>Pipeline</div>
-        {STEPS.map((step, i) => {
-          const status = stepStatus(step)
-          const color = status === 'done' ? 'var(--accent-green)' : status === 'active' ? accent : status === 'error' ? 'var(--accent-red)' : 'var(--text-dim)'
-          return (
-            <div key={step.key} style={{ display: 'flex', gap: 12 }}>
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                <div style={{ width: 22, height: 22, borderRadius: '50%', flexShrink: 0, border: `2px solid ${color}`, display: 'flex', alignItems: 'center', justifyContent: 'center', background: status === 'done' ? 'var(--accent-green)' : 'transparent' }}>
-                  {status === 'done' && <span style={{ color: 'var(--bg-deep)', fontSize: 12, fontWeight: 700 }}>✓</span>}
-                  {status === 'active' && <div className="spin" style={{ width: 10, height: 10, borderRadius: '50%', border: `2px solid ${color}`, borderTopColor: 'transparent' }} />}
-                  {status === 'error' && <span style={{ color: 'var(--accent-red)', fontSize: 12, fontWeight: 700 }}>!</span>}
-                </div>
-                {i < STEPS.length - 1 && <div style={{ width: 2, flex: 1, minHeight: 34, background: status === 'done' ? 'var(--accent-green)' : 'var(--border)' }} />}
-              </div>
-              <div style={{ paddingBottom: 18 }}>
-                <div className={status === 'active' ? 'lp' : ''} style={{ fontFamily: 'var(--font-ui)', fontSize: 14, fontWeight: 600, color: status === 'pending' ? 'var(--text-dim)' : 'var(--text-primary)' }}>
-                  {step.label}{status === 'active' ? '…' : ''}
-                </div>
-                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)', marginTop: 2, maxWidth: 220 }}>{step.detail}</div>
-              </div>
-            </div>
-          )
-        })}
-      </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 20, minWidth: 0 }}>
-        {isError && <Card title="Pipeline Error" accent="var(--accent-red)"><div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--accent-red)' }}>{p.error || 'The diagnosis pipeline failed.'}</div></Card>}
-        {shownOrder >= 4 && p.subgraph && <Card title="Knowledge Graph Subgraph"><SubgraphGraph text={p.subgraph} /></Card>}
-        {shownOrder >= 6 && p.chunks && <Card title="Retrieved Manual Chunks (RAG)"><ManualChunks text={p.chunks} /></Card>}
-        {shownOrder >= 6 && !hasReport && !isError && (
-          <Card title="Diagnosis" accent={accent}>
-            <div className="lp" style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--text-muted)' }}>
-              Writing the answer… the local model is generating the root-cause report.
-            </div>
-          </Card>
+  const planSteps = STEPS.map(step => {
+    const status = stepStatus(step)
+    let content = null
+    let defaultExpanded = false
+
+    if (step.key === 'query' && status !== 'pending') {
+      content = (
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6, padding: '8px 10px', background: 'var(--bg-panel)', borderRadius: 6, border: '1px solid var(--border)' }}>
+          {sel.zone_id && (
+            <div>Zone: <span style={{ color: 'var(--accent-cobalt)', fontWeight: 600 }}>{sel.zone_id.replace(/_/g, ' ').toUpperCase()}</span></div>
+          )}
+          {(sel.severity || p.severity) && (
+            <div>Severity: <span style={{ color: accent, fontWeight: 600 }}>{sel.severity || p.severity}</span></div>
+          )}
+          {sel.triggered_sensors?.length > 0 && (
+            <div>Triggered: <span style={{ color: 'var(--accent-amber)' }}>{sel.triggered_sensors.join(', ')}</span></div>
+          )}
+        </div>
+      )
+    }
+
+    if (step.key === 'subgraph' && shownOrder >= 4 && p.subgraph) {
+      content = <SubgraphGraph text={p.subgraph} />
+      defaultExpanded = true
+    }
+
+    if (step.key === 'chunks' && shownOrder >= 6 && p.chunks) {
+      content = <ManualChunks text={p.chunks} />
+      defaultExpanded = true
+    }
+
+    if (step.key === 'answer' && status === 'active') {
+      content = (
+        <div className="lp" style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)', padding: '8px 10px', background: 'var(--bg-panel)', borderRadius: 6, border: '1px solid var(--border)' }}>
+          Local LLM generating root-cause report…
+        </div>
+      )
+      defaultExpanded = true
+    }
+
+    return { id: step.key, title: step.label, detail: step.detail, status, content, defaultExpanded }
+  })
+
+  return (
+    <div style={{ padding: 28, maxWidth: 820 }}>
+      {/* Animated beam — shows the pipeline topology with traveling dashes */}
+      <PipelineBeam shownOrder={shownOrder} isError={isError} accent={accent} />
+
+      {/* Event badge row */}
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 20 }}>
+        {sel.severity && (
+          <span style={{ background: 'var(--bg-card)', border: `1px solid ${accent}`, color: accent, fontSize: 10, fontWeight: 600, padding: '2px 10px', borderRadius: 4, fontFamily: 'var(--font-mono)', letterSpacing: 1 }}>
+            {sel.severity}
+          </span>
+        )}
+        {sel.zone_id && (
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)' }}>
+            ZONE: <span style={{ color: 'var(--accent-cobalt)', fontWeight: 600 }}>{sel.zone_id.replace(/_/g, ' ').toUpperCase()}</span>
+          </span>
+        )}
+        {sel.event_id && (
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-dim)' }}>
+            {sel.event_id.replace(/^anom_/, '')}
+          </span>
         )}
       </div>
+
+      {isError && (
+        <div style={{ marginBottom: 20, background: 'var(--bg-card)', border: '1px solid var(--accent-red)', borderLeft: '3px solid var(--accent-red)', borderRadius: 8, padding: '12px 16px' }}>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--accent-red)', letterSpacing: 1, fontWeight: 600, marginBottom: 6, textTransform: 'uppercase' }}>
+            Pipeline Error
+          </div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-muted)' }}>
+            {p.error || 'The diagnosis pipeline failed.'}
+          </div>
+        </div>
+      )}
+
+      <AgentPlanning title="Diagnosis Pipeline" steps={planSteps} />
+    </div>
+  )
+}
+
+// ── Numbered step header for process timeline in ReportDetail ────────────────
+function StepBadge({ num, label, accent }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, marginTop: 22 }}>
+      <div style={{
+        fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700,
+        color: accent || 'var(--accent-cobalt)', letterSpacing: 1,
+        padding: '2px 8px', borderRadius: 3,
+        border: `1px solid ${accent || 'var(--accent-cobalt)'}44`,
+        background: `${accent || 'var(--accent-cobalt)'}0d`,
+        flexShrink: 0,
+      }}>
+        {num}
+      </div>
+      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, color: 'var(--text-muted)', letterSpacing: 1.5, textTransform: 'uppercase' }}>
+        {label}
+      </div>
+      <div style={{ flex: 1, height: 1, background: 'var(--border-solid)' }} />
     </div>
   )
 }
@@ -274,8 +341,16 @@ function ReportDetail({ sel, accent }) {
 
   return (
     <div style={{ padding: 24, boxSizing: 'border-box' }}>
+      <style>{`
+        .rpt-step { animation: report-step-in 0.35s ease both; }
+        .rpt-step:nth-child(1) { animation-delay: 0.04s; }
+        .rpt-step:nth-child(2) { animation-delay: 0.11s; }
+        .rpt-step:nth-child(3) { animation-delay: 0.18s; }
+        .rpt-step:nth-child(4) { animation-delay: 0.25s; }
+      `}</style>
+
       {/* Meta header */}
-      <div style={{ display: 'flex', gap: 20, justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid var(--border)', paddingBottom: 16, marginBottom: 20 }}>
+      <div style={{ display: 'flex', gap: 20, justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid var(--border)', paddingBottom: 16, marginBottom: 4 }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
             <span style={{ background: 'var(--bg-card)', border: `1px solid ${accent}`, color: accent, fontSize: 10, fontWeight: 600, padding: '2px 10px', borderRadius: 4, fontFamily: 'var(--font-mono)', letterSpacing: 1 }}>{sel.severity || 'CRITICAL'}</span>
@@ -285,21 +360,27 @@ function ReportDetail({ sel, accent }) {
           </div>
           <div style={{ fontFamily: 'var(--font-ui)', fontSize: 26, fontWeight: 600, lineHeight: 1.15 }}>{sel.primary_diagnosis || 'Unclassified failure mode'}</div>
         </div>
-        <div style={{ textAlign: 'right', flexShrink: 0 }}>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, color: 'var(--text-muted)', letterSpacing: 1, marginBottom: 4, textTransform: 'uppercase' }}>Diagnosis Confidence</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'flex-end' }}>
-            <div style={{ width: 100, height: 8, background: 'var(--border)', borderRadius: 4, overflow: 'hidden' }}>
-              <div style={{ height: '100%', width: `${sel.confidence_score || 0}%`, background: 'var(--accent-cobalt)' }} />
-            </div>
-            <span style={{ fontFamily: 'var(--font-ui)', fontSize: 22, fontWeight: 600 }}>{sel.confidence_score || 0}%</span>
-          </div>
+        <div style={{ textAlign: 'center', flexShrink: 0 }}>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, color: 'var(--text-muted)', letterSpacing: 1, marginBottom: 6, textTransform: 'uppercase' }}>Confidence</div>
+          <CircularGauge
+            size={68}
+            value={sel.confidence_score || 0}
+            meta={{ min: 0, max: 100, warning: 40, critical: 20, unit: '%' }}
+            label=""
+          />
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
+      {/* Process timeline — numbered sections reveal with stagger */}
+      <div>
+
+      {/* Step 01 — Telemetry */}
+      <div className="rpt-step">
+        <StepBadge num="01" label="Anomalous Sensor Telemetry" accent={accent} />
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 4 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
           {/* Telemetry snapshot */}
-          <Card title="Anomalous Telemetry Snapshot">
+          <Card title="Telemetry Snapshot">
             {sel.telemetry_snapshot ? (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 {Object.entries(sel.telemetry_snapshot).map(([key, val]) => {
@@ -352,30 +433,36 @@ function ReportDetail({ sel, accent }) {
           )}
         </div>
  
-        {/* Reasoning */}
+        {/* Step 02 — Reasoning */}
         <Card title="Negative Reasoning & Root-Cause">
           <div style={{ fontFamily: 'var(--font-ui)', fontSize: 14, lineHeight: 1.6, color: 'var(--text-primary)', background: 'var(--bg-deep)', borderRadius: 6, padding: 12, border: '1px solid var(--border)', minHeight: 120 }}>
             {sel.reasoning || 'No reasoning recorded.'}
           </div>
         </Card>
       </div>
+      </div>{/* close rpt-step 01 */}
 
-      {/* Retrieved Manual Chunks (RAG) */}
+      {/* Step 02 — Retrieved Manual Chunks (RAG) */}
       {chunksText && (
-        <div style={{ marginBottom: 20 }}>
-          <Card title="Retrieved Manual Chunks (RAG)">
+        <div className="rpt-step">
+          <StepBadge num="02" label="Retrieved Manual Chunks (RAG)" accent={accent} />
+          <Card title="">
             <ManualChunks text={chunksText} />
           </Card>
         </div>
       )}
- 
-      {/* Recommended action */}
+
+      {/* Step 03 — Emergency Response */}
       {sel.recommended_action && (
-        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderLeft: '4px solid var(--accent-amber)', borderRadius: 8, padding: 16 }}>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--accent-amber)', letterSpacing: 1, fontWeight: 600, marginBottom: 8, textTransform: 'uppercase' }}>Emergency Response Mitigation Protocol</div>
-          <div style={{ fontFamily: 'var(--font-ui)', fontSize: 15, color: 'var(--text-primary)', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{sel.recommended_action}</div>
+        <div className="rpt-step">
+          <StepBadge num="03" label="Emergency Response Mitigation Protocol" accent="var(--accent-amber)" />
+          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderLeft: '4px solid var(--accent-amber)', borderRadius: 8, padding: 16 }}>
+            <div style={{ fontFamily: 'var(--font-ui)', fontSize: 15, color: 'var(--text-primary)', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{sel.recommended_action}</div>
+          </div>
         </div>
       )}
+
+      </div>{/* close process timeline */}
     </div>
   )
 }
@@ -763,6 +850,15 @@ function SubgraphGraph({ text }) {
                 const config = colors[n.type] || colors.device
                 return (
                   <g key={n.id} style={{ cursor: 'pointer' }}>
+                    {/* Orbital ring — traveling dashes on failure/risk nodes (radial orbital concept) */}
+                    {n.type === 'failure' && (
+                      <circle
+                        cx={pos.x} cy={pos.y} r="30"
+                        fill="none" stroke="#ff6b6b" strokeWidth="0.8"
+                        strokeDasharray="5 4" opacity="0.35"
+                        style={{ animation: 'orbSpin 4s linear infinite', transformOrigin: `${pos.x}px ${pos.y}px` }}
+                      />
+                    )}
                     <circle
                       cx={pos.x}
                       cy={pos.y}

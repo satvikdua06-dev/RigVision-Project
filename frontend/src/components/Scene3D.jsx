@@ -340,9 +340,9 @@ function EquipmentProp({ item, zoneId }) {
       {hovered && (
         <Html position={[0, h * 0.7 + 0.3, 0]} center distanceFactor={12} style={{ pointerEvents: 'none' }}>
           <div style={{
-            background: 'rgba(18,22,29,0.6)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
-            border: '1px solid rgba(255,255,255,0.1)', borderRadius: 999, padding: '3px 10px',
-            fontFamily: 'var(--font-mono)', fontSize: 11, color: 'rgba(230,233,239,0.95)', whiteSpace: 'nowrap',
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border-solid)', borderRadius: 4, padding: '4px 10px',
+            fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-primary)', whiteSpace: 'nowrap',
           }}>{item.name}</div>
         </Html>
       )}

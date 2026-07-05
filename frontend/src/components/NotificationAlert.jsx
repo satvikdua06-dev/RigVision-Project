@@ -50,6 +50,28 @@ function findDiag(diagnostics, zoneId) {
   )
 }
 
+// Maps pipeline stage → progress % for the in-toast bar.
+const STAGE_STEPS = ['generating_query', 'getting_subgraph', 'subgraph_ready', 'getting_chunks', 'chunks_ready', 'writing_answer', 'done']
+function StageBar({ stage }) {
+  const idx = STAGE_STEPS.indexOf(stage)
+  const pct = idx < 0 ? 4 : Math.round(((idx + 1) / STAGE_STEPS.length) * 100)
+  const label = stage ? stage.replace(/_/g, ' ') : 'queued'
+  return (
+    <div>
+      <div style={{ height: 2, background: 'var(--border-solid)', borderRadius: 2, overflow: 'hidden', marginBottom: 4 }}>
+        <div style={{
+          height: '100%', width: `${pct}%`, borderRadius: 2,
+          background: 'var(--accent-cobalt)',
+          transition: 'width 0.5s ease',
+        }} />
+      </div>
+      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 8.5, color: 'var(--text-dim)', letterSpacing: 0.5 }}>
+        {label}
+      </div>
+    </div>
+  )
+}
+
 // ── A single anomaly card ────────────────────────────────────────────────────
 function AnomalyToast({ entry, diag, isAnalyzing, progress, age, onOpen, onClose }) {
   const { zone, zoneId, status } = entry
@@ -96,6 +118,7 @@ function AnomalyToast({ entry, diag, isAnalyzing, progress, age, onOpen, onClose
         fontFamily: 'var(--font-ui)',
         color: 'var(--text-primary)',
         transition: 'border-color 0.2s ease',
+        animation: 'toast-in 0.25s ease both',
       }}
       title="Click to view live diagnostics pipeline"
     >
@@ -186,13 +209,15 @@ function AnomalyToast({ entry, diag, isAnalyzing, progress, age, onOpen, onClose
           </div>
         </div>
       ) : (
-        <div className="pulse-alert" style={{ margin: '10px 0' }}>
-          <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
+        <div style={{ margin: '10px 0' }}>
+          <div className="pulse-alert" style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
             Analyzing Telemetry...
           </div>
-          <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.4 }}>
+          <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.4, marginBottom: 10 }}>
             Breach detected on {entry.breachedSensors.join(', ') || 'sensors'}. {progressText}
           </div>
+          {/* Pipeline stage progress bar */}
+          <StageBar stage={progress?.stage} />
         </div>
       )}
     </div>
@@ -349,6 +374,15 @@ export default function NotificationAlert() {
         .pulse-alert { animation: pulseFade 1.5s infinite ease-in-out; }
         .alert-btn:hover { background: var(--bg-card) !important; border-color: var(--border-bright) !important; color: var(--text-primary) !important; }
       `}</style>
+      {/* Toast count badge when multiple zones are active */}
+      {visible.length > 1 && (
+        <div style={{
+          textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: 9,
+          color: 'var(--text-dim)', letterSpacing: 1, paddingRight: 4, marginBottom: 2,
+        }}>
+          {visible.length} ACTIVE ANOMALIES
+        </div>
+      )}
 
       {visible.map(entry => {
         const diag = findDiag(diagnostics, entry.zoneId)
