@@ -72,22 +72,22 @@ export default function ZonePlane({ zoneId, zone, staticDef }) {
 
       {/* Zone label — flat type, no neon text-shadow */}
       {!showDiagnosticsModal && (
-        <Html position={[0, 0.35, 0]} center distanceFactor={25}
+        <Html position={[0, 0.15, 0]} center distanceFactor={12}
           style={{ pointerEvents: 'none' }}>
           <div style={{
-            display: 'flex', alignItems: 'center', gap: 7,
+            display: 'flex', alignItems: 'center', gap: 5,
             background: 'rgba(18, 22, 29, 0.5)',
             backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
             border: '1px solid rgba(255,255,255,0.1)',
-            borderRadius: 999, padding: '4px 12px',
+            borderRadius: 999, padding: '2px 8px',
             fontFamily: 'var(--font-ui)',
-            fontSize: 13, fontWeight: 500, letterSpacing: 0.4,
+            fontSize: 10, fontWeight: 500, letterSpacing: 0.4,
             color: 'rgba(230,233,239,0.95)', textTransform: 'uppercase',
             whiteSpace: 'nowrap',
             opacity: hovered || isSelected ? 1 : 0.82,
             transition: 'opacity 0.2s',
           }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: col.base, flexShrink: 0 }} />
+            <span style={{ width: 5, height: 5, borderRadius: '50%', background: col.base, flexShrink: 0 }} />
             {zone.label || zoneId.replace(/_/g, ' ').toUpperCase()}
           </div>
         </Html>

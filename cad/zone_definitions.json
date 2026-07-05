@@ -65,6 +65,15 @@
           "dimensions": { "x": 0.6, "y": 1.8, "z": 1.0 },
           "color": "#887766",
           "sensors": []
+        },
+        {
+          "id": "temple_01",
+          "name": "Temple Mandir",
+          "type": "temple",
+          "position": { "x": 0.6, "y": 0, "z": 0.6 },
+          "dimensions": { "x": 0.6, "y": 1.8, "z": 0.5 },
+          "color": "#3c2a21",
+          "sensors": []
         }
       ],
       "sensors": [

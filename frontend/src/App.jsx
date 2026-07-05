@@ -40,11 +40,12 @@ export default function App() {
           {/* Overlay for Camera Feeds */}
           <CameraFeeds />
 
-          {/* Corner watermark */}
+          {/* Center watermark */}
           <div style={{
-            position:'absolute', bottom:16, left:16, pointerEvents:'none',
+            position:'absolute', bottom:16, left:'50%', transform:'translateX(-50%)', pointerEvents:'none',
             fontFamily:'var(--font-mono)', fontSize:10, color:'var(--text-dim)',
             letterSpacing:1,
+            whiteSpace:'nowrap',
           }}>
             RigVision · LNMIIT · RIGVISION-3D · PHASE 1
           </div>
