@@ -7,7 +7,6 @@ export default function TopBar() {
   const zones = useRigStore(s => s.zones)
   const persons = useRigStore(s => s.persons)
   const diagnostics = useRigStore(s => s.diagnostics) || []
-  const setShowDiagnosticsModal = useRigStore(s => s.setShowDiagnosticsModal)
 
   const { user, logout } = useAuthStore()
   const navigate = useNavigate()
@@ -116,9 +115,9 @@ export default function TopBar() {
           </div>
         </a>
 
-        {/* AI Diagnostics Button */}
+        {/* AI Diagnostics Button — opens the full diagnostics hub in a separate window */}
         <button
-          onClick={() => setShowDiagnosticsModal(true)}
+          onClick={() => window.open('/diagnostics', '_blank')}
           style={{
             background: 'var(--bg-card)',
             border: '1px solid var(--border)',

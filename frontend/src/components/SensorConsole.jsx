@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { authHeaders } from '../utils/api.js'
 
 const host = window.location.hostname === 'localhost' ? '127.0.0.1' : window.location.hostname
 const API_BASE = import.meta.env.VITE_API_URL || `http://${host}:8000/api`
@@ -21,12 +22,13 @@ const DASHBOARD_URL = window.location.port === '5174'
   ? `http://${window.location.hostname}:5173/`
   : '#/'
 
-// Slider bounds: start at the normal-range floor, extend past `critical` so the
-// operator can push a sensor into warning/critical to test the pipeline.
+// Slider bounds: extend past `critical` (high) and below `critical_low` (when the
+// sensor has a low-side limit) so the operator can push it into either warning or
+// critical band — high OR low — to test the pipeline.
 function sliderBounds(sensor) {
   const [lo, hi] = sensor.normal_range || [0, 100]
   const top = sensor.critical != null ? sensor.critical * 1.2 : hi * 1.5
-  const min = lo
+  const min = sensor.critical_low != null ? Math.min(lo, sensor.critical_low * 0.5) : lo
   const max = Math.max(top, hi)
   const span = max - min
   const step = span <= 20 ? 0.1 : span <= 200 ? 0.5 : 1
@@ -36,15 +38,20 @@ function sliderBounds(sensor) {
 function valueColor(sensor, v) {
   if (v == null) return 'var(--text-muted)'
   if (sensor.critical != null && v >= sensor.critical) return 'var(--accent-red)'
+  if (sensor.critical_low != null && v <= sensor.critical_low) return 'var(--accent-red)'
   if (sensor.warning != null && v >= sensor.warning) return 'var(--accent-amber)'
+  if (sensor.warning_low != null && v <= sensor.warning_low) return 'var(--accent-amber)'
   return 'var(--accent-green)'
 }
 
 function SensorSlider({ sensor, value, onChange }) {
   const { min, max, step } = sliderBounds(sensor)
   const color = valueColor(sensor, value)
-  const warnPct = sensor.warning != null ? ((sensor.warning - min) / (max - min)) * 100 : null
-  const critPct = sensor.critical != null ? ((sensor.critical - min) / (max - min)) * 100 : null
+  const pct = (x) => ((x - min) / (max - min)) * 100
+  const warnPct = sensor.warning != null ? pct(sensor.warning) : null
+  const critPct = sensor.critical != null ? pct(sensor.critical) : null
+  const warnLowPct = sensor.warning_low != null ? pct(sensor.warning_low) : null
+  const critLowPct = sensor.critical_low != null ? pct(sensor.critical_low) : null
 
   return (
     <div style={{ marginBottom: 18 }}>
@@ -74,6 +81,12 @@ function SensorSlider({ sensor, value, onChange }) {
         )}
         {critPct != null && (
           <div title={`critical ${sensor.critical}`} style={{ position: 'absolute', left: `${critPct}%`, top: -3, width: 2, height: 14, background: 'var(--accent-red)', zIndex: 2 }} />
+        )}
+        {warnLowPct != null && (
+          <div title={`low warning ${sensor.warning_low}`} style={{ position: 'absolute', left: `${warnLowPct}%`, top: -3, width: 2, height: 14, background: 'var(--accent-amber)', zIndex: 2 }} />
+        )}
+        {critLowPct != null && (
+          <div title={`low critical ${sensor.critical_low}`} style={{ position: 'absolute', left: `${critLowPct}%`, top: -3, width: 2, height: 14, background: 'var(--accent-red)', zIndex: 2 }} />
         )}
         <input
           type="range"
@@ -111,7 +124,11 @@ export default function SensorConsole() {
     setDiagRunning(true)
     setDiagResult('')
     try {
-      const res = await fetch(`${API_BASE}/diagnostics/run`, { method: 'POST' })
+      const res = await fetch(`${API_BASE}/diagnostics/run`, { method: 'POST', headers: authHeaders() })
+      if (res.status === 429) {
+        setDiagResult('Rate limited — wait a moment and retry')
+        return
+      }
       const data = await res.json()
       if (data.status === 'all_clear') {
         setDiagResult('✓ All zones nominal — no issues')
@@ -181,7 +198,7 @@ export default function SensorConsole() {
       const snapshot = { ...values }
       await fetch(`${API_BASE}/sensors`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ readings: snapshot, source: 'manual' }),
       })
       setCommitted(snapshot)

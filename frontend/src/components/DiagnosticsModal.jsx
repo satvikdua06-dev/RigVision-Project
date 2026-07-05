@@ -40,6 +40,7 @@ export default function DiagnosticsModal() {
   const show = useRigStore(s => s.showDiagnosticsModal)
   const setShow = useRigStore(s => s.setShowDiagnosticsModal)
   const diagnostics = useRigStore(s => s.diagnostics) || []
+  const clearDiagnostics = useRigStore(s => s.clearDiagnostics)
 
   const [selectedId, setSelectedId] = useState(null)
   const [timeRange, setTimeRange] = useState('all')
@@ -192,8 +193,8 @@ export default function DiagnosticsModal() {
               </select>
               {/* Clear display button */}
               <button
-                onClick={() => { setClearedBefore(Date.now()); setSelectedId(null) }}
-                title="Hide all current alerts from view (they remain stored)"
+                onClick={() => { clearDiagnostics(); setSelectedId(null); }}
+                title="Delete all diagnostics reports from the system"
                 style={{
                   background: 'var(--bg-panel)', border: '1px solid var(--border)',
                   borderRadius: 4, color: 'var(--text-muted)',
@@ -388,7 +389,10 @@ export default function DiagnosticsModal() {
                                 </div>
                                 {isTriggered && selectedDiag.threshold_context?.[key] && (() => {
                                   const ctx = selectedDiag.threshold_context[key]
-                                  const showLimits = ctx.warning_min != null || ctx.critical_min != null
+                                  const isLow = ctx.breach_direction === 'low'
+                                  const showLimits = isLow
+                                    ? (ctx.warning_low != null || ctx.critical_low != null)
+                                    : (ctx.warning_min != null || ctx.critical_min != null)
                                   return (
                                     <div style={{
                                       marginTop: 8, paddingTop: 8,
@@ -396,9 +400,16 @@ export default function DiagnosticsModal() {
                                       fontFamily: 'var(--font-mono)', fontSize: 9.5,
                                       color: 'var(--text-muted)', lineHeight: 1.4
                                     }}>
+                                      {ctx.breach_direction && (
+                                        <div style={{ color: 'var(--accent-red)', fontWeight: 600, letterSpacing: 1 }}>
+                                          {isLow ? '▼ LOW BREACH' : '▲ HIGH BREACH'}
+                                        </div>
+                                      )}
                                       {showLimits && (
                                         <div style={{ color: 'var(--accent-amber)', fontWeight: 600 }}>
-                                          LIMITS: {ctx.warning_min != null ? `Warn ${ctx.warning_min}` : '—'} / {ctx.critical_min != null ? `Crit ${ctx.critical_min}` : '—'} {ctx.unit || ''}
+                                          {isLow
+                                            ? <>LIMITS: {ctx.warning_low != null ? `Warn ≤${ctx.warning_low}` : '—'} / {ctx.critical_low != null ? `Crit ≤${ctx.critical_low}` : '—'} {ctx.unit || ''}</>
+                                            : <>LIMITS: {ctx.warning_min != null ? `Warn ≥${ctx.warning_min}` : '—'} / {ctx.critical_min != null ? `Crit ≥${ctx.critical_min}` : '—'} {ctx.unit || ''}</>}
                                         </div>
                                       )}
                                       {ctx.source_manual && (

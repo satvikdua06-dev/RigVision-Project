@@ -97,11 +97,13 @@
       "normal_range": { "min": 5, "max": 16 },
       "warning_min": 18,
       "critical_min": 22,
+      "warning_low": 4,
+      "critical_low": 2,
       "operating_mode": "normal_operation",
       "source": {
         "manual_id": "manual_voltguard_cp_440",
         "section": "3.1 Operating Limits",
-        "text": "Hydraulic control line pressure, normal operation: 5 to 16 bar. Alarm at 18 bar. Trip (relief) at 22 bar."
+        "text": "Hydraulic control line pressure, normal operation: 5 to 16 bar. High alarm at 18 bar. High trip (relief) at 22 bar. Low alarm at 4 bar and low-low trip at 2 bar indicate loss of hydraulic control (BOP cannot actuate)."
       },
       "confidence": 0.92,
       "validated_by_human": true
@@ -154,11 +156,13 @@
       "normal_range": { "min": 6, "max": 16 },
       "warning_min": 19,
       "critical_min": 24,
+      "warning_low": 5,
+      "critical_low": 3,
       "operating_mode": "rated_load",
       "source": {
         "manual_id": "manual_acme_comp_2200",
         "section": "5.4 Operating Limits",
-        "text": "Discharge pressure, rated: 6 to 16 bar. Alarm at 19 bar. Trip at 24 bar."
+        "text": "Discharge pressure, rated: 6 to 16 bar. High alarm at 19 bar. High trip at 24 bar. Low alarm at 5 bar and low trip at 3 bar indicate the compressor is not building pressure (intake restriction or unloader stuck open)."
       },
       "confidence": 0.93,
       "validated_by_human": true
@@ -269,11 +273,13 @@
       "normal_range": { "min": 5, "max": 15 },
       "warning_min": 20,
       "critical_min": 25,
+      "warning_low": 4,
+      "critical_low": 2,
       "operating_mode": "occupied_area",
       "source": {
         "manual_id": "manual_hse_2025_04",
         "section": "2 Area Limits",
-        "text": "Service line pressure in occupied areas: 5 to 15 bar normal. Warning at 20 bar. Critical at 25 bar."
+        "text": "Service line pressure in occupied areas: 5 to 15 bar normal. High warning at 20 bar. High critical at 25 bar. Low warning at 4 bar and low critical at 2 bar indicate a service-line pressure loss (leak or upstream supply failure)."
       },
       "confidence": 0.9,
       "validated_by_human": true

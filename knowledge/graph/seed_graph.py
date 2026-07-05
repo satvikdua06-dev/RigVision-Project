@@ -60,12 +60,18 @@ TYPE_TO_MODEL = {
     "wellhead": {"model": "WH-5000 Series", "manufacturer": "WH Industries", "equipment_class": "static"},
 }
 
+# Symptom types mirror the live sensor types, PLUS direction-qualified variants for
+# sensors that have low-side limits. A low-pressure breach surfaces as the
+# `pressure_low` symptom (the anomaly_listener appends "_low" to the KG sensor_types
+# when threshold_context reports breach_direction == "low"), so a loss-of-pressure
+# alert resolves to the loss-of-pressure failure modes rather than the overpressure ones.
 SYMPTOM_CONDITIONS = {
     "temperature": "High Temperature",
     "vibration": "High Vibration",
     "noise": "High Noise",
     "gas_h2s": "H2S Gas Detected",
     "pressure": "High Pressure",
+    "pressure_low": "Low Pressure",
 }
 
 # Device failure modes per model (mirrors the device manual sections).
@@ -86,6 +92,8 @@ DEVICE_FAILURE_MODES = {
          "symptoms": ["pressure"], "action": "Replace Relief Valve"},
         {"id": "fm_cp440_overheating", "name": "Panel Overheating (Ventilation Blockage)",
          "symptoms": ["temperature"], "action": "Clear Panel Ventilation and Replace Filter"},
+        {"id": "fm_cp440_pressure_loss", "name": "Hydraulic Pressure Loss",
+         "symptoms": ["pressure_low"], "action": "Inspect HPU and Restore Hydraulic Supply"},
     ],
     "ACME-COMP-2200": [
         {"id": "fm_comp2200_motor_burnout", "name": "Motor Burnout",
@@ -94,6 +102,8 @@ DEVICE_FAILURE_MODES = {
          "symptoms": ["pressure", "temperature"], "action": "Replace Valve Plate Assembly"},
         {"id": "fm_comp2200_bearing_wear", "name": "Bearing Wear",
          "symptoms": ["vibration"], "action": "Replace Bearings"},
+        {"id": "fm_comp2200_pressure_loss", "name": "Discharge Pressure Loss",
+         "symptoms": ["pressure_low"], "action": "Inspect Intake and Unloader"},
     ],
     "WH-5000 Series": [
         {"id": "fm_wh5000_annular_seal", "name": "Annular Seal Leak",
@@ -119,6 +129,8 @@ ZONE_FAILURE_MODES = [
      "symptoms": ["vibration"], "action": "Stop Equipment and Inspect Structure"},
     {"id": "fm_area_overpressure", "name": "Service Line Overpressure",
      "symptoms": ["pressure"], "action": "Isolate and Depressurize Service Line"},
+    {"id": "fm_area_pressure_loss", "name": "Service Line Pressure Loss",
+     "symptoms": ["pressure_low"], "action": "Isolate and Investigate Pressure Loss"},
 ]
 
 CONSTRAINTS = [
@@ -205,6 +217,7 @@ def build_payload():
             "sensor_type": sp["sensor_type"], "metric": sp["metric"], "unit": sp["unit"],
             "normal_min": sp["normal_range"]["min"], "normal_max": sp["normal_range"]["max"],
             "warning_min": sp["warning_min"], "critical_min": sp["critical_min"],
+            "warning_low": sp.get("warning_low"), "critical_low": sp.get("critical_low"),
             "operating_mode": sp.get("operating_mode"),
             "manual_id": sp["source"]["manual_id"],
             "source_section": sp["source"].get("section"),
@@ -262,6 +275,7 @@ def create_topology(tx, payload):
                                  sensor_type: r.sensor_type, metric: r.metric, unit: r.unit,
                                  normal_min: r.normal_min, normal_max: r.normal_max,
                                  warning_min: r.warning_min, critical_min: r.critical_min,
+                                 warning_low: r.warning_low, critical_low: r.critical_low,
                                  operating_mode: r.operating_mode,
                                  source_section: r.source_section, source_text: r.source_text,
                                  confidence: r.confidence,

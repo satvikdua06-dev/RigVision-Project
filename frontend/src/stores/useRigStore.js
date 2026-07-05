@@ -1,9 +1,12 @@
 import { create } from 'zustand'
+import { authHeaders } from '../utils/api.js'
 
 const host = window.location.hostname === 'localhost' ? '127.0.0.1' : window.location.hostname;
 const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 const WS_URL = import.meta.env.VITE_WS_URL || `${wsProtocol}//${host}:8000/ws/realtime`;
 const API_BASE = import.meta.env.VITE_API_URL || `http://${host}:8000/api`;
+
+let globalRafId = null;
 
 export const useRigStore = create((set, get) => ({
   // ── State ──────────────────────────────────────────────
@@ -14,6 +17,8 @@ export const useRigStore = create((set, get) => ({
     zone_b: { status: 'normal', temperature: 26, vibration: 0, noise: 45, gas_h2s: 0, pressure: 1, person_count: 0, ppe_violations: [], updated_at: Date.now() }
   },
   diagnostics: [],
+  // Live per-event diagnosis progress { event_id: { stage, zone_id, subgraph, chunks, report, ... } }
+  diagProgress: {},
   // PPE detection demo (cv/ppe_demo.py → rigvision:ppe:latest). Per-item status:
   // detected | missing | no_person | unknown. `proof` is set on a "missing" commit.
   ppe: { person_present: false },
@@ -25,6 +30,9 @@ export const useRigStore = create((set, get) => ({
   showSensors: true,
   showAvatars: true,
   showDiagnosticsModal: false,
+  hasReceivedData: false,
+  preexistingSignatures: [],
+  isNotificationsInitialized: false,
 
   // Stream controls
   wallOpacity: 0.4,
@@ -35,7 +43,6 @@ export const useRigStore = create((set, get) => ({
   // ── WebSocket & Rendering Decoupler ─────────────────────
   _ws: null,
   _reconnectTimer: null,
-  _rafId: null,
   _latestRawData: null,
   _lastRenderTime: 0,
 
@@ -50,21 +57,23 @@ export const useRigStore = create((set, get) => ({
             persons: raw.persons !== undefined ? raw.persons : state.persons,
             zones: raw.zones !== undefined ? raw.zones : state.zones,
             diagnostics: raw.diagnostics !== undefined ? raw.diagnostics : state.diagnostics,
+            diagProgress: raw.diagProgress !== undefined ? raw.diagProgress : state.diagProgress,
             ppe: raw.ppe !== undefined ? raw.ppe : state.ppe,
+            hasReceivedData: true,
             _latestRawData: null,
             _lastRenderTime: now,
           });
         }
       }
-      set({ _rafId: requestAnimationFrame(loop) });
+      globalRafId = requestAnimationFrame(loop);
     };
 
-    if (get()._rafId) cancelAnimationFrame(get()._rafId);
-    set({ _rafId: requestAnimationFrame(loop) });
+    if (globalRafId) cancelAnimationFrame(globalRafId);
+    globalRafId = requestAnimationFrame(loop);
   },
 
   _restartRenderLoop: () => {
-    if (get()._rafId) cancelAnimationFrame(get()._rafId);
+    if (globalRafId) cancelAnimationFrame(globalRafId);
     get()._startRenderLoop();
   },
 
@@ -89,12 +98,39 @@ export const useRigStore = create((set, get) => ({
         const nextState = {};
 
         if (data.type === 'realtime_update') {
-          nextState._latestRawData = {
+          const nextRaw = {
             persons: data.persons,
-            zones: data.zones,
-            diagnostics: data.diagnostics,
-            ppe: data.ppe,
           };
+
+          // Stabilize zones (prevent unnecessary rerenders if data is equivalent)
+          if (JSON.stringify(state.zones) !== JSON.stringify(data.zones)) {
+            nextRaw.zones = data.zones;
+          } else {
+            nextRaw.zones = state.zones;
+          }
+
+          // Stabilize diagnostics
+          if (JSON.stringify(state.diagnostics) !== JSON.stringify(data.diagnostics)) {
+            nextRaw.diagnostics = data.diagnostics;
+          } else {
+            nextRaw.diagnostics = state.diagnostics;
+          }
+
+          // Stabilize diagProgress
+          if (JSON.stringify(state.diagProgress) !== JSON.stringify(data.diag_progress)) {
+            nextRaw.diagProgress = data.diag_progress;
+          } else {
+            nextRaw.diagProgress = state.diagProgress;
+          }
+
+          // Stabilize ppe
+          if (JSON.stringify(state.ppe) !== JSON.stringify(data.ppe)) {
+            nextRaw.ppe = data.ppe;
+          } else {
+            nextRaw.ppe = state.ppe;
+          }
+
+          nextState._latestRawData = nextRaw;
           set(nextState);
         } else {
           // old format fallback
@@ -117,8 +153,8 @@ export const useRigStore = create((set, get) => ({
 
     ws.onclose = () => {
       console.log('[ws] Disconnected. Reconnecting in 2s...');
-      set({ connected: false, _ws: null });
-      if (get()._rafId) cancelAnimationFrame(get()._rafId);
+      set({ connected: false, _ws: null, hasReceivedData: false, preexistingSignatures: [], isNotificationsInitialized: false });
+      if (globalRafId) cancelAnimationFrame(globalRafId);
 
       // Auto-reconnect after 2 seconds
       const timer = setTimeout(() => {
@@ -140,13 +176,13 @@ export const useRigStore = create((set, get) => ({
     if (state._reconnectTimer) {
       clearTimeout(state._reconnectTimer);
     }
-    if (state._rafId) {
-      cancelAnimationFrame(state._rafId);
+    if (globalRafId) {
+      cancelAnimationFrame(globalRafId);
     }
     if (state._ws) {
       state._ws.close();
     }
-    set({ connected: false, _ws: null, _reconnectTimer: null, _rafId: null });
+    set({ connected: false, _ws: null, _reconnectTimer: null, hasReceivedData: false, preexistingSignatures: [], isNotificationsInitialized: false });
   },
 
   // ── UI Actions ─────────────────────────────────────────
@@ -160,7 +196,7 @@ export const useRigStore = create((set, get) => ({
   
   clearTrackingCache: async () => {
     try {
-      const res = await fetch(`${API_BASE}/control/clear_cache`, { method: 'POST' });
+      const res = await fetch(`${API_BASE}/control/clear_cache`, { method: 'POST', headers: authHeaders() });
       if (res.ok) {
         console.log('Tracking cache cleared successfully');
       } else {
@@ -171,6 +207,20 @@ export const useRigStore = create((set, get) => ({
     }
   },
 
+  clearDiagnostics: async () => {
+    try {
+      const res = await fetch(`${API_BASE}/diagnostics/clear`, { method: 'POST', headers: authHeaders() });
+      if (res.ok) {
+        console.log('Diagnostics cleared successfully');
+        set({ diagnostics: [] });
+      } else {
+        console.error('Failed to clear diagnostics');
+      }
+    } catch (err) {
+      console.error('Error clearing diagnostics:', err);
+    }
+  },
+
   selectPerson: (id) => set({ selectedPerson: id, selectedZone: null }),
   selectZone: (id) => set({ selectedZone: id, selectedPerson: null }),
   clearSelection: () => set({ selectedPerson: null, selectedZone: null }),
@@ -178,4 +228,15 @@ export const useRigStore = create((set, get) => ({
   toggleSensors: () => set((state) => ({ showSensors: !state.showSensors })),
   toggleAvatars: () => set((state) => ({ showAvatars: !state.showAvatars })),
   setShowDiagnosticsModal: (val) => set({ showDiagnosticsModal: val }),
+
+  setPreexistingSignatures: (sigs) => set({ preexistingSignatures: sigs }),
+  addPreexistingSignature: (sig) => set((state) => ({
+    preexistingSignatures: state.preexistingSignatures.includes(sig)
+      ? state.preexistingSignatures
+      : [...state.preexistingSignatures, sig]
+  })),
+  removePreexistingSignature: (sig) => set((state) => ({
+    preexistingSignatures: state.preexistingSignatures.filter((x) => x !== sig)
+  })),
+  setNotificationsInitialized: (val) => set({ isNotificationsInitialized: val }),
 }))

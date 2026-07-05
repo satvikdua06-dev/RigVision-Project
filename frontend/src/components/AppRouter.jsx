@@ -3,6 +3,8 @@ import LoginPage from './LoginPage';
 import NotFoundPage from './NotFoundPage';
 import ProtectedRoute from './ProtectedRoute';
 import App from '../App';
+import DiagnosticsLive from './DiagnosticsLive';
+import ManualsViewer from './ManualsViewer';
 
 /**
  * AppRouter - Main router component
@@ -22,6 +24,34 @@ export default function AppRouter() {
           element={
             <ProtectedRoute>
               <App />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Live diagnostics window (opened in a new tab from the anomaly alert) */}
+        <Route
+          path="/diagnostics/:eventId"
+          element={
+            <ProtectedRoute>
+              <DiagnosticsLive />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/diagnostics"
+          element={
+            <ProtectedRoute>
+              <DiagnosticsLive />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Full manuals viewer */}
+        <Route
+          path="/documents/manuals"
+          element={
+            <ProtectedRoute>
+              <ManualsViewer />
             </ProtectedRoute>
           }
         />

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useRigStore } from '../stores/useRigStore.js'
 
 const SEVERITY_COLOR = {
@@ -19,8 +19,11 @@ function sensorsBreached(zone) {
     for (const [stype, meta] of Object.entries(zone.sensor_meta)) {
       const val = zone[stype]
       if (val !== undefined && val !== null) {
-        if ((meta.critical !== null && val >= meta.critical) ||
-            (meta.warning !== null && val >= meta.warning)) {
+        const isHighBreach = (meta.critical != null && val >= meta.critical) ||
+                             (meta.warning != null && val >= meta.warning);
+        const isLowBreach = (meta.critical_low != null && val <= meta.critical_low) ||
+                            (meta.warning_low != null && val <= meta.warning_low);
+        if (isHighBreach || isLowBreach) {
           out.push(stype)
         }
       }
@@ -48,20 +51,33 @@ function findDiag(diagnostics, zoneId) {
 }
 
 // ── A single anomaly card ────────────────────────────────────────────────────
-function AnomalyToast({ entry, diag, isAnalyzing, onOpen, onClose }) {
+function AnomalyToast({ entry, diag, isAnalyzing, progress, age, onOpen, onClose }) {
   const { zone, zoneId, status } = entry
   const color = SEVERITY_COLOR[status] || '#e06054'
 
-  // Parent only passes a diag that exactly matches the current breach and is fresh
-  // (i.e. published after this signature started). When analyzing, parent sends null.
-  // So here we just show "Analyzing…" while the report is in flight, otherwise show it.
-  const displayDiag = !isAnalyzing ? diag : null
-
   let safetyStep = '', repairStep = ''
-  if (displayDiag?.recommended_action) {
-    const steps = displayDiag.recommended_action.split(/\d+\)\s+/).map(s => s.trim()).filter(Boolean)
+  if (diag?.recommended_action) {
+    const steps = diag.recommended_action.split(/\d+\)\s+/).map(s => s.trim()).filter(Boolean)
     safetyStep = steps[0] || ''
     repairStep = steps[1] || ''
+  }
+
+  // Determine stage label for in-progress analysis
+  let progressText = 'AI diagnostic agent is generating a root-cause report...'
+  if (progress) {
+    if (progress.stage === 'generating_query') {
+      progressText = 'Parsing alert parameters and generating knowledge graph queries...'
+    } else if (progress.stage === 'getting_subgraph') {
+      progressText = 'Querying the Neo4j knowledge graph topology...'
+    } else if (progress.stage === 'subgraph_ready') {
+      progressText = 'Extracting topological context and facility connectivity...'
+    } else if (progress.stage === 'getting_chunks') {
+      progressText = 'Searching official device manuals and safety standards (RAG)...'
+    } else if (progress.stage === 'chunks_ready') {
+      progressText = 'Loading manuals and preparing prompt context...'
+    } else if (progress.stage === 'writing_answer') {
+      progressText = 'Local LLM (Gemma) is compiling the negative reasoning and mitigation report...'
+    }
   }
 
   return (
@@ -69,20 +85,19 @@ function AnomalyToast({ entry, diag, isAnalyzing, onOpen, onClose }) {
       onClick={onOpen}
       style={{
         width: 380,
-        background: 'var(--glass-panel)',
-        backdropFilter: 'blur(16px) saturate(120%)',
-        WebkitBackdropFilter: 'blur(16px) saturate(120%)',
+        background: 'var(--bg-panel)',
         border: '1px solid var(--border)',
         borderLeft: `3px solid ${color}`,
         borderRadius: 'var(--radius)',
         padding: '16px 20px',
         boxSizing: 'border-box',
-        boxShadow: 'var(--shadow-panel), var(--inner-hi)',
+        boxShadow: 'var(--shadow-panel)',
         cursor: 'pointer',
         fontFamily: 'var(--font-ui)',
         color: 'var(--text-primary)',
         transition: 'border-color 0.2s ease',
       }}
+      title="Click to view live diagnostics pipeline"
     >
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
@@ -95,7 +110,7 @@ function AnomalyToast({ entry, diag, isAnalyzing, onOpen, onClose }) {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {isAnalyzing && (
+          {isAnalyzing && progress?.stage !== 'error' && (
             <span className="pulse-alert" style={{
               fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--accent-amber)',
               background: 'var(--bg-card)', border: '1px solid var(--border)',
@@ -117,19 +132,10 @@ function AnomalyToast({ entry, diag, isAnalyzing, onOpen, onClose }) {
       </div>
 
       {/* Content */}
-      {!displayDiag ? (
-        <div className="pulse-alert" style={{ margin: '10px 0' }}>
-          <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
-            Analyzing Telemetry...
-          </div>
-          <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.4 }}>
-            Breach detected on {entry.breachedSensors.join(', ') || 'sensors'}. AI diagnostic agent is generating a root-cause report...
-          </div>
-        </div>
-      ) : (
+      {diag ? (
         <div>
           <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8, lineHeight: 1.2 }}>
-            {displayDiag.primary_diagnosis || 'Unclassified failure mode'}
+            {diag.primary_diagnosis || 'Unclassified failure mode'}
           </div>
 
           <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.5, marginBottom: 12 }}>
@@ -161,6 +167,33 @@ function AnomalyToast({ entry, diag, isAnalyzing, onOpen, onClose }) {
             </div>
           </div>
         </div>
+      ) : progress?.stage === 'error' ? (
+        <div style={{ margin: '10px 0' }}>
+          <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--accent-red)', marginBottom: 4 }}>
+            ⚠️ Diagnostic Failed
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.4 }}>
+            {progress.error || 'The diagnostic pipeline encountered an error.'}
+          </div>
+        </div>
+      ) : age > 30000 ? (
+        <div style={{ margin: '10px 0' }}>
+          <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--accent-amber)', marginBottom: 4 }}>
+            ⚠️ Diagnostic Timeout
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.4 }}>
+            The diagnosis request timed out. Please check if the local LLM or Neo4j database is offline.
+          </div>
+        </div>
+      ) : (
+        <div className="pulse-alert" style={{ margin: '10px 0' }}>
+          <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
+            Analyzing Telemetry...
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.4 }}>
+            Breach detected on {entry.breachedSensors.join(', ') || 'sensors'}. {progressText}
+          </div>
+        </div>
       )}
     </div>
   )
@@ -170,12 +203,39 @@ function AnomalyToast({ entry, diag, isAnalyzing, onOpen, onClose }) {
 export default function NotificationAlert() {
   const zones = useRigStore(s => s.zones) || {}
   const diagnostics = useRigStore(s => s.diagnostics) || []
-  const setShowModal = useRigStore(s => s.setShowDiagnosticsModal)
+  const diagProgress = useRigStore(s => s.diagProgress) || {}
+  const hasReceivedData = useRigStore(s => s.hasReceivedData)
+  const preexistingSignatures = useRigStore(s => s.preexistingSignatures) || []
+  const isNotificationsInitialized = useRigStore(s => s.isNotificationsInitialized)
+  const setPreexistingSignatures = useRigStore(s => s.setPreexistingSignatures)
+  const removePreexistingSignature = useRigStore(s => s.removePreexistingSignature)
+  const setNotificationsInitialized = useRigStore(s => s.setNotificationsInitialized)
+
+  // Open the live diagnostics window in a NEW TAB. Anchor to the diagnosis the toast
+  // is currently showing (`shownDiag`) so a click always opens THAT report — not an
+  // older event. While still analyzing (no shown report yet) fall back to the newest
+  // in-flight progress entry for the zone.
+  // (Default window.open keeps `window.opener` so the new tab inherits the session
+  // via authHandoff.js — do NOT add 'noopener' here.)
+  const openLive = (zoneId, shownDiag) => {
+    let eid = shownDiag?.event_id
+    if (!eid) {
+      const matches = Object.values(diagProgress).filter(
+        p => p && (p.zone_id === zoneId || p.zone_id === ZONE_TO_KG[zoneId])
+      )
+      eid = matches.sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0))[0]?.event_id
+    }
+    window.open(eid ? `/diagnostics/${eid}` : '/diagnostics', '_blank')
+  }
 
   // Signatures the user has dismissed (per breach instance, keyed by signature).
   const [dismissed, setDismissed] = useState({})
   // Per-zone analyzing/ready bookkeeping: { [zoneId]: { signature, startedAt, isReady } }.
   const [anomalyStates, setAnomalyStates] = useState({})
+  // When this component mounted. A diagnostic whose timestamp predates this is a
+  // pre-existing report for an ongoing breach (e.g. the page was refreshed) — show
+  // it immediately rather than a bogus "Analyzing…".
+  const mountedAt = useRef(Date.now())
 
   // Every zone that currently has a real sensor breach (NOT just .find — all of them).
   const activeList = useMemo(() => {
@@ -196,16 +256,32 @@ export default function NotificationAlert() {
     return list
   }, [zones])
 
+  // Track standing breaches at connection initialization so they are not toasted
+  useEffect(() => {
+    if (!hasReceivedData) return
+
+    if (!isNotificationsInitialized) {
+      const sigs = activeList.map(a => a.signature)
+      setPreexistingSignatures(sigs)
+      setNotificationsInitialized(true)
+      console.log('[NotificationAlert] Initialized global pre-existing anomaly signatures:', sigs)
+    } else {
+      // Reconcile preexistingSignatures: if a signature is no longer present in activeList,
+      // we remove it from the global store so that if a new breach occurs later
+      // with the same signature, it correctly triggers a notification toast.
+      const currentActiveSigs = new Set(activeList.map(a => a.signature))
+      for (const sig of preexistingSignatures) {
+        if (!currentActiveSigs.has(sig)) {
+          removePreexistingSignature(sig)
+          console.log('[NotificationAlert] Cleared pre-existing signature:', sig)
+        }
+      }
+    }
+  }, [hasReceivedData, activeList, preexistingSignatures, isNotificationsInitialized, setPreexistingSignatures, removePreexistingSignature, setNotificationsInitialized])
+
   // Reconcile analyzing state for each active zone. The store updates ~10Hz, so this
   // effect re-runs often enough to flip "Analyzing…" → ready once a report arrives
-  // (or after a 15s fallback). Functional update returns the same ref when unchanged,
-  // so there's no render loop.
-  //
-  // STALENESS RULE: when the breach signature changes (e.g. {temp,vib} → {vib}), the
-  // previous report is by definition stale, even if its triggered_sensors is still a
-  // SUPERSET of the new breached set. We never accept a diagnostic that was published
-  // before this signature started — only fresh ones (timestamp >= startedAt, with a
-  // small clock-skew slack). The 15s fallback still applies if no fresh diag arrives.
+  // (or after a 30s fallback).
   useEffect(() => {
     setAnomalyStates(prev => {
       const next = {}
@@ -213,25 +289,36 @@ export default function NotificationAlert() {
       for (const a of activeList) {
         const diag = findDiag(diagnostics, a.zoneId)
         const reportSensors = diag?.triggered_sensors || []
-        // Exact match (not superset): the report's triggered sensors equal the
-        // currently-breached ones. Prevents a stale "temp+vib" report from being
-        // accepted as the diagnosis for a current "vib only" breach.
         const matchesExactly = reportSensors.length === a.breachedSensors.length &&
           a.breachedSensors.every(s => reportSensors.includes(s))
+        
         const cur = prev[a.zoneId]
+        const startedAt = cur ? cur.startedAt : Date.now()
+        
+        const diagTime = diag?.timestamp ? new Date(diag.timestamp).getTime() : 0
+        const fresh = diag && matchesExactly && diagTime >= startedAt - 1500
+        const ongoingAtLoad = startedAt - mountedAt.current < 6000
+        const preexisting = diag && matchesExactly && diagTime > 0 &&
+          diagTime < mountedAt.current && ongoingAtLoad
+        
+        // Find progress report as well to help determine readiness
+        const matches = Object.values(diagProgress).filter(
+          p => p && (p.zone_id === a.zoneId || p.zone_id === ZONE_TO_KG[a.zoneId])
+        )
+        const latestProg = matches.sort((x, y) => (y.updated_at || 0) - (x.updated_at || 0))[0]
+        const progReport = latestProg?.report
+        const progReportTime = progReport?.timestamp ? new Date(progReport.timestamp).getTime() : 0
+        const progFresh = progReport && progReportTime >= startedAt - 1500
+
         if (!cur || cur.signature !== a.signature) {
-          // New signature → don't pre-accept any cached diag (even an exact-match one),
-          // because we can't yet know if it was published in response to THIS state.
-          // The next reconciler tick will accept it once `diag.timestamp >= startedAt`.
-          next[a.zoneId] = { signature: a.signature, startedAt: Date.now(), isReady: false }
+          const isReady = !!(fresh || preexisting || progFresh)
+          next[a.zoneId] = { signature: a.signature, startedAt, isReady }
           changed = true
         } else {
           let isReady = cur.isReady
           if (!isReady) {
             const age = Date.now() - cur.startedAt
-            const diagTime = diag?.timestamp ? new Date(diag.timestamp).getTime() : 0
-            const fresh = diag && matchesExactly && diagTime >= cur.startedAt - 1500
-            if (fresh || age > 15000) isReady = true
+            if (fresh || preexisting || progFresh || age > 30000) isReady = true
           }
           next[a.zoneId] = { ...cur, isReady }
           if (isReady !== cur.isReady) changed = true
@@ -239,9 +326,15 @@ export default function NotificationAlert() {
       }
       return changed ? next : prev
     })
-  }, [activeList, diagnostics])
+  }, [activeList, diagnostics, diagProgress])
 
-  const visible = activeList.filter(a => !dismissed[a.signature])
+  const visible = activeList.filter(a => {
+    if (dismissed[a.signature]) return false
+    const tracked = anomalyStates[a.zoneId]
+    if (!tracked || tracked.signature !== a.signature) return false
+    if (preexistingSignatures.includes(a.signature)) return false
+    return true
+  })
   if (visible.length === 0) return null
 
   return (
@@ -261,23 +354,38 @@ export default function NotificationAlert() {
         const diag = findDiag(diagnostics, entry.zoneId)
         const tracked = anomalyStates[entry.zoneId]
         const signatureKnown = tracked && tracked.signature === entry.signature
-        // Exact-match (not superset) + freshness (arrived after the breach started):
-        // both guards must hold to accept the cached diag as the live notification.
-        // This is what prevents a stale "temp+vib" report from being shown when the
-        // current breach is just "vib".
+        
         const reportSensors = diag?.triggered_sensors || []
         const matchesExactly = reportSensors.length === entry.breachedSensors.length &&
           entry.breachedSensors.every(s => reportSensors.includes(s))
         const diagTime = diag?.timestamp ? new Date(diag.timestamp).getTime() : 0
         const fresh = signatureKnown && matchesExactly && diagTime >= tracked.startedAt - 1500
-        const isAnalyzing = !(signatureKnown && (tracked.isReady || fresh))
+        const preexisting = signatureKnown && matchesExactly && diagTime > 0 &&
+          diagTime < mountedAt.current && (tracked.startedAt - mountedAt.current < 6000)
+
+        // Find progress report
+        const matches = Object.values(diagProgress).filter(
+          p => p && (p.zone_id === entry.zoneId || p.zone_id === ZONE_TO_KG[entry.zoneId])
+        )
+        const latestProg = matches.sort((x, y) => (y.updated_at || 0) - (x.updated_at || 0))[0]
+        const progReport = latestProg?.report
+        const progReportTime = progReport?.timestamp ? new Date(progReport.timestamp).getTime() : 0
+        const progFresh = signatureKnown && progReport && progReportTime >= tracked.startedAt - 1500
+
+        const activeDiag = (fresh || preexisting) ? diag : (progFresh ? progReport : null)
+        const isAnalyzing = !activeDiag
+
+        const age = tracked ? Date.now() - tracked.startedAt : 0
+
         return (
           <AnomalyToast
             key={entry.zoneId}
             entry={entry}
-            diag={fresh || tracked?.isReady ? diag : null}
+            diag={activeDiag}
             isAnalyzing={isAnalyzing}
-            onOpen={() => setShowModal(true)}
+            progress={latestProg}
+            age={age}
+            onOpen={() => openLive(entry.zoneId, activeDiag)}
             onClose={() => setDismissed(prev => ({ ...prev, [entry.signature]: true }))}
           />
         )
