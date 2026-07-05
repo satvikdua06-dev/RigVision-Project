@@ -1,270 +1,187 @@
 # RigVision-3D
-> **Real-time 3D Digital Twin Monitoring System for Industrial Drilling Rigs**
 
-RigVision-3D is an industrial browser-based interactive dashboard designed for real-time safety, environmental, and asset monitoring on drilling rigs. The system fuses a CAD-derived 3D procedural model of the rig with live multi-camera computer vision feeds and IoT sensor data into a unified digital twin.
-
-Developed by a team of 4 B.Tech students from **LNMIIT, Jaipur (Communication and Computer Engineering)** during an 8-week summer engineering internship at **the core organization** (May–July 2026).
+A 3D dashboard for monitoring an RigVision drilling rig from a browser. The site shows the rig as an interactive 3D model and overlays it with live camera feeds, sensor readings, and safety alerts.
 
 ---
 
-## 🌟 Core System Pillars
+## Why we built this
 
-### 1. 3D Digital Twin & Visualization
-* **Procedural 3D Model**: Rendered directly in-browser using Three.js, React (@react-three/fiber), and @react-three/drei based on the layout defined in `cad/zone_definitions.json`. Represents a 10m × 5m × 3m rig area consisting of Room A (4x5m), a Corridor (2x2m), and Room B (4x5m).
-* **Translucent Bounding Boxes**: Spatial zones dynamically shift colors depending on state: **Green** (Normal), **Amber** (Warning), and **Red** (Critical Violation/Danger).
-* **Interactive Controls**: Features three camera view modes:
-  * `OrbitControls` (Default free-look camera)
-  * `PointerLockControls` (First-person walk-through of the rig)
-  * `MapControls` (Orthographic top-down map view)
-* Clickable asset models with real-time metadata popups.
+Drilling rigs are noisy, hazardous places. A control-room operator usually has to watch many separate screens CCTV grids, sensor charts, PPE compliance logs to know what's happening.
 
-### 2. Multi-Camera Computer Vision Pipeline
-* **YOLOv8 Object Detection**: Detects persons and PPE items (hard hats, vests, safety goggles) in one feed-forward pass. Optimized for GPU hardware acceleration on an RTX 4070.
-* **Persistent Local Tracking**: Uses a native local implementation of `BoT-SORT` (with Kalman filtering and linear sum assignment) to maintain individual person identities per camera view.
-* **Cross-Camera Matching**: Re-identifies individuals across different cameras using Hue-Saturation color histograms (Bhattacharyya distance comparison), linking them under a unified global ID.
-* **DLT Triangulation**: Converts matching 2D pixel coordinates of person foot points from multiple cameras into precise 3D coordinates relative to the Room A origin.
-
-### 3. IoT Sensor Ingestion & Anomaly Detection
-* **Sensor Metrics**: Ingests Temperature (°C), Vibration (g RMS), Noise (dB), Gas Concentration (H₂S ppm), and Pressure (psi).
-* **MQTT Transport**: Real-time communication handled by the `EMQX Broker` at ~1Hz.
-* **Anomaly Engine**: Scans incoming sensor data against hardcoded safety thresholds and a running statistical baseline (Z-score > 3σ) to flag anomalous events.
-
-### 4. Safety & Compliance Engine
-* **Compliance Auditor**: Runs safety audits every 2 seconds matching the current state of zones against YAML rules.
-* **Rule Definitions**: Enforces PPE requirements, occupancy limits (e.g., maximum 3 people in Room A), and environmental boundaries.
-* **Auditing Logs**: Logs all violations directly to PostgreSQL with matching timestamped frames as evidence.
-
-### 5. Knowledge Graph & RAG Reasoning
-* **Neo4j Graph Database**: Maps relationships between `Zones`, `Equipment`, `Sensors`, `FailureModes`, `Symptoms`, and `Procedures`.
-* **LLM Assistant**: A retrieval-augmented generation (RAG) pipeline that retrieves Cypher queries from Neo4j and vector indices from ChromaDB to diagnose root causes of failures and suggest procedures via Gemini / Claude.
+RigVision-3D puts all of that into a single 3D view of the rig itself. The operator sees the rig, the people inside it, and the sensor status in one place. If something goes wrong, the system explains *what* is wrong and *what to do about it* in plain language.
 
 ---
 
-## 🏗️ System Architecture
+## What it does
 
-```
-                               ┌──────────────────────────┐
-                               │  3x Phone RTSP Cameras   │
-                               └─────────────┬────────────┘
-                                             │ (DroidCam stream)
-                                             ▼
-┌──────────────────────┐       ┌──────────────────────────┐
-│  IoT Sensors (MQTT)  │       │   YOLOv8 + BoT-SORT CV   │
-└──────────┬───────────┘       └─────────────┬────────────┘
-           │ (EMQX Broker)                   │ (Triangulation & Color Match)
-           ▼                                 ▼
-┌─────────────────────────────────────────────────────────┐
-│              Redis Cache & Data Contracts               │
-│     - rigvision:persons   - rigvision:zones             │
-└────────────────────────────┬────────────────────────────┘
-                             │
-                             ▼
-               ┌──────────────────────────┐
-               │    FastAPI Backend       │
-               │ (WebSockets & REST API)  │
-               └─────────────┬────────────┘
-                             │
-                             ▼
-               ┌──────────────────────────┐
-               │  React + Three.js UI     │
-               │  (Digital Twin Canvas)   │
-               └──────────────────────────┘
-```
+**3D view of the rig.** The whole rig is modelled in the browser using Three.js. The operator can orbit around it, walk through it, or look at it from the top. Each room is a colored zone green when normal, amber when something is concerning, red when it's serious.
 
-### Stack Components
-* **Frontend**: React 18, Zustand, Vite, TailwindCSS (if configured), Three.js (@react-three/fiber)
-* **Backend API**: FastAPI, Uvicorn
-* **CV pipeline**: OpenCV, PyTorch, Ultralytics YOLOv8
-* **Databases**: PostgreSQL (with TimescaleDB), Neo4j 5.x, ChromaDB
-* **Caching & Brokers**: Redis 7, EMQX (MQTT)
+**Live person tracking.** Four cameras (two per room) watch the rig. The system detects workers, follows them across cameras, and shows each one as an avatar standing in the correct spot in the 3D model.
+
+**PPE detection.** For every worker on screen, the system checks whether they're wearing a hard hat, safety vest, and goggles. Missing gear shows up immediately in the side panel.
+
+**Sensor monitoring.** Each room has temperature, vibration, noise, gas (H₂S), and pressure sensors. Their current values colour the room and feed a separate Sensor Console (a second page where you can also push test values).
+
+**AI reasoning for anomalies.** When a reading goes out of range, the operator can click "Run Diagnostics". The system looks up the relevant equipment manual, queries a knowledge graph for related failure modes, and passes everything to a local LLM. The LLM replies with a short explanation: likely cause, suggested action, and a confidence score.
 
 ---
 
-## 📂 Project Structure
+## Architecture
 
-```
-RigVision/
-├── cv/                  # Computer vision detection, tracking, and camera calibration
-│   ├── calibration/     # Checkerboard tools and camera configs
-│   ├── detection/       # YOLOv8 Person & PPE detectors
-│   ├── tracking/        # BoT-SORT tracker + cross-camera matching & triangulation
-│   └── pipeline.py      # Entry point for live, video, and demo modes
-├── backend/             # FastAPI REST and WebSockets server
-├── frontend/            # React + Three.js digital twin dashboard
-├── sensors/             # IoT simulators, EMQX MQTT clients, and Compliance Engine
-├── knowledge/           # Neo4j graph schemas, Cypher scripts, and LLM RAG pipelines
-├── contracts/           # Shared Redis schemas and data validation contracts
-├── cad/                 # zone_definitions.json laying out coordinates and zones
-├── infra/               # TimescaleDB and local database init SQL files
-└── Makefile             # Command shortcut definitions
-```
+[View the full pipeline diagram →](https://excalidraw.com/#json=2VaPHIh9iJR5x3oa9L2LB,BCY4lSp5uUsJrcMfZiQdyw)
 
 ---
 
-## 📝 Redis Data Contracts
+## Screenshots
 
-The pipeline writes to three key Redis values:
+### 1. Login
 
-### 1. `rigvision:persons` (CV -> Redis at ~10Hz)
-Stores coordinates of all tracked persons in meters relative to Room A's origin ($Y$ is up).
-```json
-[
-  {
-    "id": 1,
-    "x": 3.20,
-    "y": 0.05,
-    "z": 2.50,
-    "zone": "zone_a",
-    "posture": "standing",
-    "ppe": {
-      "hardhat": true,
-      "vest": false,
-      "goggles": false
-    },
-    "confidence": 0.94,
-    "cameras_visible": 2
-  }
-]
-```
+![Login](docs/screenshots/login.jpeg)
 
-### 2. `rigvision:zones` (Sensor Engine -> Redis at ~1Hz)
-Combines CV occupant statistics with physical sensor values.
-```json
-{
-  "zone_a": {
-    "status": "warning",
-    "temperature": 28.3,
-    "vibration": 1.2,
-    "noise": 72.0,
-    "gas_h2s": 0.5,
-    "person_count": 2,
-    "ppe_violations": ["vest"],
-    "updated_at": 1716969600
-  }
-}
-```
+*The entry point. Authentication is handled by the Express + MongoDB service in `auth-rig/`, which issues a JWT cookie. Demo credentials are shown for evaluators.*
 
-### 3. `rigvision:violations:latest` (Compliance Engine -> Redis)
-```json
-[
-  {
-    "id": "v-001",
-    "rule_id": "PPE-001",
-    "zone": "zone_b",
-    "severity": "HIGH",
-    "message": "Person #3 missing hard hat",
-    "person_ids": [3],
-    "timestamp": 1716969600
-  }
-]
-```
+### 2. Live Monitor (Main View)
+
+![Live monitor](docs/screenshots/live-monitor.jpeg)
+
+*After signing in, the operator lands on the 3D dashboard. The rig sits in the centre, the left panel shows the tracked person's details and PPE status, and the right panel exposes scene controls floor filter, wall opacity, and click targets.*
+
+### 3. Zones view (sensor status per room)
+
+![Zones view](docs/screenshots/zones-view.jpeg)
+
+*Switching the left panel to "Zones" lists each room's live sensor values (H₂S, noise, pressure, temperature, vibration) with their warning and critical thresholds. Status colours follow the values in real time.*
+
+### 4. Personnel view (live camera feeds)
+
+![Personnel and live feed](docs/screenshots/personnel-feed.jpeg)
+
+*Clicking a person opens their detail card on the right with both camera feeds. YOLO bounding boxes are drawn around the worker in each feed, and the ArUco markers visible on the floor and walls are what anchor the cameras to the real room coordinates.*
+
+### 5. PPE proof snapshot
+
+![PPE proof](docs/screenshots/ppe-proof.jpeg)
+
+*Clicking "Proof" on a PPE violation opens the exact frame the system flagged. The red bounding box marks the person who triggered the alert, with the missing item (here, "2_hat") and the timestamp in the header.*
+
+### 6. Sensor Console
+
+![Sensor Console](docs/screenshots/sensor-console.jpeg)
+
+*The standalone Sensor Console runs on port 5174. Each slider drives one sensor's value; "Send to Redis" commits the change, and "Run Diagnostics" triggers the AI pipeline against the current readings. Used for testing without real hardware.*
+
+### 7. AI diagnostics Pop Up
+
+![AI diagnostics](docs/screenshots/ai-diagnostics.jpeg)
+
+*Once a zone goes critical, the LLM produces a short root-cause report — a diagnosis, immediate action steps, and a repair procedure that cites the exact equipment manual section. The summary appears as a toast and the full report opens in a modal.*
+
+### 8. Incident Response Hub (full diagnostics history)
+
+![Incident Response Hub](docs/screenshots/incident-hub.jpeg)
+
+*The full diagnostics dashboard. The left rail lists every alert the system has generated. Selecting one opens the full report — the anomalous sensor snapshot, the Neo4j query that pulled related failure modes, and the LLM's reasoning that arrived at the diagnosis with a confidence score.*
 
 ---
 
-## 🚀 Setup & Execution Guide
+## Tech stack
 
-### 1. Prerequisites
-Ensure you have the following installed on your machine:
-* Python 3.11+
-* Node.js 18+
-* Docker Desktop (Windows)
-* Visual Studio Build Tools (with C++ Desktop development for compiling dependencies like `lap` on Windows)
+**Frontend (Dashboard + Sensor Console)**
+React 19, Vite, TailwindCSS, React Router, Zustand
+Three.js, @react-three/fiber, @react-three/drei
+Recharts, Lucide React
 
-### 2. Infrastructure Setup
-Spin up the local services (Postgres, TimescaleDB, Neo4j, Redis, EMQX) using Docker:
-```powershell
-# In the root project directory:
-make up
-```
-To check if the containers are healthy:
-```powershell
-docker ps
-```
+**Backend API**
+FastAPI, Uvicorn, Pydantic, Python 3.11
 
-### 3. Python and Node.js Dependencies
-Install all package dependencies for the backend, CV pipeline, and frontend dashboard:
-```powershell
-make install
-```
+**Authentication**
+Node.js, Express, MongoDB, JWT, bcrypt
 
-### 4. Running the Dashboard (Demo / Simulation Mode)
-You can run the digital twin using simulated demo inputs in three separate terminals:
+**Computer vision**
+YOLOv8L (Ultralytics), PyTorch + CUDA
+BoT-SORT tracker (Kalman)
+OpenCV for calibration, ArUco markers, triangulation
 
-* **Terminal 1: Start Backend Server**
-  ```powershell
-  make backend
-  ```
-* **Terminal 2: Run CV Pipeline in Simulation**
-  ```powershell
-  make cv-demo
-  ```
-* **Terminal 3: Run Frontend Dashboard**
-  ```powershell
-  make frontend
-  ```
-Open your browser and navigate to **[http://localhost:3000](http://localhost:3000)**.
+**Sensor + diagnostics**
+Redis (live state), Apache Kafka (alerts bus)
+PostgreSQL + TimescaleDB (history)
+Neo4j (knowledge graph), ChromaDB (vector search)
+Google Gemini (embeddings), LM Studio (local LLM for answers)
+
+**Infrastructure**
+Docker Compose for Redis, Postgres, Neo4j, Kafka, ChromaDB
 
 ---
 
-## 📷 Live Mode & Camera Calibration
+## Running it locally
 
-RigVision-3D uses phone cameras (DroidCam RTSP feeds) for live video inputs.
+You'll need Docker, Python 3.11, Node.js 20, and LM Studio (for the local LLM).
+An NVIDIA GPU is recommended for live camera mode, demo mode runs on CPU.
 
-### 1. Camera Calibration (One-time Intrinsic setup)
-To ensure accurate DLT triangulation of coordinates, you must calibrate the distortion parameters of your phone cameras:
-1. Generate and print the ArUco calibration checkerboard:
-   ```powershell
-   cd cv/calibration
-   python generate_aruco.py --checkerboard
-   ```
-2. Run the calibration script pointing to your camera's RTSP feed (place the checkerboard in view of the camera at different distances and orientations):
-   ```powershell
-   python calibrate_intrinsic.py --camera rtsp://IP_ADDRESS:4747/video --output configs/camera_0.json
-   ```
-   *Repeat this step for all three cameras.*
+**1. Clone and set up environment variables**
 
-### 2. Executing Live Pipeline
-Run the CV pipeline with the calibrated camera RTSP URLs:
-```powershell
-cd cv
-python pipeline.py --mode live --cameras rtsp://IP_ADDRESS_0:4747/video rtsp://IP_ADDRESS_1:4747/video rtsp://IP_ADDRESS_2:4747/video
+```bash
+git clone https://github.com/satvikdua06-dev/RigVision.git RigVision
+cd RigVision
+cp .env.example .env
 ```
 
-### 3. Running Pre-recorded Video Feeds
-To run the pipeline using pre-recorded video tracks for validation:
-```powershell
-cd cv
-python pipeline.py --mode video --cameras path/to/vid0.mp4 path/to/vid1.mp4
-```
-*Note: Video mode automatically leverages your **RTX 4070 GPU** (`device=cuda:0`) for accelerated inference and matches overlapping frames using HSV color histograms.*
-*You can override the target device manually using:*
-```powershell
-python pipeline.py --mode video --cameras path/to/vid0.mp4 --device cpu
+Edit `.env` and fill in the camera URLs, your Gemini API key, or the LM Studio model name.
+
+**2. Start the infrastructure**
+
+```bash
+docker compose up -d
 ```
 
----
+This brings up Redis, PostgreSQL, Neo4j, Kafka, and ChromaDB.
 
-## 🧪 Pipeline Diagnostics
+**3. Seed the knowledge graph**
 
-Verify imports and linear sum math calculations by running:
-```powershell
-cd cv
-python -c "from tracking.tracker import PersonTracker; print('PersonTracker import OK')"
+```bash
+cd knowledge
+python -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+python graph/seed_graph.py
 ```
 
-To run mathematical tests for bounding box IoU and assignment algorithms:
-```powershell
-python -c "
-import numpy as np
-from tracking.botsort import matching
-class FakeTrack:
-    def __init__(self, tlbr): self.tlbr = np.array(tlbr)
-a = [FakeTrack([0,0,10,10])]
-b = [FakeTrack([5,5,15,15])]
-d = matching.iou_distance(a, b)
-print(f'IoU Distance: {d[0,0]:.3f} (expected ~0.857)')
-cost = np.array([[0.1, 0.9],[0.9, 0.2]])
-m, ua, ub = matching.linear_assignment(cost, thresh=0.5)
-print(f'Matches: {m}, unmatched_a: {ua}, unmatched_b: {ub}')
-"
+**4. Install the backend and CV pipeline**
+
+```bash
+# Backend
+cd backend
+python -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+
+# CV (PyTorch with CUDA first)
+cd ../cv
+python -m venv ven && source ven/bin/activate
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+pip install -r requirements.txt
 ```
+
+**5. Start the auth service**
+
+```bash
+cd auth-rig
+npm install
+npm run dev
+```
+
+**6. Run everything**
+
+Open one terminal per process:
+
+```bash
+python backend/main.py                              # FastAPI on :8000
+python cv/pipeline.py --mode demo                   # demo people, no cameras needed
+python knowledge/extraction/anomaly_listener.py     # diagnostics worker
+
+cd frontend && npm install && npm run dev           # dashboard on :5173
+cd frontend && npm run dev:sensors                  # sensor console on :5174
+```
+
+**7. Open the dashboard**
+
+Go to `http://localhost:5173`, sign in, and you should see the 3D rig.
+`http://localhost:5174` opens the Sensor Console where you can push values and trigger diagnostics.
