@@ -163,15 +163,38 @@ MAX_MJPEG_STREAMS = 10
 async def redis_to_websocket_bridge():
     r = get_redis()
     _prev_hash = None
+    # Track last seen status per zone so we only auto-diagnose on transitions.
+    _last_zone_statuses: Dict[str, str] = {}
     while True:
         try:
+            p_raw, z_raw, d_raw, ppe_raw = await asyncio.gather(
+                r.get("rigvision:persons"),
+                r.get("rigvision:zones"),
+                r.get("rigvision:diagnostics"),
+                r.get("rigvision:ppe:latest"),
+            )
+
+            # Auto-diagnose when any zone newly enters warning/critical.
+            # dedup=True means a standing breach (same severity + sensors) is only
+            # published once; it re-fires only when the breach signature changes.
+            if z_raw:
+                zones_now = json.loads(z_raw)
+                new_breach = False
+                for zid, zstate in zones_now.items():
+                    cur_status = zstate.get("status", "normal")
+                    prev_status = _last_zone_statuses.get(zid, "normal")
+                    if cur_status in ("warning", "critical") and cur_status != prev_status:
+                        new_breach = True
+                    _last_zone_statuses[zid] = cur_status
+                if new_breach:
+                    try:
+                        sensors_raw = await r.get(SENSORS_KEY)
+                        sensors = json.loads(sensors_raw) if sensors_raw else {}
+                        await _evaluate_and_publish(sensors, dedup=True)
+                    except Exception as e:
+                        logger.warning("Auto-diagnose failed: %s", e)
+
             if manager.active_connections:
-                p_raw, z_raw, d_raw, ppe_raw = await asyncio.gather(
-                    r.get("rigvision:persons"),
-                    r.get("rigvision:zones"),
-                    r.get("rigvision:diagnostics"),
-                    r.get("rigvision:ppe:latest"),
-                )
                 cur_hash = hash((p_raw, z_raw, d_raw, ppe_raw))
                 if cur_hash != _prev_hash:
                     _prev_hash = cur_hash
