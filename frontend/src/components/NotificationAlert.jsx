@@ -29,6 +29,18 @@ function sensorsBreached(zone) {
   return out
 }
 
+// Parse the pipeline's warning_reason string to identify the trigger.
+// Handles: "temperature 54.0°C >= warning (60) [temp_a]"  → ['temperature']
+//           "2 PPE violation(s)"                           → ['PPE']
+//           "Overcrowded: 4/3 persons"                     → ['occupancy']
+function parseWarningReason(reason) {
+  if (!reason) return ['sensors']
+  if (/ppe/i.test(reason)) return ['PPE']
+  if (/overcrowd/i.test(reason)) return ['occupancy']
+  const m = reason.match(/^(\w+)\s/)
+  return m ? [m[1]] : ['sensors']
+}
+
 function findDiag(diagnostics, zoneId) {
   return diagnostics.find(
     d => d && (d.zone_id === zoneId || (ZONE_TO_KG[zoneId] && d.zone_id === ZONE_TO_KG[zoneId]))
@@ -170,10 +182,16 @@ export default function NotificationAlert() {
     const list = []
     for (const [zoneId, zone] of Object.entries(zones)) {
       if (!zone || (zone.status !== 'warning' && zone.status !== 'critical')) continue
+      // Prefer sensor_meta threshold check; fall back to warning_reason when resolved
+      // thresholds differ from sensor_meta (e.g. Neo4j limits are tighter).
+      // PPE violations and overcrowding do NOT generate anomaly notifications.
       const breachedSensors = sensorsBreached(zone)
-      if (breachedSensors.length === 0) continue
-      const signature = `${zoneId}:${zone.status}:${breachedSensors.slice().sort().join(',')}`
-      list.push({ zoneId, zone, status: zone.status, breachedSensors, signature })
+      const displaySensors = breachedSensors.length > 0
+        ? breachedSensors
+        : parseWarningReason(zone.warning_reason)
+      if (displaySensors.some(s => s === 'PPE' || s === 'occupancy' || s === 'sensors')) continue
+      const signature = `${zoneId}:${zone.status}:${displaySensors.slice().sort().join(',')}`
+      list.push({ zoneId, zone, status: zone.status, breachedSensors: displaySensors, signature })
     }
     return list
   }, [zones])
