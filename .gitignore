@@ -44,7 +44,7 @@ cv/models/*.engine
 cv/calibration/configs/*.json
 
 # ── Video files (too large for git) ──
-*.mp4
+
 *.avi
 *.mkv
 test_videos/

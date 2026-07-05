@@ -19,23 +19,50 @@ function formatSensorKey(key) {
     .toUpperCase();
 }
 
+const TIME_RANGES = [
+  { value: '10m',  label: 'Last 10 min' },
+  { value: '1h',   label: 'Last hour'   },
+  { value: '6h',   label: 'Last 6 hrs'  },
+  { value: '24h',  label: 'Last 24 hrs' },
+  { value: 'all',  label: 'All time'    },
+]
+
+function cutoffMs(range) {
+  const now = Date.now()
+  if (range === '10m') return now - 10 * 60 * 1000
+  if (range === '1h')  return now - 60 * 60 * 1000
+  if (range === '6h')  return now - 6 * 60 * 60 * 1000
+  if (range === '24h') return now - 24 * 60 * 60 * 1000
+  return 0
+}
+
 export default function DiagnosticsModal() {
   const show = useRigStore(s => s.showDiagnosticsModal)
   const setShow = useRigStore(s => s.setShowDiagnosticsModal)
   const diagnostics = useRigStore(s => s.diagnostics) || []
 
   const [selectedId, setSelectedId] = useState(null)
+  const [timeRange, setTimeRange] = useState('all')
+  // Timestamp before which items are hidden from display (Clear button sets this to now).
+  const [clearedBefore, setClearedBefore] = useState(0)
 
-  // Auto-select first diagnostic when list updates or modal opens
+  // Apply both filters: time window + cleared cutoff.
+  const visibleDiagnostics = diagnostics.filter(d => {
+    const ts = d.timestamp ? new Date(d.timestamp).getTime() : Date.now()
+    return ts >= cutoffMs(timeRange) && ts > clearedBefore
+  })
+
+  // Auto-select first visible diagnostic when list updates or modal opens
   useEffect(() => {
-    if (diagnostics.length > 0 && (!selectedId || !diagnostics.some(d => (d.event_id || d.timestamp) === selectedId))) {
-      setSelectedId(diagnostics[0].event_id || diagnostics[0].timestamp)
+    if (visibleDiagnostics.length > 0 && (!selectedId || !visibleDiagnostics.some(d => (d.event_id || d.timestamp) === selectedId))) {
+      setSelectedId(visibleDiagnostics[0].event_id || visibleDiagnostics[0].timestamp)
     }
-  }, [diagnostics, selectedId, show])
+    if (visibleDiagnostics.length === 0) setSelectedId(null)
+  }, [visibleDiagnostics.length, show])
 
   if (!show) return null
 
-  const selectedDiag = diagnostics.find(d => (d.event_id || d.timestamp) === selectedId) || diagnostics[0]
+  const selectedDiag = visibleDiagnostics.find(d => (d.event_id || d.timestamp) === selectedId) || visibleDiagnostics[0]
 
   const timeAgo = (ts) => {
     const s = Math.floor((Date.now() - ts) / 1000)
@@ -103,13 +130,13 @@ export default function DiagnosticsModal() {
               color: 'var(--text-primary)', letterSpacing: 0.3, display: 'flex', alignItems: 'center', gap: 10
             }}>
               AI-Driven System Diagnostics
-              {diagnostics.length > 0 && (
+              {visibleDiagnostics.length > 0 && (
                 <span style={{
                   background: 'var(--bg-panel)', border: '1px solid var(--border-bright)',
                   color: 'var(--accent-cobalt)', fontSize: 11, padding: '2px 8px', borderRadius: 4,
                   fontFamily: 'var(--font-mono)', letterSpacing: 0
                 }}>
-                  {diagnostics.length} Active Events
+                  {visibleDiagnostics.length} Active Events
                 </span>
               )}
             </div>
@@ -136,23 +163,63 @@ export default function DiagnosticsModal() {
             display: 'flex', flexDirection: 'column', background: 'var(--bg-deep)',
             flexShrink: 0
           }}>
+            {/* Left panel toolbar: time filter + clear */}
             <div style={{
-              padding: '12px 16px', background: 'var(--bg-card)',
-              fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)',
-              borderBottom: '1px solid var(--border)', letterSpacing: 1.5, textTransform: 'uppercase'
+              padding: '10px 12px', background: 'var(--bg-card)',
+              borderBottom: '1px solid var(--border)',
+              display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
             }}>
-              Alert Logs
+              <span style={{
+                fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)',
+                letterSpacing: 1.5, textTransform: 'uppercase', flexShrink: 0,
+              }}>Alert Logs</span>
+              <div style={{ flex: 1 }} />
+              {/* Time range dropdown */}
+              <select
+                value={timeRange}
+                onChange={e => setTimeRange(e.target.value)}
+                style={{
+                  background: 'var(--bg-panel)', border: '1px solid var(--border)',
+                  borderRadius: 4, color: 'var(--text-primary)',
+                  fontFamily: 'var(--font-mono)', fontSize: 10,
+                  padding: '3px 6px', cursor: 'pointer', outline: 'none',
+                  letterSpacing: 0.5,
+                }}
+              >
+                {TIME_RANGES.map(r => (
+                  <option key={r.value} value={r.value}>{r.label}</option>
+                ))}
+              </select>
+              {/* Clear display button */}
+              <button
+                onClick={() => { setClearedBefore(Date.now()); setSelectedId(null) }}
+                title="Hide all current alerts from view (they remain stored)"
+                style={{
+                  background: 'var(--bg-panel)', border: '1px solid var(--border)',
+                  borderRadius: 4, color: 'var(--text-muted)',
+                  fontFamily: 'var(--font-mono)', fontSize: 10,
+                  padding: '3px 8px', cursor: 'pointer', outline: 'none',
+                  transition: 'color 0.15s, border-color 0.15s', letterSpacing: 0.5,
+                  whiteSpace: 'nowrap',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.color = 'var(--accent-red)'; e.currentTarget.style.borderColor = 'var(--accent-red)' }}
+                onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--border)' }}
+              >
+                CLEAR
+              </button>
             </div>
             <div style={{ flex: 1, overflowY: 'auto', padding: 12 }}>
-              {diagnostics.length === 0 ? (
+              {visibleDiagnostics.length === 0 ? (
                 <div style={{
                   textAlign: 'center', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)',
-                  fontSize: 12, padding: '40px 10px'
+                  fontSize: 12, padding: '40px 10px', lineHeight: 1.6
                 }}>
-                  No incident reports logged.
+                  {diagnostics.length > 0 && clearedBefore > 0
+                    ? <>Cleared. {diagnostics.length} stored report{diagnostics.length !== 1 ? 's' : ''} hidden.<br/>Change the time filter to view past events.</>
+                    : 'No incident reports logged.'}
                 </div>
               ) : (
-                diagnostics.map((d, index) => {
+                visibleDiagnostics.map((d, index) => {
                   const uniqueId = d.event_id || d.timestamp || index
                   const isSelected = selectedId === uniqueId
                   const sc = SEVERITY_COLOR[d.severity] || '#46b17f'
