@@ -48,41 +48,49 @@ export default function TopBar() {
       padding: '0 22px', gap: 0, flexShrink: 0,
       userSelect: 'none', position: 'relative', zIndex: 5,
     }}>
-      {/* Left: Logo & Info */}
-      <div style={{ flexShrink: 0, display: 'flex', alignItems: 'baseline', gap: 8 }}>
-        <span style={{
-          fontFamily: 'var(--font-ui)', fontWeight: 700, fontSize: 17,
-          color: 'var(--text-primary)', letterSpacing: 0.5,
-        }}>RIG<span style={{ color: 'var(--accent-cobalt)' }}>VISION</span></span>
-        <span style={{
-          fontFamily: 'var(--font-mono)', fontSize: 9,
-          color: 'var(--text-dim)', letterSpacing: 1, textTransform: 'uppercase'
-        }}>v1.0 · Phase-1</span>
+      {/* Left group: logo + stats — flex:1 so it contracts when viewport is narrow */}
+      <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', overflow: 'hidden' }}>
+        <div style={{ flexShrink: 0, display: 'flex', alignItems: 'baseline', gap: 8 }}>
+          <span style={{
+            fontFamily: 'var(--font-ui)', fontWeight: 700, fontSize: 17,
+            color: 'var(--text-primary)', letterSpacing: 0.5,
+          }}>RIG<span style={{ color: 'var(--accent-cobalt)' }}>VISION</span></span>
+          <span style={{
+            fontFamily: 'var(--font-mono)', fontSize: 9,
+            color: 'var(--text-dim)', letterSpacing: 1, textTransform: 'uppercase'
+          }}>v1.0 · Phase-1</span>
+        </div>
+
+        <div style={{ width: 1, height: 28, background: 'var(--border)', marginLeft: 24, marginRight: 24, flexShrink: 0 }} />
+
+        {/* Telemetry stat chips — shrink when viewport is narrow */}
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', overflow: 'hidden' }}>
+          {stats.map((s, i) => (
+            <div key={i} style={{
+              display: 'flex', flexDirection: 'column', gap: 2,
+              padding: '4px 10px',
+              background: 'rgba(255,255,255,0.03)',
+              border: '1px solid var(--border)',
+              borderRadius: 6,
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04)',
+              minWidth: 44, flexShrink: 1,
+            }}>
+              <div style={{
+                fontFamily: 'var(--font-mono)', fontSize: 8.5, color: 'var(--text-muted)',
+                letterSpacing: 1.5, textTransform: 'uppercase', lineHeight: 1,
+              }}>{s.label}</div>
+              <div style={{
+                fontFamily: 'var(--font-ui)', fontSize: 16, fontWeight: 700,
+                color: s.color, lineHeight: 1.15,
+                transition: 'color 0.3s ease',
+              }}>{s.value}</div>
+            </div>
+          ))}
+        </div>
       </div>
 
-      <div style={{ width: 1, height: 28, background: 'var(--border)', marginLeft: 24, marginRight: 24 }} />
-
-      {/* Middle-Left: Telemetry Stats */}
-      <div style={{ display: 'flex', gap: 32, alignItems: 'center' }}>
-        {stats.map((s, i) => (
-          <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <div style={{
-              fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--text-muted)',
-              letterSpacing: 1.5, textTransform: 'uppercase'
-            }}>{s.label}</div>
-            <div style={{
-              fontFamily: 'var(--font-ui)', fontSize: 20, fontWeight: 600,
-              color: s.color, lineHeight: 1.1
-            }}>{s.value}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Spacer to push controls to the right */}
-      <div style={{ flex: 1 }} />
-
-      {/* Middle-Right: Action Controls Group */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      {/* Right group: actions + user — never shrinks */}
+      <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 12 }}>
         {/* Sensor Console Link */}
         <a
           href="#/sensors"
@@ -165,9 +173,9 @@ export default function TopBar() {
         </button>
       </div>
 
-      <div style={{ width: 1, height: 28, background: 'var(--border)', marginLeft: 20, marginRight: 20 }} />
+      <div style={{ width: 1, height: 28, background: 'var(--border)', marginLeft: 20, marginRight: 20, flexShrink: 0 }} />
 
-      {/* Right: User Menu & System Info */}
+      {/* User Menu & Clock */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexShrink: 0 }}>
         {/* User Profile Menu */}
         {user && (

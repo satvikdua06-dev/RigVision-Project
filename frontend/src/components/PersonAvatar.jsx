@@ -115,14 +115,12 @@ export default function PersonAvatar({ person }) {
           style={{ pointerEvents: 'none' }}
         >
           <div style={{
-            background: 'rgba(18, 22, 29, 0.55)',
-            backdropFilter: 'blur(6px)',
-            WebkitBackdropFilter: 'blur(6px)',
-            border: '1px solid rgba(255,255,255,0.1)',
-            borderRadius: 999, padding: '3px 10px',
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border-solid)',
+            borderRadius: 4, padding: '4px 10px',
             fontFamily: 'var(--font-mono)',
             fontSize: 12, fontWeight: 500,
-            color: 'rgba(230,233,239,0.92)', whiteSpace: 'nowrap',
+            color: 'var(--text-primary)', whiteSpace: 'nowrap',
             display: 'flex', alignItems: 'center', gap: 6,
           }}>
             <span style={{

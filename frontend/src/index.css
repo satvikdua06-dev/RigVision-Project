@@ -129,5 +129,62 @@ input[type="range"]:focus-visible { outline: none; }
 
 @keyframes pulse {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  50% { opacity: 0.45; }
+}
+
+/* StatusBadge — expanding ring + dot pulse */
+@keyframes sb-ring {
+  0%   { transform: scale(0.7); opacity: 0.9; }
+  100% { transform: scale(2.4); opacity: 0;   }
+}
+@keyframes sb-pulse {
+  0%, 100% { opacity: 1;    }
+  50%       { opacity: 0.3; }
+}
+
+/* PipelineBeam — traveling dashes along active segments */
+@keyframes beam-travel {
+  from { stroke-dashoffset: 48; }
+  to   { stroke-dashoffset: 0;  }
+}
+
+/* NotificationAlert — new toasts slide in from the right */
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(22px); }
+  to   { opacity: 1; transform: translateX(0);    }
+}
+
+/* AgentPlanning — steps stagger-fade on mount */
+@keyframes step-fade-in {
+  from { opacity: 0; transform: translateY(5px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+
+/* DiagnosticsLive ReportDetail — numbered sections reveal */
+@keyframes report-step-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+
+/* SubgraphGraph — orbital dashes travel around failure nodes */
+@keyframes orb-dash {
+  from { stroke-dashoffset: 0;    }
+  to   { stroke-dashoffset: -188; }
+}
+
+/* WCAG 2.1 focus visibility for all interactive elements */
+button:focus-visible,
+[role="button"]:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--accent-cobalt);
+  outline-offset: 2px;
+}
+
+/* Honour reduced-motion preference — collapse animations to a single frame */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

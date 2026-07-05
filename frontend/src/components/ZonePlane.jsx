@@ -33,7 +33,6 @@ export default function ZonePlane({ zoneId, zone, staticDef }) {
   const selectPerson  = useRigStore(s => s.selectPerson)
   const selectedZone  = useRigStore(s => s.selectedZone)
   const zoneSelectMode = useRigStore(s => s.zoneSelectMode)
-  const showDiagnosticsModal = useRigStore(s => s.showDiagnosticsModal)
   const isSelected    = selectedZone === zoneId
 
   const col = STATUS_COLORS[zone.status] || STATUS_COLORS.normal
@@ -71,7 +70,7 @@ export default function ZonePlane({ zoneId, zone, staticDef }) {
       </mesh>
 
       {/* Zone label — flat type, no neon text-shadow */}
-      {!showDiagnosticsModal && (
+      {(
         <Html position={[0, 0.15, 0]} center distanceFactor={12}
           style={{ pointerEvents: 'none' }}>
           <div style={{
@@ -93,62 +92,7 @@ export default function ZonePlane({ zoneId, zone, staticDef }) {
         </Html>
       )}
 
-      {/* Hover / selected sensor popup — flat steel card, sharp border */}
-      {isSelected && !showDiagnosticsModal && (
-        <Html position={[0, 1.2, 0]} center distanceFactor={25}
-          style={{ pointerEvents: 'none', width: 195 }}>
-          <div style={{
-            background: 'var(--bg-panel)',
-            border: '1px solid var(--border)',
-            borderLeft: `2px solid ${col.base}`,
-            borderRadius: 6, padding: '10px 13px',
-            fontFamily: 'var(--font-mono)',
-            fontSize: 11, color: 'var(--text-primary)', lineHeight: 1.85,
-          }}>
-            <div style={{
-              fontFamily: 'var(--font-ui)', fontSize: 14, fontWeight: 600,
-              letterSpacing: 0.5, color: col.base, marginBottom: 7,
-              display: 'flex', justifyContent: 'space-between',
-            }}>
-              {zone.status.toUpperCase()}
-              <span style={{ fontSize: 10, color: 'var(--text-muted)', letterSpacing: 1 }}>
-                {zone.person_count}p
-              </span>
-            </div>
-            {[
-              ['🌡', 'Temp', 'temperature', zone.temperature, '°C'],
-              ['💨', 'H₂S',  'gas_h2s',     zone.gas_h2s,    'ppm'],
-              ['📳', 'Vibr', 'vibration',   zone.vibration,  'g'],
-              ['🔊', 'Noise','noise',       zone.noise,       'dB'],
-              ['⚙',  'Pres', 'pressure',    zone.pressure,    'bar'],
-            ].filter(([, , type]) => (zone.sensor_types || ['temperature','gas_h2s','vibration','noise']).includes(type))
-             .map(([icon, lbl, type, val, unit]) => {
-              // Threshold-tint per sensor row: red >= critical, amber >= warning, else
-              // neutral. Limits come from the zone's sensor_meta (same source as the
-              // Sidebar/console), so colors stay consistent across the UI.
-              const meta = zone.sensor_meta?.[type]
-              let valueColor = 'var(--text-primary)'
-              if (val != null && meta) {
-                const isHighCrit = meta.critical != null && val >= meta.critical;
-                const isHighWarn = meta.warning != null && val >= meta.warning;
-                const isLowCrit = meta.critical_low != null && val <= meta.critical_low;
-                const isLowWarn = meta.warning_low != null && val <= meta.warning_low;
-
-                if (isHighCrit || isLowCrit) valueColor = 'var(--accent-red)'
-                else if (isHighWarn || isLowWarn) valueColor = 'var(--accent-amber)'
-              }
-              return (
-                <div key={lbl} style={{ display:'flex', justifyContent:'space-between' }}>
-                  <span style={{ color:'var(--text-muted)' }}>{icon} {lbl}</span>
-                  <span style={{ color: valueColor, fontWeight: valueColor !== 'var(--text-primary)' ? 600 : 400 }}>
-                    {val != null ? `${val} ${unit}` : '—'}
-                  </span>
-                </div>
-              )
-            })}
-          </div>
-        </Html>
-      )}
+      {/* Zone detail popup moved to DOM overlay in App.jsx */}
     </group>
   )
 }
