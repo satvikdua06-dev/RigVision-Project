@@ -129,8 +129,13 @@ export default function ZonePlane({ zoneId, zone, staticDef }) {
               const meta = zone.sensor_meta?.[type]
               let valueColor = 'var(--text-primary)'
               if (val != null && meta) {
-                if (meta.critical != null && val >= meta.critical) valueColor = 'var(--accent-red)'
-                else if (meta.warning != null && val >= meta.warning) valueColor = 'var(--accent-amber)'
+                const isHighCrit = meta.critical != null && val >= meta.critical;
+                const isHighWarn = meta.warning != null && val >= meta.warning;
+                const isLowCrit = meta.critical_low != null && val <= meta.critical_low;
+                const isLowWarn = meta.warning_low != null && val <= meta.warning_low;
+
+                if (isHighCrit || isLowCrit) valueColor = 'var(--accent-red)'
+                else if (isHighWarn || isLowWarn) valueColor = 'var(--accent-amber)'
               }
               return (
                 <div key={lbl} style={{ display:'flex', justifyContent:'space-between' }}>

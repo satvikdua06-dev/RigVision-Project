@@ -22,17 +22,30 @@ const SENSOR_LABELS = {
 
 function SensorBar({ label, value, meta }) {
   const known = value != null && !Number.isNaN(value)
-  const { min = 0, max = 100, warning, critical, unit = '', threshold_source } = meta || {}
-  // Same scale as the Sensor Console: fill across [min, max] (max = critical*1.2).
+  const { min = 0, max = 100, warning, critical, warning_low, critical_low, unit = '', threshold_source } = meta || {}
+  
+  // Calculate percentage fill
   const pct = known ? Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100)) : 0
+  
+  // Evaluate low and high bounds
+  const isHighCrit = critical != null && value >= critical
+  const isHighWarn = warning != null && value >= warning
+  const isLowCrit = critical_low != null && value <= critical_low
+  const isLowWarn = warning_low != null && value <= warning_low
+
   const color = !known ? 'var(--text-dim)'
-    : (critical != null && value >= critical) ? 'var(--accent-red)'
-    : (warning != null && value >= warning) ? 'var(--accent-amber)'
+    : (isHighCrit || isLowCrit) ? 'var(--accent-red)'
+    : (isHighWarn || isLowWarn) ? 'var(--accent-amber)'
     : 'var(--accent-green)'
 
   const level = threshold_source?.level
   const sourceIcon = level === 'device_manual' ? ' ⚙' : level === 'zone_environmental' ? ' ⛨' : ''
-  const tooltip = threshold_source?.reason || (warning != null || critical != null ? `Normal range: [${min}, ${max}]` : '')
+  const tooltip = threshold_source?.reason || 
+    (warning_low != null || critical_low != null 
+      ? `Safe range: >${warning_low ?? critical_low}` 
+      : (warning != null || critical != null ? `Normal range: [${min}, ${max}]` : ''))
+
+  const hasThresholds = warning != null || critical != null || warning_low != null || critical_low != null
 
   return (
     <div style={{ marginBottom: 8 }} title={tooltip}>
@@ -43,9 +56,9 @@ function SensorBar({ label, value, meta }) {
           <span style={{ color: level === 'device_manual' ? 'var(--accent-cobalt)' : 'var(--text-muted)', fontSize: 9 }}>
             {sourceIcon}
           </span>
-          {(warning != null || critical != null) && (
+          {hasThresholds && (
             <span style={{ fontSize: 8.5, color: 'var(--text-dim)', marginLeft: 4 }}>
-              ({warning != null ? `w:${warning}` : '—'}/{critical != null ? `c:${critical}` : '—'})
+              ({warning_low != null ? `wl:${warning_low}` : warning != null ? `w:${warning}` : '—'}/{critical_low != null ? `cl:${critical_low}` : critical != null ? `c:${critical}` : '—'})
             </span>
           )}
         </span>

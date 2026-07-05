@@ -44,7 +44,8 @@ Specifications:
 - Controls: motor starters, BOP control solenoids, emergency stop chain
 
 Section 3.1 — Operating Limits:
-- Hydraulic control line pressure, normal operation: 5 to 16 bar. Alarm at 18 bar. Trip (relief) at 22 bar.
+- Hydraulic control line pressure, normal operation: 5 to 16 bar. High alarm at 18 bar. High trip (relief) at 22 bar. Low alarm at 4 bar. Low-low trip at 2 bar.
+- A low control-line pressure is as dangerous as a high one: below the 4 bar low alarm the BOP control solenoids cannot develop enough force to actuate, and below 2 bar the panel can no longer guarantee closure of the well-control stack.
 - Internal panel air temperature must remain within the ambient room limits; the panel has no independent temperature transmitter.
 
 Section 3.4 — Diagnostics & Failure Modes:
@@ -54,6 +55,8 @@ Section 3.4 — Diagnostics & Failure Modes:
 - Required Action: 'Replace Relief Valve'. Isolate the HPU, verify zero trapped pressure, replace the valve cartridge, and re-certify the set point with a calibrated dead-weight tester.
 3. Panel Overheating (Ventilation Blockage): A clogged dust filter or failed ventilation fan lets the room-side temperature climb around the panel. Sustained ambient temperature above the area warning level near the panel degrades contactor life and can nuisance-trip the starters.
 - Required Action: 'Clear Panel Ventilation and Replace Filter'. De-energize the panel, replace the filter mat, verify fan rotation, and thermal-scan the busbars before returning to service.
+4. Hydraulic Pressure Loss: Control line pressure falling BELOW the 4 bar low alarm — and especially below the 2 bar low-low trip — means the hydraulic power unit is no longer maintaining the control circuit, from a pump failure, a downstream leak, or an open bleed/test port left cracked. With low control pressure the BOP and motor-control solenoids will not hold, so this is a well-control-critical condition, not a nuisance.
+- Required Action: 'Inspect HPU and Restore Hydraulic Supply'. Confirm the HPU pump is running and the accumulator is charged, walk the control lines for leaks, close any open bleed/test ports, and re-pressurize to the 5-16 bar normal band before relying on the panel for well control.
 
 Section 5 — Maintenance Schedule:
 - Monthly: replace ventilation filter mat, exercise the emergency stop chain.
@@ -75,7 +78,7 @@ Specifications:
 Section 5.4 — Operating Limits:
 - Casing temperature, continuous operation: 20C to 58C. Alarm at 58C. Trip at 72C.
 - Frame vibration: 0 to 2.8 g RMS. Alarm at 4.5 g RMS. Trip at 7.0 g RMS.
-- Discharge pressure, rated: 6 to 16 bar. Alarm at 19 bar. Trip at 24 bar.
+- Discharge pressure, rated: 6 to 16 bar. High alarm at 19 bar. High trip at 24 bar. Low alarm at 5 bar. Low trip at 3 bar.
 
 Section 5.6 — Diagnostics & Failure Modes:
 1. Motor Burnout: If casing temperature exceeds the 58C alarm AND frame vibration exceeds 4.5 g RMS, the drive motor windings are overheating under mechanical load. Past the 72C trip point the winding insulation fails permanently and the rotor may seize.
@@ -84,6 +87,8 @@ Section 5.6 — Diagnostics & Failure Modes:
 - Required Action: 'Replace Valve Plate Assembly'. Inspect the unloader mechanism and replace the head gasket while the head is off.
 3. Bearing Wear: Frame vibration alone climbing past 4.5 g RMS, with temperature and discharge pressure inside normal limits, indicates progressive main bearing wear. The vibration spectrum shows a characteristic 2x running-speed component.
 - Required Action: 'Replace Bearings'. Re-grease to specification and verify shaft end-float after replacement.
+4. Discharge Pressure Loss: Discharge pressure falling BELOW the 5 bar low alarm (and toward the 3 bar low trip) while the motor runs normally indicates the compressor is failing to build pressure — typically a clogged intake filter, an unloader valve stuck open, or a downstream leak. Casing temperature and vibration usually stay near normal, which distinguishes this from a mechanical failure.
+- Required Action: 'Inspect Intake and Unloader'. Check and clear the intake filter, verify the unloader/pilot is seating, and walk the discharge line for leaks before reloading the machine.
 
 Section 7 — Maintenance Schedule:
 - Daily: drain receiver condensate, check oil level.
@@ -127,7 +132,7 @@ Section 2 — Area Limits:
 - Ambient air temperature: 18C to 45C normal. Warning at 48C. Critical at 60C (heat-stress evacuation).
 - H2S concentration, general area: 0 to 5 ppm normal. Warning at 10 ppm. Critical at 15 ppm (mandatory evacuation, OSHA ceiling).
 - Continuous noise exposure: 40 to 85 dB normal. Warning at 95 dB. Critical at 105 dB (double hearing protection plus time limits).
-- Service line pressure in occupied areas: 5 to 15 bar normal. Warning at 20 bar. Critical at 25 bar.
+- Service line pressure in occupied areas: 5 to 15 bar normal. High warning at 20 bar. High critical at 25 bar. Low warning at 4 bar. Low critical at 2 bar (loss of service supply).
 - Structural vibration in occupied areas: 0 to 2.5 g RMS normal. Warning at 5.0 g RMS. Critical at 8.0 g RMS.
 
 Section 3 — Area Hazard Responses:
@@ -141,3 +146,5 @@ Section 3 — Area Hazard Responses:
 - Required Action: 'Stop Equipment and Inspect Structure'. Identify and stop the offending machine, then inspect anchor bolts, skid welds, and grating before restart.
 5. Service Line Overpressure: Area service line pressure above the 20 bar warning level exceeds the rating of utility hoses and quick-connects in occupied areas.
 - Required Action: 'Isolate and Depressurize Service Line'. Close the upstream isolation valve, bleed the line to a safe location, and verify the regulator set point before restoring supply.
+6. Service Line Pressure Loss: Area service line pressure falling below the 4 bar low warning (toward the 2 bar low critical) indicates a service-line leak or an upstream supply failure, which can starve safety-critical utilities (purge air, flushing, instrument supply) in the occupied zone.
+- Required Action: 'Isolate and Investigate Pressure Loss'. Isolate the affected branch, walk the line for leaks and open drains, confirm the upstream regulator and supply are intact, and restore the 5-15 bar normal band before relying on the service.

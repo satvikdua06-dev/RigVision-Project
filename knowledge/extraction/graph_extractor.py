@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import threading
 from neo4j import GraphDatabase
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -15,10 +16,44 @@ class SubgraphExtractor:
         user = os.environ.get("NEO4J_USER", "neo4j")
         password = os.environ.get("NEO4J_PASSWORD", "rigvision_neo4j")
         self.driver = GraphDatabase.driver(uri, auth=(user, password))
+        # Topology (equipment + spatial connectivity) doesn't depend on the alert,
+        # so it's resolved once and reused across messages. Cleared on close();
+        # restart the listener after re-seeding the graph to pick up changes.
+        # Lock-guarded because the listener shares one extractor across worker threads.
+        self._topology_cache = None
+        self._topology_lock = threading.Lock()
 
     def close(self):
         """Closes the database connection cleanly."""
+        self._topology_cache = None
         self.driver.close()
+
+    def _get_topology(self, session) -> tuple:
+        """Returns (conn_lines, spatial_lines) — the zone-independent inter-equipment
+        and spatial connectivity. Computed once and cached for the driver's lifetime."""
+        if self._topology_cache is not None:
+            return self._topology_cache
+
+        with self._topology_lock:
+            if self._topology_cache is not None:
+                return self._topology_cache
+            return self._compute_topology(session)
+
+    def _compute_topology(self, session) -> tuple:
+        conn_records = session.run("""
+            MATCH (d1:Device)-[r:CONTROLS|FEEDS|SUPPLIES_AIR_TO]->(d2:Device)
+            RETURN d1.name AS src, type(r) AS rel, d2.name AS dst
+        """)
+        conn_lines = [f"- '{r['src']}' {r['rel']} '{r['dst']}'" for r in conn_records]
+
+        spatial_records = session.run("""
+            MATCH (z1:Zone)-[r:CONNECTS_TO]->(z2:Zone)
+            RETURN z1.name AS src, type(r) AS rel, z2.name AS dst
+        """)
+        spatial_lines = [f"- '{r['src']}' {r['rel']} '{r['dst']}'" for r in spatial_records]
+
+        self._topology_cache = (conn_lines, spatial_lines)
+        return self._topology_cache
 
     # Device failures: suspects are equipment in the zone whose failure modes are
     # indicated by at least one triggered sensor type; fetch the FULL expected
@@ -80,19 +115,8 @@ class SubgraphExtractor:
                         f"  - Protocol: {actions_str}\n"
                     )
 
-                # 3. Retrieve and format inter-equipment connectivity
-                conn_records = session.run("""
-                    MATCH (d1:Device)-[r:CONTROLS|FEEDS|SUPPLIES_AIR_TO]->(d2:Device)
-                    RETURN d1.name AS src, type(r) AS rel, d2.name AS dst
-                """)
-                conn_lines = [f"- '{r['src']}' {r['rel']} '{r['dst']}'" for r in conn_records]
-
-                # 4. Retrieve and format spatial zone connectivity
-                spatial_records = session.run("""
-                    MATCH (z1:Zone)-[r:CONNECTS_TO]->(z2:Zone)
-                    RETURN z1.name AS src, type(r) AS rel, z2.name AS dst
-                """)
-                spatial_lines = [f"- '{r['src']}' {r['rel']} '{r['dst']}'" for r in spatial_records]
+                # 3. Retrieve inter-equipment + spatial connectivity (cached; static).
+                conn_lines, spatial_lines = self._get_topology(session)
 
                 if not context_lines:
                     return f"No known topological failure modes match the sensor alerts in {parsed_zone}."

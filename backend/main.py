@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import redis.asyncio as aioredis
 import uvicorn
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
@@ -44,6 +44,9 @@ def get_redis():
     return aioredis.Redis(connection_pool=_get_pool())
 
 SENSORS_KEY = "rigvision:sensors:latest"
+# Per-event live diagnosis progress (anomaly_listener writes; bridge relays + prunes).
+PROGRESS_KEY = "rigvision:diag:progress"
+PROGRESS_TTL_MS = 120_000  # drop progress entries older than this
 ZONE_DEFS_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cad", "zone_definitions.json"
 )
@@ -115,6 +118,8 @@ def _build_sensor_manifest() -> dict:
                 "normal_range": s.get("normal_range", [0, 100]),
                 "warning": s.get("warning"),
                 "critical": s.get("critical"),
+                "warning_low": s.get("warning_low"),
+                "critical_low": s.get("critical_low"),
                 "position": s.get("position"),
             })
         zones_out[zone_id] = {
@@ -167,12 +172,29 @@ async def redis_to_websocket_bridge():
     _last_zone_statuses: Dict[str, str] = {}
     while True:
         try:
-            p_raw, z_raw, d_raw, ppe_raw = await asyncio.gather(
+            p_raw, z_raw, d_raw, ppe_raw, prog_map = await asyncio.gather(
                 r.get("rigvision:persons"),
                 r.get("rigvision:zones"),
                 r.get("rigvision:diagnostics"),
                 r.get("rigvision:ppe:latest"),
+                r.hgetall(PROGRESS_KEY),
             )
+
+            # Live diagnosis progress: parse each event's entry and prune stale ones.
+            diag_progress, stale_eids = {}, []
+            now_ms = int(time.time() * 1000)
+            for eid, raw in (prog_map or {}).items():
+                try:
+                    entry = json.loads(raw)
+                except (json.JSONDecodeError, TypeError):
+                    stale_eids.append(eid)
+                    continue
+                if now_ms - entry.get("updated_at", 0) > PROGRESS_TTL_MS:
+                    stale_eids.append(eid)
+                else:
+                    diag_progress[eid] = entry
+            if stale_eids:
+                await r.hdel(PROGRESS_KEY, *stale_eids)
 
             # Auto-diagnose when any zone newly enters warning/critical.
             # dedup=True means a standing breach (same severity + sensors) is only
@@ -195,7 +217,7 @@ async def redis_to_websocket_bridge():
                         logger.warning("Auto-diagnose failed: %s", e)
 
             if manager.active_connections:
-                cur_hash = hash((p_raw, z_raw, d_raw, ppe_raw))
+                cur_hash = hash((p_raw, z_raw, d_raw, ppe_raw, json.dumps(diag_progress, sort_keys=True)))
                 if cur_hash != _prev_hash:
                     _prev_hash = cur_hash
                     msg = {
@@ -205,6 +227,7 @@ async def redis_to_websocket_bridge():
                         "zones": json.loads(z_raw) if z_raw else {},
                         "diagnostics": json.loads(d_raw) if d_raw else [],
                         "ppe": json.loads(ppe_raw) if ppe_raw else {},
+                        "diag_progress": diag_progress,
                     }
                     await manager.broadcast(json.dumps(msg))
             await asyncio.sleep(0.1)
@@ -287,8 +310,45 @@ app.add_middleware(
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_headers=["Content-Type", "Authorization", "X-API-Key"],
 )
+
+# ── Auth + rate limiting on mutating endpoints ────────────────────────────
+# Optional shared-secret auth: if RIGVISION_API_KEY is set, every mutating
+# endpoint requires it via the `X-API-Key` header (or `Authorization: Bearer`).
+# If unset, auth is OFF (dev convenience) and we warn once at import.
+API_KEY = os.getenv("RIGVISION_API_KEY", "").strip() or None
+if API_KEY is None:
+    logger.warning("RIGVISION_API_KEY not set — mutating endpoints are UNAUTHENTICATED. "
+                   "Set it (and VITE_API_KEY in the frontend) before any shared deployment.")
+
+def require_api_key(
+    x_api_key: Optional[str] = Header(default=None),
+    authorization: Optional[str] = Header(default=None),
+):
+    """FastAPI dependency: enforce the shared secret when one is configured."""
+    if API_KEY is None:
+        return
+    provided = x_api_key
+    if not provided and authorization and authorization.lower().startswith("bearer "):
+        provided = authorization[7:].strip()
+    if provided != API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+# Minimum seconds between explicit RUN DIAGNOSTICS calls (debounce LLM spam).
+DIAGNOSTICS_MIN_INTERVAL = float(os.getenv("DIAGNOSTICS_MIN_INTERVAL", "2.0"))
+_last_diagnostics_run = 0.0
+_diagnostics_lock = asyncio.Lock()
+
+async def rate_limit_diagnostics():
+    """Reject RUN DIAGNOSTICS calls that arrive faster than DIAGNOSTICS_MIN_INTERVAL."""
+    global _last_diagnostics_run
+    async with _diagnostics_lock:
+        now = time.monotonic()
+        wait = DIAGNOSTICS_MIN_INTERVAL - (now - _last_diagnostics_run)
+        if wait > 0:
+            raise HTTPException(status_code=429, detail=f"Rate limited; retry in {wait:.1f}s")
+        _last_diagnostics_run = now
 
 @app.get("/api/health")
 async def health_check():
@@ -356,12 +416,30 @@ async def get_mjpeg_stream(camera_id: str):
             _active_mjpeg_streams -= 1
     return StreamingResponse(frame_generator(), media_type="multipart/x-mixed-replace; boundary=frame")
 
-@app.post("/api/control/clear_cache")
+@app.post("/api/control/clear_cache", dependencies=[Depends(require_api_key)])
 async def post_clear_cache():
     await get_redis().publish("rigvision:commands", "clear_cache")
     return {"status": "ok", "message": "clear_cache command published"}
 
-@app.post("/api/diagnostics/clear")
+@app.get("/api/documents/manuals")
+async def get_all_manuals():
+    """Serves the full RigVision Device Manuals document as plain text."""
+    doc_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "knowledge",
+        "documents",
+        "ONGC_Device_Manuals.txt"
+    )
+    if not os.path.exists(doc_path):
+        raise HTTPException(status_code=404, detail="Manuals document not found")
+    try:
+        with open(doc_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        return Response(content=content, media_type="text/plain; charset=utf-8")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read manuals: {e}")
+
+@app.post("/api/diagnostics/clear", dependencies=[Depends(require_api_key)])
 async def clear_diagnostics():
     global _last_alert_signatures
     _last_alert_signatures.clear()
@@ -473,7 +551,8 @@ async def _evaluate_and_publish(sensors: dict, *, dedup: bool) -> dict:
         "alerts_published": len(alerts),
     }
 
-@app.post("/api/diagnostics/run")
+@app.post("/api/diagnostics/run",
+          dependencies=[Depends(require_api_key), Depends(rate_limit_diagnostics)])
 async def run_diagnostics():
     """On-demand diagnostics (RUN DIAGNOSTICS button): force a check of the current
     sensor snapshot and publish an alert for every flagged zone, regardless of
@@ -490,7 +569,7 @@ async def get_thresholds():
     table = await asyncio.to_thread(threshold_resolver.get_table)
     return {"status": threshold_resolver.status(), "thresholds": table}
 
-@app.post("/api/thresholds/refresh")
+@app.post("/api/thresholds/refresh", dependencies=[Depends(require_api_key)])
 async def refresh_thresholds():
     """Re-resolve thresholds from the knowledge graph (run after re-seeding Neo4j)
     and re-publish them to Redis for the CV pipeline."""
@@ -522,6 +601,8 @@ async def get_sensor_manifest():
                 continue
             s["warning"] = t["warning"]
             s["critical"] = t["critical"]
+            s["warning_low"] = t.get("warning_low")
+            s["critical_low"] = t.get("critical_low")
             if t.get("normal_range") and t["normal_range"][0] is not None:
                 s["normal_range"] = t["normal_range"]
             s["threshold_source"] = {
@@ -538,7 +619,7 @@ async def get_sensors():
     raw = await get_redis().get(SENSORS_KEY)
     return json.loads(raw) if raw else {}
 
-@app.post("/api/sensors")
+@app.post("/api/sensors", dependencies=[Depends(require_api_key)])
 async def post_sensors(body: SensorReadingsRequest):
     """Validated merge-write into rigvision:sensors:latest. Unknown sensor IDs
     (not in zone_definitions.json) are rejected.

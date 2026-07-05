@@ -2,7 +2,7 @@
 
 .auth-container {
   min-height: 100vh;
-  background: #0f1117;
+  background: linear-gradient(135deg, rgba(15, 17, 23, 0.75), rgba(15, 17, 23, 0.9)), url('/login-bg.jpg') no-repeat center center/cover;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -11,12 +11,21 @@
 }
 
 .auth-card {
-  background: #16181f;
-  border: 1px solid #2a2d38;
-  border-radius: 10px;
+  background: rgba(22, 24, 31, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
   width: 100%;
   max-width: 400px;
   padding: 2.5rem 2rem;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+  transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+}
+
+.auth-card:hover {
+  border-color: rgba(255, 255, 255, 0.15);
+  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.55);
 }
 
 .auth-brand {
@@ -66,23 +75,25 @@
   display: block;
   width: 100%;
   box-sizing: border-box;
-  background: #0f1117;
-  border: 1px solid #2a2d38;
+  background: rgba(15, 17, 23, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 7px;
   padding: 10px 13px;
   font-size: 14px;
   color: #d4d8e3;
   font-family: 'Inter', sans-serif;
   outline: none;
-  transition: border-color 0.15s;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
 }
 
 .form-group input::placeholder {
-  color: #3a3f4d;
+  color: #555b6e;
 }
 
 .form-group input:focus {
   border-color: #4a7cff;
+  background: rgba(15, 17, 23, 0.75);
+  box-shadow: 0 0 0 3px rgba(74, 124, 255, 0.15);
 }
 
 .form-group input:disabled {
@@ -101,7 +112,7 @@
 
 .btn-primary {
   width: 100%;
-  background: #4a7cff;
+  background: linear-gradient(135deg, #4a7cff, #255fff);
   border: none;
   border-radius: 7px;
   padding: 11px;
@@ -111,15 +122,23 @@
   cursor: pointer;
   font-family: 'Inter', sans-serif;
   margin-top: 0.4rem;
-  transition: background 0.15s;
+  transition: transform 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
+  box-shadow: 0 4px 14px rgba(74, 124, 255, 0.3);
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: #3a6cf0;
+  background: linear-gradient(135deg, #3a6cf0, #154fff);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(74, 124, 255, 0.4);
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: 0 2px 10px rgba(74, 124, 255, 0.3);
 }
 
 .btn-primary:disabled {
@@ -154,8 +173,8 @@
 .auth-demo {
   margin-top: 1.75rem;
   padding: 14px;
-  background: #1c1f2a;
-  border: 1px solid #2a2d38;
+  background: rgba(28, 31, 42, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 7px;
 }
 

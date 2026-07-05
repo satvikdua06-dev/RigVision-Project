@@ -4,7 +4,6 @@ import Sidebar from './components/Sidebar.jsx'
 import TopBar from './components/TopBar.jsx'
 import { useRigStore } from './stores/useRigStore.js'
 import CameraFeeds from './components/CameraFeeds.jsx'
-import DiagnosticsModal from './components/DiagnosticsModal.jsx'
 import SensorConsole from './components/SensorConsole.jsx'
 import NotificationAlert from './components/NotificationAlert.jsx'
 
@@ -63,10 +62,9 @@ export default function App() {
         </div>
       </div>
 
-      {/* Diagnostics Modal Window rendered at root level */}
-      <DiagnosticsModal />
-
-      {/* Real-time Anomaly Notification Toast Overlay */}
+      {/* Real-time Anomaly Notification Toast Overlay.
+          The full diagnostics hub now lives in a separate window (/diagnostics),
+          opened from the TopBar "View Reports" button or an anomaly toast. */}
       <NotificationAlert />
     </div>
   )

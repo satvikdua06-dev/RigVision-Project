@@ -1,14 +1,19 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import useAuthStore from '../stores/useAuthStore';
 import '../styles/Auth.css';
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { login, error: authError, loading } = useAuthStore();
 
   const [formData, setFormData] = useState({ email: '', password: '' });
   const [localError, setLocalError] = useState('');
+
+  const from = location.state?.from 
+    ? (location.state.from.pathname + location.state.from.search) 
+    : '/';
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -23,7 +28,7 @@ export default function LoginPage() {
       return;
     }
     const result = await login(formData.email, formData.password);
-    if (result.success) navigate('/');
+    if (result.success) navigate(from, { replace: true });
     else setLocalError(result.error);
   };
 

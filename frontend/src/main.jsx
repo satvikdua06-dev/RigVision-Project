@@ -1,3 +1,4 @@
+import './authHandoff.js'   // must run before AppRouter/useAuthStore — seeds session in opened tabs
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import AppRouter from './components/AppRouter.jsx'
