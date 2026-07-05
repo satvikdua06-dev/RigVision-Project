@@ -209,6 +209,101 @@ function EquipmentProp({ item, zoneId }) {
             </mesh>
           </group>
         )
+      case 'temple':
+        return (
+          <group position={[0, 0, 0]}>
+            {/* 1. Base cabinet */}
+            <mesh position={[0, -h * 0.5 + 0.4, 0]} castShadow receiveShadow>
+              <boxGeometry args={[w, 0.8, d]} />
+              <meshStandardMaterial {...mat} roughness={0.6} metalness={0.15} />
+            </mesh>
+            {/* Cabinet top border/trim */}
+            <mesh position={[0, -h * 0.5 + 0.82, 0]} castShadow>
+              <boxGeometry args={[w + 0.04, 0.04, d + 0.04]} />
+              <meshStandardMaterial color="#2b1d16" roughness={0.7} />
+            </mesh>
+            {/* Drawer handles/lines */}
+            <mesh position={[0, -h * 0.5 + 0.6, d/2 + 0.005]}>
+              <boxGeometry args={[w * 0.8, 0.015, 0.01]} />
+              <meshStandardMaterial color="#1c110b" />
+            </mesh>
+            <mesh position={[0, -h * 0.5 + 0.3, d/2 + 0.005]}>
+              <boxGeometry args={[w * 0.8, 0.015, 0.01]} />
+              <meshStandardMaterial color="#1c110b" />
+            </mesh>
+            
+            {/* 2. Pillars (4 corners) */}
+            {/* Front Left */}
+            <mesh position={[-w * 0.42, -h * 0.5 + 0.84 + 0.3, d * 0.42]} castShadow>
+              <cylinderGeometry args={[0.018, 0.018, 0.6, 12]} />
+              <meshStandardMaterial {...mat} roughness={0.6} />
+            </mesh>
+            {/* Front Right */}
+            <mesh position={[w * 0.42, -h * 0.5 + 0.84 + 0.3, d * 0.42]} castShadow>
+              <cylinderGeometry args={[0.018, 0.018, 0.6, 12]} />
+              <meshStandardMaterial {...mat} roughness={0.6} />
+            </mesh>
+            {/* Back Left */}
+            <mesh position={[-w * 0.42, -h * 0.5 + 0.84 + 0.3, -d * 0.42]} castShadow>
+              <cylinderGeometry args={[0.018, 0.018, 0.6, 12]} />
+              <meshStandardMaterial {...mat} roughness={0.6} />
+            </mesh>
+            {/* Back Right */}
+            <mesh position={[w * 0.42, -h * 0.5 + 0.84 + 0.3, -d * 0.42]} castShadow>
+              <cylinderGeometry args={[0.018, 0.018, 0.6, 12]} />
+              <meshStandardMaterial {...mat} roughness={0.6} />
+            </mesh>
+
+            {/* Back panel wall */}
+            <mesh position={[0, -h * 0.5 + 0.84 + 0.3, -d * 0.45]} castShadow receiveShadow>
+              <boxGeometry args={[w * 0.88, 0.6, 0.015]} />
+              <meshStandardMaterial {...mat} roughness={0.6} />
+            </mesh>
+
+            {/* 3. Saffron/Orange Draped Curtains */}
+            {/* Left curtain */}
+            <mesh position={[-w * 0.32, -h * 0.5 + 0.84 + 0.3, d * 0.2]} castShadow>
+              <boxGeometry args={[0.08, 0.54, 0.15]} />
+              <meshStandardMaterial color="#e05a36" roughness={0.9} emissive="#e05a36" emissiveIntensity={hovered ? 0.2 : 0.05} />
+            </mesh>
+            {/* Right curtain */}
+            <mesh position={[w * 0.32, -h * 0.5 + 0.84 + 0.3, d * 0.2]} castShadow>
+              <boxGeometry args={[0.08, 0.54, 0.15]} />
+              <meshStandardMaterial color="#e05a36" roughness={0.9} emissive="#e05a36" emissiveIntensity={hovered ? 0.2 : 0.05} />
+            </mesh>
+
+            {/* 4. Roof dome / roof slab */}
+            <mesh position={[0, -h * 0.5 + 0.84 + 0.6 + 0.02, 0]} castShadow>
+              <boxGeometry args={[w + 0.04, 0.04, d + 0.04]} />
+              <meshStandardMaterial color="#2b1d16" roughness={0.7} />
+            </mesh>
+
+            {/* Pyramid Shikhara (dome) */}
+            <mesh position={[0, -h * 0.5 + 0.84 + 0.6 + 0.04 + 0.18, 0]} rotation={[0, Math.PI / 4, 0]} castShadow>
+              <coneGeometry args={[w * 0.48, 0.36, 4]} />
+              <meshStandardMaterial {...mat} roughness={0.5} />
+            </mesh>
+
+            {/* Kalasha (spire) */}
+            <mesh position={[0, -h * 0.5 + 0.84 + 0.6 + 0.04 + 0.36 + 0.06, 0]} castShadow>
+              <sphereGeometry args={[0.035, 12, 12]} />
+              <meshStandardMaterial color="#cca24b" metalness={0.9} roughness={0.1} emissive="#cca24b" emissiveIntensity={0.2} />
+            </mesh>
+            <mesh position={[0, -h * 0.5 + 0.84 + 0.6 + 0.04 + 0.36 + 0.13, 0]} castShadow>
+              <coneGeometry args={[0.012, 0.08, 8]} />
+              <meshStandardMaterial color="#cca24b" metalness={0.9} roughness={0.1} />
+            </mesh>
+
+            {/* 5. Devotional Diya Glow (Point Light) */}
+            <pointLight 
+              position={[0, -h * 0.5 + 0.84 + 0.3, 0]} 
+              intensity={hovered ? 12 : 8} 
+              distance={2.0} 
+              decay={2} 
+              color="#ffaa44" 
+            />
+          </group>
+        )
       default: // storage (Cabinet / Locker)
         return (
           <group position={[0, 0, 0]}>
@@ -324,7 +419,7 @@ function Floor({ showFloor0, showFloor1 }) {
 
 // ── Sleek Floating Settings Panel UI ───────────────────────────────────────────
 function SettingsPanel() {
-  const [isOpen, setIsOpen] = useState(true)
+  const [isOpen, setIsOpen] = useState(false)
   const wallOpacity = useRigStore(s => s.wallOpacity)
   const setWallOpacity = useRigStore(s => s.setWallOpacity)
   const fpsLimit = useRigStore(s => s.fpsLimit)
@@ -356,18 +451,19 @@ function SettingsPanel() {
     fontFamily: 'var(--font-mono)',
   })
   const sliderStyle = { width: '100%', background: 'var(--bg-card)', cursor: 'pointer', accentColor: 'var(--accent-cobalt)' }
+  const sliderStyle2 = { width: '100%', background: 'var(--bg-card)', cursor: 'pointer', accentColor: 'var(--accent-cobalt)' }
   const labelStyle = { fontSize: '10px', color: 'var(--text-muted)', letterSpacing: '1px', textTransform: 'uppercase' }
 
   return (
     <div style={{
       position: 'absolute',
       bottom: 20,
-      right: 20,
+      left: 20,
       zIndex: 1000,
       fontFamily: 'var(--font-mono)',
       display: 'flex',
       flexDirection: 'column',
-      alignItems: 'flex-end',
+      alignItems: 'flex-start',
     }}>
       {/* Toggle Button */}
       <button
