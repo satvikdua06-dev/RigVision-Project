@@ -32,7 +32,7 @@ import argparse
 import os
 import threading
 import time
-from typing import Dict, List, Tuple
+from typing import Dict, Tuple
 
 import cv2
 import numpy as np

@@ -2,7 +2,7 @@ import subprocess
 import sys
 import time
 import os
-import signal
+
 import threading
 
 
@@ -21,19 +21,19 @@ processes_to_run = [
     },
     {
         "name": "Backend",
-        "command": ["python3", "main.py"],
+        "command": ["python", "main.py"],
         "cwd": "backend",
         "color": "\033[92m" # Green
     },
     {
         "name": "Anomaly_Listener",
-        "command": ["python3", "knowledge/extraction/anomaly_listener.py"],
+        "command": ["python", "knowledge/extraction/anomaly_listener.py"],
         "cwd": ".",
         "color": "\033[95m" # Magenta
     },
     {
         "name": "Pipeline",
-        "command": ["python3", "pipeline.py", "--mode", "video", "--cameras", "vid1.mp4", "vid2.mp4"],
+        "command": ["python", "pipeline.py", "--mode", "video", "--cameras", "vid1.mp4", "vid2.mp4"],
         "cwd": "cv",
         "color": "\033[93m" # Yellow
     },
@@ -50,12 +50,18 @@ def run_process(proc_info):
 
     try:
         # Start the process
+        actual_cmd = list(cmd)
+        if os.name == "nt" and actual_cmd[0] == "npm":
+            actual_cmd[0] = "npm.cmd"
+
         p = subprocess.Popen(
-            cmd,
+            actual_cmd,
             cwd=os.path.join(os.getcwd(), cwd) if cwd != "." else os.getcwd(),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             bufsize=1
         )
         running_processes.append(p)

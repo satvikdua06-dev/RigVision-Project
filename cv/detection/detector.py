@@ -29,7 +29,6 @@ from types import SimpleNamespace
 from typing import List, Optional, Tuple
 
 import numpy as np
-from ultralytics import YOLO
 
 
 def Detection(
@@ -218,7 +217,7 @@ def _extract_detections(
                 for i, det in enumerate(detections):
                     det.keypoints = keypoints_all[i]
                     det.posture = classify_posture(det.bbox, det.keypoints)
-            except Exception as e:
+            except Exception:
                 for det in detections:
                     det.keypoints = None
                     det.posture = classify_posture(det.bbox, None)

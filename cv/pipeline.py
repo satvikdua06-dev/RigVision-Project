@@ -76,7 +76,7 @@ try:
     from dotenv import load_dotenv
     _env_path = Path(__file__).resolve().parent.parent / ".env"
     if _env_path.exists():
-        load_dotenv(dotenv_path=_env_path, override=False)  # shell vars take priority
+        load_dotenv(dotenv_path=_env_path, override=True)
 except ImportError:
     pass
 
@@ -521,7 +521,6 @@ def run_producer_mode(
     max_fps: Optional[float] = None,
     is_video: bool = False,
 ) -> None:
-    import cv2
     from ultralytics import YOLO
     from detection.detector import detect_batch
     from tracking.tracker import update_tracker
@@ -597,7 +596,7 @@ def run_producer_mode(
     ppe_every_n = max(1, int(os.getenv("PPE_EVERY_N_FRAMES", "3")))
     if os.getenv("PPE_ENABLED", "1") not in ("0", "false", "False"):
         try:
-            from ppe_monitor import PPEMonitor
+            from PPE.ppe_monitor import PPEMonitor
             ppe_monitor = PPEMonitor(device=device)
             print(f"[*] PPE monitor enabled on cams {sorted(ppe_cam_ids)} (every {ppe_every_n} frames)")
         except Exception as e:

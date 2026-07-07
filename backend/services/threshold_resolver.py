@@ -24,7 +24,7 @@ import logging
 import os
 import threading
 import time
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
 logger = logging.getLogger("rigvision.threshold_resolver")
 

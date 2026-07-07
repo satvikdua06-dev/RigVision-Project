@@ -29,7 +29,6 @@ export const useRigStore = create((set, get) => ({
   sidebarTab: 'zones',
   showSensors: true,
   showAvatars: true,
-  showDiagnosticsModal: false,
   hasReceivedData: false,
   preexistingSignatures: [],
   isNotificationsInitialized: false,
@@ -227,7 +226,6 @@ export const useRigStore = create((set, get) => ({
   setSidebarTab: (tab) => set({ sidebarTab: tab }),
   toggleSensors: () => set((state) => ({ showSensors: !state.showSensors })),
   toggleAvatars: () => set((state) => ({ showAvatars: !state.showAvatars })),
-  setShowDiagnosticsModal: (val) => set({ showDiagnosticsModal: val }),
 
   setPreexistingSignatures: (sigs) => set({ preexistingSignatures: sigs }),
   addPreexistingSignature: (sig) => set((state) => ({

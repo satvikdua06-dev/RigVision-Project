@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Html, Billboard } from '@react-three/drei';
-import { useRigStore } from '../stores/useRigStore.js';
 
 // Muted, distinguishable sensor-type tints (within the refined slate palette).
 const SENSOR_COLORS = {
@@ -29,7 +28,6 @@ export default function SensorIndicator({ sensor }) {
   const [hovered, setHovered] = useState(false);
   const color = SENSOR_COLORS[sensor.type] || SENSOR_COLORS.default;
   const glyph = SENSOR_GLYPH[sensor.type] || '•';
-  const showDiagnosticsModal = useRigStore(s => s.showDiagnosticsModal);
 
   const [x, y, z] = sensor.position;
   // The pin sits at a fixed height above the sensor's actual location so it always
@@ -77,7 +75,7 @@ export default function SensorIndicator({ sensor }) {
       </Billboard>
 
       {/* Hover detail card. distanceFactor raised so it's readable at orbit distance. */}
-      {hovered && !showDiagnosticsModal && (
+      {hovered && (
         <Html position={[x, pinY + 0.35, z]} center distanceFactor={14} zIndexRange={[100, 0]}>
           <div style={{
             background: 'var(--glass-panel)',

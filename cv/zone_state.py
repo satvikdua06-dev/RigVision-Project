@@ -23,7 +23,7 @@ SENSORS_KEY = "rigvision:sensors:latest"
 # device manual → zone environmental → zone_definitions fallback). Using them here
 # keeps zone coloring consistent with what the anomaly detector enforces.
 RESOLVED_THRESHOLDS_KEY = "rigvision:thresholds:resolved"
-DEFAULT_PPE = {"backpack": "unknown", "hat": "unknown"}
+DEFAULT_PPE = {"hat": "unknown", "glasses": "unknown"}
 _SEVERITY = {"normal": 0, "warning": 1, "critical": 2}
 
 
@@ -96,10 +96,10 @@ def build_zone_states(persons: list[dict], sensor_readings: dict, zone_defs: dic
         ppe_viol = []
         for p in z_pers:
             ppe = p.get("ppe", {})
-            if ppe.get("backpack") == "missing":
-                ppe_viol.append(f"Person #{p['id']} missing body gear")
             if ppe.get("hat") == "missing":
                 ppe_viol.append(f"Person #{p['id']} missing head protection")
+            if ppe.get("glasses") == "missing":
+                ppe_viol.append(f"Person #{p['id']} missing eye protection")
 
         by_type: dict[str, list[float]] = {t: [] for t in CANONICAL_SENSOR_TYPES}
         status, reason = "normal", None

@@ -30,7 +30,6 @@ import threading
 import time
 
 import cv2
-import numpy as np
 
 
 CHESSBOARD_DIM = (11, 8)    # inner corners — set to (squares_wide - 1, squares_tall - 1)

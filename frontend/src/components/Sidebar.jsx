@@ -537,7 +537,7 @@ export default function Sidebar() {
   }, [])
 
   const criticalCount = Object.values(zones).filter(z => z.status === 'critical').length
-  const alertPersons  = persons.filter(p => p.ppe?.backpack === 'missing' || p.ppe?.hat === 'missing').length
+  const alertPersons  = persons.filter(p => ppeHasAlert(p.ppe || {})).length
 
   const tabs = [
     { id: 'zones',   label: 'ZONES',     badge: criticalCount },

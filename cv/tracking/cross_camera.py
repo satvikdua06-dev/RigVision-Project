@@ -32,7 +32,7 @@ This module contains only stateless utility functions.
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 import numpy as np
 

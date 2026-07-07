@@ -63,11 +63,11 @@ export default function CameraFeeds() {
   const person = persons.find(p => p.id === selectedPerson)
 
   const ppe = person?.ppe || {}
-  const bodyStatus = ppeStatus(ppe.backpack)
   const hatStatus = ppeStatus(ppe.hat)
+  const glassesStatus = ppeStatus(ppe.glasses)
 
-  const hasAlert = ppe.backpack === 'missing' || ppe.hat === 'missing'
-  const hasUnknown = ppe.backpack == null || ppe.backpack === 'unknown' || ppe.hat == null || ppe.hat === 'unknown'
+  const hasAlert = ppe.hat === 'missing' || ppe.glasses === 'missing'
+  const hasUnknown = ppe.hat == null || ppe.hat === 'unknown' || ppe.glasses == null || ppe.glasses === 'unknown'
 
   // Small flat status pill helper (sharp border, no glow).
   const pill = (text, color) => (
@@ -127,8 +127,8 @@ export default function CameraFeeds() {
 
             <div style={{ display: 'flex', gap: 6, fontFamily: 'var(--font-mono)', fontSize: 11 }}>
               {[
-                { label: '🎒 Body Gear', status: bodyStatus },
                 { label: '⛑ Hat', status: hatStatus },
+                { label: '🕶 Glasses', status: glassesStatus },
               ].map(({ label, status }) => (
                 <div key={label} style={{
                   flex: 1,

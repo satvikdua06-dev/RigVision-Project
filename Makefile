@@ -9,7 +9,7 @@
 # ──────────────────────────────────────────────────────────
 
 .PHONY: up down backend frontend cv-demo cv-live demo install clean logs \
-        sensor-sim kafka-bridge compliance
+        sensor-sim kafka-bridge
 
 # ── Infrastructure ──
 
@@ -48,9 +48,6 @@ sensor-sim:
 kafka-bridge:
 	python -m sensors.ingest.kafka_bridge
 
-compliance:
-	python -m sensors.compliance.engine
-
 # ── Combo Commands ──
 
 # Full demo: requires 3 terminal windows
@@ -61,20 +58,19 @@ demo:
 	@echo "  Terminal 1:  make backend"
 	@echo "  Terminal 2:  make cv-demo"
 	@echo "  Terminal 3:  make frontend"
-	@echo "  Terminal 4:  make compliance    (optional — evaluates safety rules)"
-	@echo "  Terminal 5:  make sensor-sim    (optional — fake sensor data via Kafka)"
-	@echo "  Terminal 6:  make kafka-bridge  (optional — bridges Kafka sensors to Redis)"
+	@echo "  Terminal 4:  make sensor-sim    (optional — fake sensor data via Kafka)"
+	@echo "  Terminal 5:  make kafka-bridge  (optional — bridges Kafka sensors to Redis)"
 	@echo ""
 	@echo "Then open: http://localhost:5173"
 
 # ── Setup ──
 
 install:
-	cd backend && pip install -r requirements.txt
-	cd cv && pip install -r requirements.txt
-	pip install pyyaml kafka-python
+	pip install -r requirements.txt
 	cd frontend && npm install
 	@echo "✅ All dependencies installed"
+	@echo "   NOTE: install PyTorch with CUDA first:"
+	@echo "   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121"
 
 clean:
 	docker compose down -v

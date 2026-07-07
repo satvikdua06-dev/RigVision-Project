@@ -8,7 +8,7 @@ import os
 import sys
 import time
 from contextlib import asynccontextmanager
-from typing import Any, Dict, List, Optional, Set
+from typing import Dict, Optional, Set
 
 # Allow `python backend/main.py` from any cwd to import backend/services/*.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

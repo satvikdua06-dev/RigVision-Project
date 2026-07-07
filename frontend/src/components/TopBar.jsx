@@ -14,8 +14,8 @@ export default function TopBar() {
 
   const criticalZones = Object.values(zones).filter(z => z.status === 'critical').length
   const warningZones = Object.values(zones).filter(z => z.status === 'warning').length
-  // PPE alerts from live per-person Body Gear/Hat detection (p.ppe.{backpack,hat}).
-  const alertPersons = persons.filter(p => p.ppe?.backpack === 'missing' || p.ppe?.hat === 'missing').length
+  // PPE alerts from live per-person Hat/Glasses detection (p.ppe.{hat,glasses}).
+  const alertPersons = persons.filter(p => p.ppe?.hat === 'missing' || p.ppe?.glasses === 'missing').length
 
   // Status values map onto the Industrial Slate accent palette (no neon).
   const OK = 'var(--text-primary)'

@@ -12,19 +12,19 @@ export function ppeChipStyle(status) {
   return { tone: 'var(--text-muted)', mark: '?' }   // unknown | null
 }
 
-// Turn a person's per-person ppe object {backpack, hat} into the two display chips.
-// `proof` token is `{personId}_{backpack|hat}`, matching the Redis proof key the
+// Turn a person's per-person ppe object {hat, glasses} into the two display chips.
+// `proof` token is `{personId}_{hat|glasses}`, matching the Redis proof key the
 // pipeline writes and the /api/ppe/proof/{item} endpoint serves.
 export function personPpeItems(personId, ppe = {}) {
   return [
-    { key: 'backpack', label: '🎒 Body Gear', status: ppe.backpack, proof: `${personId}_backpack` },
-    { key: 'hat',      label: '⛑ Hat',       status: ppe.hat,      proof: `${personId}_hat` },
+    { key: 'hat',     label: '⛑ Hat',     status: ppe.hat,     proof: `${personId}_hat` },
+    { key: 'glasses', label: '🕶 Glasses', status: ppe.glasses, proof: `${personId}_glasses` },
   ]
 }
 
 // True if any item is explicitly missing (drives ALERT badges / counts).
 export function ppeHasAlert(ppe = {}) {
-  return ppe.backpack === 'missing' || ppe.hat === 'missing'
+  return ppe.hat === 'missing' || ppe.glasses === 'missing'
 }
 
 // Centered, viewport-anchored proof lightbox. Rendered through a portal to document.body
