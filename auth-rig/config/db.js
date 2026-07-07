@@ -55,6 +55,37 @@ const seedSecurityManager = async () => {
   }
 };
 
+const seedOperatorUser = async () => {
+  try {
+    const username = 'operator_user';
+    const email = 'operator@rigvision.dev';
+    const password = 'OngcOperator2026!';
+
+    let existingUser = await User.findOne({
+      $or: [
+        { username: username },
+        { email: email.toLowerCase() }
+      ]
+    });
+
+    if (!existingUser) {
+      const operator = new User({
+        username,
+        email,
+        password,
+        role: 'operator',
+        isActive: true
+      });
+      await operator.save();
+      console.log(`🌱 Platform Operator User seeded successfully (${email})`);
+    } else {
+      console.log(`ℹ️ Platform Operator User already exists (${existingUser.email})`);
+    }
+  } catch (error) {
+    console.error(`❌ Error seeding Platform Operator User: ${error.message}`);
+  }
+};
+
 const connectDB = async () => {
   try {
     const conn = await mongoose.connect(process.env.MONGO_URI, {
@@ -63,10 +94,13 @@ const connectDB = async () => {
     });
 
     console.log(`MongoDB Connected: ${conn.connection.host}`);
-    
+
     // Seed security manager user
     await seedSecurityManager();
-    
+
+    // Seed operator user
+    await seedOperatorUser();
+
     return conn;
   } catch (error) {
     console.error(`Error connecting to MongoDB: ${error.message}`);
