@@ -2,9 +2,46 @@ import { create } from 'zustand';
 
 const AUTH_API = import.meta.env.VITE_AUTH_API || 'http://localhost:5000/api/auth';
 
+const decodeUserFromToken = (token) => {
+  if (!token) return null;
+  try {
+    const base64Url = token.split('.')[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(window.atob(base64).split('').map(function (c) {
+      return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+    }).join(''));
+    const payload = JSON.parse(jsonPayload);
+    return {
+      _id: payload.id,
+      username: payload.username,
+      email: payload.email,
+      role: payload.role
+    };
+  } catch (e) {
+    console.error('Error decoding JWT payload:', e);
+    return null;
+  }
+};
+
+const getInitialUser = () => {
+  const token = sessionStorage.getItem('token');
+  if (!token) return null;
+  try {
+    const userWithRole = decodeUserFromToken(token);
+    if (!userWithRole || userWithRole.role !== 'admin') {
+      sessionStorage.removeItem('token');
+      sessionStorage.removeItem('refreshToken');
+      return null;
+    }
+    return userWithRole;
+  } catch (e) {
+    return null;
+  }
+};
+
 const useAuthStore = create((set, get) => ({
   // State
-  user: JSON.parse(sessionStorage.getItem('user') || 'null'),
+  user: getInitialUser(),
   token: sessionStorage.getItem('token') || null,
   refreshToken: sessionStorage.getItem('refreshToken') || null,
   isAuthenticated: !!sessionStorage.getItem('token'),
@@ -24,19 +61,23 @@ const useAuthStore = create((set, get) => ({
       const data = await res.json();
       if (!data.success) throw new Error(data.error);
 
+      const userWithRole = decodeUserFromToken(data.token);
+      if (!userWithRole || userWithRole.role !== 'admin') {
+        throw new Error('Access denied');
+      }
+
       sessionStorage.setItem('token', data.token);
       sessionStorage.setItem('refreshToken', data.refreshToken);
-      sessionStorage.setItem('user', JSON.stringify(data.user));
 
       set({
-        user: data.user,
+        user: userWithRole,
         token: data.token,
         refreshToken: data.refreshToken,
         isAuthenticated: true,
         loading: false
       });
 
-      return { success: true, user: data.user };
+      return { success: true, user: userWithRole };
     } catch (error) {
       const errorMsg = error.message || 'Registration failed';
       set({ error: errorMsg, loading: false });
@@ -56,19 +97,23 @@ const useAuthStore = create((set, get) => ({
       const data = await res.json();
       if (!data.success) throw new Error(data.error);
 
+      const userWithRole = decodeUserFromToken(data.token);
+      if (!userWithRole || userWithRole.role !== 'admin') {
+        throw new Error('Access denied: Only safety managers/admins are authorized to access this system.');
+      }
+
       sessionStorage.setItem('token', data.token);
       sessionStorage.setItem('refreshToken', data.refreshToken);
-      sessionStorage.setItem('user', JSON.stringify(data.user));
 
       set({
-        user: data.user,
+        user: userWithRole,
         token: data.token,
         refreshToken: data.refreshToken,
         isAuthenticated: true,
         loading: false
       });
 
-      return { success: true, user: data.user };
+      return { success: true, user: userWithRole };
     } catch (error) {
       const errorMsg = error.message || 'Login failed';
       set({ error: errorMsg, loading: false });
@@ -93,7 +138,6 @@ const useAuthStore = create((set, get) => ({
 
     sessionStorage.removeItem('token');
     sessionStorage.removeItem('refreshToken');
-    sessionStorage.removeItem('user');
 
     set({
       user: null,
@@ -119,7 +163,13 @@ const useAuthStore = create((set, get) => ({
       if (!data.success) throw new Error(data.error);
 
       sessionStorage.setItem('token', data.token);
-      set({ token: data.token });
+
+      const updatedUser = decodeUserFromToken(data.token);
+
+      set({
+        token: data.token,
+        user: updatedUser
+      });
 
       return true;
     } catch (error) {
@@ -142,7 +192,6 @@ const useAuthStore = create((set, get) => ({
       if (!data.success) throw new Error(data.error);
 
       set({ user: data.user });
-      sessionStorage.setItem('user', JSON.stringify(data.user));
       return data.user;
     } catch (error) {
       console.error('Failed to get user:', error);
@@ -166,7 +215,6 @@ const useAuthStore = create((set, get) => ({
       const data = await res.json();
       if (!data.success) throw new Error(data.error);
 
-      sessionStorage.setItem('user', JSON.stringify(data.user));
       set({ user: data.user, loading: false });
 
       return { success: true, user: data.user };

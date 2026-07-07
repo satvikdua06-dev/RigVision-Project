@@ -104,21 +104,33 @@ export default function PersonAvatar({ person }) {
         </mesh>
       )}
 
-      {/* Floating label */}
-      <Html
-        position={[0, 1.8, 0]}
-        center
-        distanceFactor={22}
-        style={{ pointerEvents: 'none' }}
+      {/* Floating label (shows only on hover or selection) */}
+      <Html 
+        position={[0, 1.3, 0]} // Positioned closer to the head for a clean look
+        center 
+        distanceFactor={12} // Sensible scaling factor relative to the 3D distance
+        style={{ 
+          pointerEvents: 'none',
+          transition: 'all 0.2s ease-in-out',
+          opacity: hovered || isSelected ? 1 : 0,
+          transform: hovered || isSelected ? 'scale(1) translateY(0)' : 'scale(0.85) translateY(10px)',
+        }}
       >
         <div style={{
-          background: 'var(--bg-card)',
-          border: '1px solid var(--border-solid)',
-          borderRadius: 4, padding: '4px 10px',
+          background: 'rgba(30, 35, 48, 0.9)',
+          backdropFilter: 'blur(4px)',
+          border: '1px solid rgba(255, 255, 255, 0.12)',
+          borderRadius: 4, 
+          padding: '3px 8px',
           fontFamily: 'var(--font-mono)',
-          fontSize: 12, fontWeight: 500,
-          color: 'var(--text-primary)', whiteSpace: 'nowrap',
-          display: 'flex', alignItems: 'center', gap: 6,
+          fontSize: 10, 
+          fontWeight: 600,
+          color: '#ffffff', 
+          whiteSpace: 'nowrap',
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: 6,
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
         }}>
           <span style={{
             width: 6, height: 6, borderRadius: '50%', flexShrink: 0,

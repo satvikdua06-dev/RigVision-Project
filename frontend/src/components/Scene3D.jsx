@@ -14,7 +14,7 @@ import { ZONES } from '../utils/zonePositions.js'
 function RenderThrottler() {
   const fpsLimit = useRigStore(s => s.fpsLimit)
   const lastRender = useRef(0)
-  
+
   useFrame(({ gl, scene, camera }) => {
     const now = performance.now()
     const delay = 1000 / fpsLimit
@@ -23,7 +23,7 @@ function RenderThrottler() {
       gl.render(scene, camera)
     }
   }, 1) // priority > 0 disables automatic rendering
-  
+
   return null
 }
 
@@ -49,7 +49,7 @@ const BAY_W = 6.0, BAY_D = 3.85, BAY_H = 3.0
 
 // Shared material presets (memo-friendly plain objects fed to <meshStandardMaterial/>).
 const STEEL_DARK = { color: '#262c35', metalness: 0.85, roughness: 0.5 }
-const STEEL_MID  = { color: '#39424f', metalness: 0.8, roughness: 0.42 }
+const STEEL_MID = { color: '#39424f', metalness: 0.8, roughness: 0.42 }
 const STEEL_LITE = { color: '#4a5563', metalness: 0.75, roughness: 0.4 }
 
 // A reusable steel beam/box.
@@ -124,7 +124,16 @@ function EquipmentProp({ item, zoneId }) {
   const [w, h, d] = item.size
   const emissive = hovered ? '#5b8def' : '#000000'
   const ei = hovered ? 0.35 : 0
-  const mat = { color: item.color, metalness: 0.7, roughness: 0.5, emissive, emissiveIntensity: ei }
+  const mat = {
+    color: item.color,
+    metalness: 0.7,
+    roughness: 0.5,
+    emissive,
+    emissiveIntensity: ei,
+    transparent: true,
+    opacity: 0.6
+  }
+  const trans = { transparent: true, opacity: 0.6 }
 
   // Body shapes per equipment type.
   const body = (() => {
@@ -140,12 +149,12 @@ function EquipmentProp({ item, zoneId }) {
             {/* Cylindrical motor drive on the side */}
             <mesh position={[w * 0.45, -h * 0.25, 0]} rotation={[0, 0, Math.PI / 2]} castShadow>
               <cylinderGeometry args={[h * 0.22, h * 0.22, w * 0.3, 16]} />
-              <meshStandardMaterial color="#2b323c" metalness={0.8} roughness={0.4} emissive={emissive} emissiveIntensity={ei} />
+              <meshStandardMaterial color="#2b323c" metalness={0.8} roughness={0.4} emissive={emissive} emissiveIntensity={ei} {...trans} />
             </mesh>
             {/* Small outlet pipe */}
             <mesh position={[-w * 0.2, h * 0.35, 0]} castShadow>
               <cylinderGeometry args={[0.08, 0.08, h * 0.3, 12]} />
-              <meshStandardMaterial color="#4a5563" metalness={0.7} roughness={0.4} />
+              <meshStandardMaterial color="#4a5563" metalness={0.7} roughness={0.4} {...trans} />
             </mesh>
           </group>
         )
@@ -155,7 +164,7 @@ function EquipmentProp({ item, zoneId }) {
             {/* Bottom support base plate */}
             <mesh position={[0, -h * 0.5 + 0.04, 0]} castShadow receiveShadow>
               <boxGeometry args={[w * 0.95, 0.08, d * 0.95]} />
-              <meshStandardMaterial color="#2b323c" metalness={0.6} roughness={0.6} />
+              <meshStandardMaterial color="#2b323c" metalness={0.6} roughness={0.6} {...trans} />
             </mesh>
             {/* Large horizontal cylindrical tank */}
             <mesh position={[0, -h * 0.5 + 0.08 + d * 0.35, 0]} rotation={[0, 0, Math.PI / 2]} castShadow receiveShadow>
@@ -165,7 +174,7 @@ function EquipmentProp({ item, zoneId }) {
             {/* Top motor box */}
             <mesh position={[0, h * 0.5 - h * 0.125, 0]} castShadow>
               <boxGeometry args={[w * 0.45, h * 0.25, d * 0.6]} />
-              <meshStandardMaterial color="#46505d" metalness={0.78} roughness={0.4} emissive={emissive} emissiveIntensity={ei} />
+              <meshStandardMaterial color="#46505d" metalness={0.78} roughness={0.4} emissive={emissive} emissiveIntensity={ei} {...trans} />
             </mesh>
           </group>
         )
@@ -180,17 +189,17 @@ function EquipmentProp({ item, zoneId }) {
             {/* Flange ring 1 */}
             <mesh position={[0, -h * 0.25, 0]} castShadow>
               <cylinderGeometry args={[w * 0.28, w * 0.28, h * 0.08, 16]} />
-              <meshStandardMaterial color="#2b323c" metalness={0.8} roughness={0.5} />
+              <meshStandardMaterial color="#2b323c" metalness={0.8} roughness={0.5} {...trans} />
             </mesh>
             {/* Flange ring 2 */}
             <mesh position={[0, h * 0.25, 0]} castShadow>
               <cylinderGeometry args={[w * 0.28, w * 0.28, h * 0.08, 16]} />
-              <meshStandardMaterial color="#2b323c" metalness={0.8} roughness={0.5} />
+              <meshStandardMaterial color="#2b323c" metalness={0.8} roughness={0.5} {...trans} />
             </mesh>
             {/* Sleek horizontal hand valve wheel at the top */}
             <mesh position={[0, h * 0.45, 0]} rotation={[Math.PI / 2, 0, 0]} castShadow>
               <torusGeometry args={[w * 0.26, 0.035, 8, 24]} />
-              <meshStandardMaterial color="#c2543f" metalness={0.65} roughness={0.4} emissive={emissive} emissiveIntensity={ei} />
+              <meshStandardMaterial color="#c2543f" metalness={0.65} roughness={0.4} emissive={emissive} emissiveIntensity={ei} {...trans} />
             </mesh>
           </group>
         )
@@ -205,7 +214,7 @@ function EquipmentProp({ item, zoneId }) {
             {/* Integrated glowing interface display screen */}
             <mesh position={[0, h * 0.15, d / 2 + 0.01]}>
               <planeGeometry args={[w * 0.8, h * 0.45]} />
-              <meshStandardMaterial color="#0b111a" emissive="#5b8def" emissiveIntensity={hovered ? 1.0 : 0.6} />
+              <meshStandardMaterial color="#0b111a" emissive="#5b8def" emissiveIntensity={hovered ? 1.0 : 0.6} {...trans} />
             </mesh>
           </group>
         )
@@ -220,18 +229,18 @@ function EquipmentProp({ item, zoneId }) {
             {/* Cabinet top border/trim */}
             <mesh position={[0, -h * 0.5 + 0.82, 0]} castShadow>
               <boxGeometry args={[w + 0.04, 0.04, d + 0.04]} />
-              <meshStandardMaterial color="#2b1d16" roughness={0.7} />
+              <meshStandardMaterial color="#2b1d16" roughness={0.7} {...trans} />
             </mesh>
             {/* Drawer handles/lines */}
-            <mesh position={[0, -h * 0.5 + 0.6, d/2 + 0.005]}>
+            <mesh position={[0, -h * 0.5 + 0.6, d / 2 + 0.005]}>
               <boxGeometry args={[w * 0.8, 0.015, 0.01]} />
-              <meshStandardMaterial color="#1c110b" />
+              <meshStandardMaterial color="#1c110b" {...trans} />
             </mesh>
-            <mesh position={[0, -h * 0.5 + 0.3, d/2 + 0.005]}>
+            <mesh position={[0, -h * 0.5 + 0.3, d / 2 + 0.005]}>
               <boxGeometry args={[w * 0.8, 0.015, 0.01]} />
-              <meshStandardMaterial color="#1c110b" />
+              <meshStandardMaterial color="#1c110b" {...trans} />
             </mesh>
-            
+
             {/* 2. Pillars (4 corners) */}
             {/* Front Left */}
             <mesh position={[-w * 0.42, -h * 0.5 + 0.84 + 0.3, d * 0.42]} castShadow>
@@ -264,18 +273,18 @@ function EquipmentProp({ item, zoneId }) {
             {/* Left curtain */}
             <mesh position={[-w * 0.32, -h * 0.5 + 0.84 + 0.3, d * 0.2]} castShadow>
               <boxGeometry args={[0.08, 0.54, 0.15]} />
-              <meshStandardMaterial color="#e05a36" roughness={0.9} emissive="#e05a36" emissiveIntensity={hovered ? 0.2 : 0.05} />
+              <meshStandardMaterial color="#e05a36" roughness={0.9} emissive="#e05a36" emissiveIntensity={hovered ? 0.2 : 0.05} {...trans} />
             </mesh>
             {/* Right curtain */}
             <mesh position={[w * 0.32, -h * 0.5 + 0.84 + 0.3, d * 0.2]} castShadow>
               <boxGeometry args={[0.08, 0.54, 0.15]} />
-              <meshStandardMaterial color="#e05a36" roughness={0.9} emissive="#e05a36" emissiveIntensity={hovered ? 0.2 : 0.05} />
+              <meshStandardMaterial color="#e05a36" roughness={0.9} emissive="#e05a36" emissiveIntensity={hovered ? 0.2 : 0.05} {...trans} />
             </mesh>
 
             {/* 4. Roof dome / roof slab */}
             <mesh position={[0, -h * 0.5 + 0.84 + 0.6 + 0.02, 0]} castShadow>
               <boxGeometry args={[w + 0.04, 0.04, d + 0.04]} />
-              <meshStandardMaterial color="#2b1d16" roughness={0.7} />
+              <meshStandardMaterial color="#2b1d16" roughness={0.7} {...trans} />
             </mesh>
 
             {/* Pyramid Shikhara (dome) */}
@@ -287,11 +296,11 @@ function EquipmentProp({ item, zoneId }) {
             {/* Kalasha (spire) */}
             <mesh position={[0, -h * 0.5 + 0.84 + 0.6 + 0.04 + 0.36 + 0.06, 0]} castShadow>
               <sphereGeometry args={[0.035, 12, 12]} />
-              <meshStandardMaterial color="#cca24b" metalness={0.9} roughness={0.1} emissive="#cca24b" emissiveIntensity={0.2} />
+              <meshStandardMaterial color="#cca24b" metalness={0.9} roughness={0.1} emissive="#cca24b" emissiveIntensity={0.2} {...trans} />
             </mesh>
             <mesh position={[0, -h * 0.5 + 0.84 + 0.6 + 0.04 + 0.36 + 0.13, 0]} castShadow>
               <coneGeometry args={[0.012, 0.08, 8]} />
-              <meshStandardMaterial color="#cca24b" metalness={0.9} roughness={0.1} />
+              <meshStandardMaterial color="#cca24b" metalness={0.9} roughness={0.1} {...trans} />
             </mesh>
 
             {/* 5. Devotional Diya Glow (Point Light) */}
@@ -315,13 +324,13 @@ function EquipmentProp({ item, zoneId }) {
             {/* Vertical door seam line */}
             <mesh position={[0, 0, d / 2 + 0.005]}>
               <boxGeometry args={[0.015, h * 0.92, 0.01]} />
-              <meshStandardMaterial color="#1f2937" />
+              <meshStandardMaterial color="#1f2937" {...trans} />
             </mesh>
             {/* Sleek metal handles */}
             {[-0.08, 0.08].map((ox) => (
               <mesh key={ox} position={[ox, 0, d / 2 + 0.015]} castShadow>
                 <cylinderGeometry args={[0.008, 0.008, h * 0.15, 8]} />
-                <meshStandardMaterial color="#d1d5db" metalness={0.9} roughness={0.2} />
+                <meshStandardMaterial color="#d1d5db" metalness={0.9} roughness={0.2} {...trans} />
               </mesh>
             ))}
           </group>
@@ -350,75 +359,75 @@ function EquipmentProp({ item, zoneId }) {
   )
 }
 
-function Equipment({ zoneId }) {
+            function Equipment({zoneId}) {
   const zone = ZONES[zoneId]
-  if (!zone) return null
+            if (!zone) return null
   return zone.equipment.map((item) => <EquipmentProp key={item.id} item={item} zoneId={zoneId} />)
 }
 
-// ── Lighting & Floor ──────────────────────────────────────────────────────────
-function Lighting() {
+            // ── Lighting & Floor ──────────────────────────────────────────────────────────
+            function Lighting() {
   return (
-    <>
-      {/* Cool, soft ambient light to fill the scene and add dark indigo depth to shadows */}
-      <ambientLight intensity={0.5} color="#141d2b" />
-      
-      {/* Strong, warm white key light (sun-like) casting soft shadows across the rooms */}
-      <directionalLight 
-        position={[12, 22, 10]} 
-        intensity={2.2} 
-        castShadow
-        shadow-mapSize={[2048, 2048]} 
-        shadow-camera-far={40}
-        shadow-camera-left={-10} 
-        shadow-camera-right={10}
-        shadow-camera-top={10} 
-        shadow-camera-bottom={-10} 
-        shadow-bias={-0.0005}
-      />
-      
-      {/* Warm orange-gold key fill point lights inside the rooms to illuminate the machines */}
-      <pointLight position={[2.5, 1.2, 1.9]} intensity={60} distance={10} decay={2} color="#ffd4a3" /> {/* Room A Key Fill */}
-      <pointLight position={[2.5, 4.2, 1.9]} intensity={60} distance={10} decay={2} color="#ffb480" /> {/* Room B Key Fill */}
+            <>
+              {/* Cool, soft ambient light to fill the scene and add dark indigo depth to shadows */}
+              <ambientLight intensity={0.5} color="#141d2b" />
 
-      {/* Cool cyan-blue fill point lights to bounce back and provide dual-colored aesthetic reflections on the metal equipment */}
-      <pointLight position={[1.2, 2.2, 3.2]} intensity={35} distance={9} decay={2} color="#5b8def" /> {/* Room A Cool Fill */}
-      <pointLight position={[3.8, 5.2, 0.8]} intensity={35} distance={9} decay={2} color="#5b8def" /> {/* Room B Cool Fill */}
-      
-      {/* Hemisphere light for ground bounce and sky glow contrast */}
-      <hemisphereLight skyColor="#1a2b4c" groundColor="#0a0f1d" intensity={0.7} />
-    </>
-  )
+              {/* Strong, warm white key light (sun-like) casting soft shadows across the rooms */}
+              <directionalLight
+                position={[12, 22, 10]}
+                intensity={2.2}
+                castShadow
+                shadow-mapSize={[2048, 2048]}
+                shadow-camera-far={40}
+                shadow-camera-left={-10}
+                shadow-camera-right={10}
+                shadow-camera-top={10}
+                shadow-camera-bottom={-10}
+                shadow-bias={-0.0005}
+              />
+
+              {/* Warm orange-gold key fill point lights inside the rooms to illuminate the machines */}
+              <pointLight position={[2.5, 1.2, 1.9]} intensity={60} distance={10} decay={2} color="#ffd4a3" /> {/* Room A Key Fill */}
+              <pointLight position={[2.5, 4.2, 1.9]} intensity={60} distance={10} decay={2} color="#ffb480" /> {/* Room B Key Fill */}
+
+              {/* Cool cyan-blue fill point lights to bounce back and provide dual-colored aesthetic reflections on the metal equipment */}
+              <pointLight position={[1.2, 2.2, 3.2]} intensity={35} distance={9} decay={2} color="#5b8def" /> {/* Room A Cool Fill */}
+              <pointLight position={[3.8, 5.2, 0.8]} intensity={35} distance={9} decay={2} color="#5b8def" /> {/* Room B Cool Fill */}
+
+              {/* Hemisphere light for ground bounce and sky glow contrast */}
+              <hemisphereLight skyColor="#1a2b4c" groundColor="#0a0f1d" intensity={0.7} />
+            </>
+            )
 }
 
-function Floor({ showFloor0, showFloor1 }) {
+            function Floor({showFloor0, showFloor1}) {
   // Rooms share the 5×3.85m footprint centred at x=2.5, z=1.925. Floor-0 grid sits at y=0
   // (Room A), floor-1 grid at y=3.0 (Room B's deck / Room A's ceiling line).
   return (
-    <>
-      {/* Background ground plane */}
-      {showFloor0 && (
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[2.5, -0.01, 1.925]} receiveShadow>
-          <planeGeometry args={[36, 28]} />
-          <meshStandardMaterial color="#070b11" roughness={0.4} metalness={0.7} />
-        </mesh>
-      )}
+            <>
+              {/* Background ground plane */}
+              {showFloor0 && (
+                <mesh rotation={[-Math.PI / 2, 0, 0]} position={[2.5, -0.01, 1.925]} receiveShadow>
+                  <planeGeometry args={[36, 28]} />
+                  <meshStandardMaterial color="#070b11" roughness={0.4} metalness={0.7} />
+                </mesh>
+              )}
 
-      {/* Grid for Floor 0 (Room A) */}
-      {showFloor0 && (
-        <Grid position={[2.5, 0, 1.925]} args={[BAY_W, BAY_D]} cellSize={1} cellThickness={0.4} cellColor="#14202d" sectionSize={2.5} sectionThickness={0.8} sectionColor="#243a4f" fadeDistance={30} fadeStrength={2.5} infiniteGrid={false} />
-      )}
+              {/* Grid for Floor 0 (Room A) */}
+              {showFloor0 && (
+                <Grid position={[2.5, 0, 1.925]} args={[BAY_W, BAY_D]} cellSize={1} cellThickness={0.4} cellColor="#14202d" sectionSize={2.5} sectionThickness={0.8} sectionColor="#243a4f" fadeDistance={30} fadeStrength={2.5} infiniteGrid={false} />
+              )}
 
-      {/* Grid for Floor 1 (Room B, stacked 3m above) */}
-      {showFloor1 && (
-        <Grid position={[2.5, 2.86, 1.925]} args={[BAY_W, BAY_D]} cellSize={1} cellThickness={0.4} cellColor="#14202d" sectionSize={2.5} sectionThickness={0.8} sectionColor="#243a4f" fadeDistance={30} fadeStrength={2.5} infiniteGrid={false} />
-      )}
-    </>
-  )
+              {/* Grid for Floor 1 (Room B, stacked 3m above) */}
+              {showFloor1 && (
+                <Grid position={[2.5, 2.86, 1.925]} args={[BAY_W, BAY_D]} cellSize={1} cellThickness={0.4} cellColor="#14202d" sectionSize={2.5} sectionThickness={0.8} sectionColor="#243a4f" fadeDistance={30} fadeStrength={2.5} infiniteGrid={false} />
+              )}
+            </>
+            )
 }
 
-// ── Sleek Floating Settings Panel UI ───────────────────────────────────────────
-function SettingsPanel() {
+            // ── Sleek Floating Settings Panel UI ───────────────────────────────────────────
+            function SettingsPanel() {
   const [isOpen, setIsOpen] = useState(false)
   const wallOpacity = useRigStore(s => s.wallOpacity)
   const setWallOpacity = useRigStore(s => s.setWallOpacity)
@@ -429,166 +438,166 @@ function SettingsPanel() {
   const clearTrackingCache = useRigStore(s => s.clearTrackingCache)
   const zoneSelectMode = useRigStore(s => s.zoneSelectMode)
   const setZoneSelectMode = useRigStore(s => s.setZoneSelectMode)
-  const [clearing, setClearing] = useState(false)
+            const [clearing, setClearing] = useState(false)
 
   const handleClearCache = async () => {
-    setClearing(true)
+              setClearing(true)
     await clearTrackingCache()
     setTimeout(() => setClearing(false), 1000)
   }
 
   // Segmented-control button style (active = filled cobalt, inactive = flat steel).
   const segBtn = (active) => ({
-    flex: 1,
-    background: active ? 'var(--accent-cobalt)' : 'var(--bg-card)',
-    border: `1px solid ${active ? 'var(--accent-cobalt)' : 'var(--border)'}`,
-    borderRadius: '4px',
-    color: active ? 'var(--bg-deep)' : 'var(--text-muted)',
-    padding: '6px 4px',
-    fontSize: '11px',
-    cursor: 'pointer',
-    transition: 'all 0.15s',
-    fontFamily: 'var(--font-mono)',
+              flex: 1,
+            background: active ? 'var(--accent-cobalt)' : 'var(--bg-card)',
+            border: `1px solid ${active ? 'var(--accent-cobalt)' : 'var(--border)'}`,
+            borderRadius: '4px',
+            color: active ? 'var(--bg-deep)' : 'var(--text-muted)',
+            padding: '6px 4px',
+            fontSize: '11px',
+            cursor: 'pointer',
+            transition: 'all 0.15s',
+            fontFamily: 'var(--font-mono)',
   })
-  const sliderStyle = { width: '100%', background: 'var(--bg-card)', cursor: 'pointer', accentColor: 'var(--accent-cobalt)' }
-  const sliderStyle2 = { width: '100%', background: 'var(--bg-card)', cursor: 'pointer', accentColor: 'var(--accent-cobalt)' }
-  const labelStyle = { fontSize: '10px', color: 'var(--text-muted)', letterSpacing: '1px', textTransform: 'uppercase' }
+            const sliderStyle = {width: '100%', background: 'var(--bg-card)', cursor: 'pointer', accentColor: 'var(--accent-cobalt)' }
+            const sliderStyle2 = {width: '100%', background: 'var(--bg-card)', cursor: 'pointer', accentColor: 'var(--accent-cobalt)' }
+            const labelStyle = {fontSize: '10px', color: 'var(--text-muted)', letterSpacing: '1px', textTransform: 'uppercase' }
 
-  return (
-    <div style={{
-      position: 'absolute',
-      bottom: 20,
-      left: 20,
-      zIndex: 1000,
-      fontFamily: 'var(--font-mono)',
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'flex-start',
-    }}>
-      {/* Toggle Button */}
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        style={{
-          background: 'var(--glass-panel)',
-          backdropFilter: 'blur(16px) saturate(120%)',
-          WebkitBackdropFilter: 'blur(16px) saturate(120%)',
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--radius-sm)',
-          color: 'var(--text-primary)',
-          padding: '9px 14px',
-          cursor: 'pointer',
-          transition: 'all 0.15s',
-          fontSize: '11px',
-          boxShadow: 'var(--shadow-card)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '6px',
-          marginBottom: isOpen ? '10px' : '0px',
-        }}
-      >
-        <span style={{ opacity: 0.7 }}>⚙</span>
-        <span>{isOpen ? 'CLOSE CONTROLS' : 'STREAM CONTROLS'}</span>
-      </button>
-
-      {/* Main Panel */}
-      {isOpen && (
-        <div style={{
-          width: '288px',
-          background: 'var(--glass-panel)',
-          backdropFilter: 'blur(16px) saturate(120%)',
-          WebkitBackdropFilter: 'blur(16px) saturate(120%)',
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--radius)',
-          padding: '18px',
-          boxShadow: 'var(--shadow-panel), var(--inner-hi)',
-          color: 'var(--text-primary)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '18px',
-        }}>
-          <div style={{ borderBottom: '1px solid var(--border)', paddingBottom: '8px', fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', letterSpacing: '0.5px', fontFamily: 'var(--font-ui)', textTransform: 'uppercase' }}>
-            RigVision Control Panel
-          </div>
-
-          {/* Floor Filter */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <span style={labelStyle}>Floor View Filter</span>
-            <div style={{ display: 'flex', gap: '4px' }}>
-              {['all', 0, 1].map((f) => (
-                <button key={f} onClick={() => setFloorFilter(f)}
-                  style={{ ...segBtn(floorFilter === f), textTransform: 'uppercase' }}>
-                  {f === 'all' ? 'All' : `F${f}`}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Click Interaction Target Toggle */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <span style={labelStyle}>Click Interaction Target</span>
-            <div style={{ display: 'flex', gap: '4px' }}>
-              <button onClick={() => setZoneSelectMode(true)} style={segBtn(zoneSelectMode)}>
-                Zones
+            return (
+            <div style={{
+              position: 'absolute',
+              bottom: 20,
+              left: 20,
+              zIndex: 1000,
+              fontFamily: 'var(--font-mono)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'flex-start',
+            }}>
+              {/* Toggle Button */}
+              <button
+                onClick={() => setIsOpen(!isOpen)}
+                style={{
+                  background: 'var(--glass-panel)',
+                  backdropFilter: 'blur(16px) saturate(120%)',
+                  WebkitBackdropFilter: 'blur(16px) saturate(120%)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius-sm)',
+                  color: 'var(--text-primary)',
+                  padding: '9px 14px',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s',
+                  fontSize: '11px',
+                  boxShadow: 'var(--shadow-card)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  marginBottom: isOpen ? '10px' : '0px',
+                }}
+              >
+                <span style={{ opacity: 0.7 }}>⚙</span>
+                <span>{isOpen ? 'CLOSE CONTROLS' : 'STREAM CONTROLS'}</span>
               </button>
-              <button onClick={() => setZoneSelectMode(false)} style={segBtn(!zoneSelectMode)}>
-                Avatars
-              </button>
+
+              {/* Main Panel */}
+              {isOpen && (
+                <div style={{
+                  width: '288px',
+                  background: 'var(--glass-panel)',
+                  backdropFilter: 'blur(16px) saturate(120%)',
+                  WebkitBackdropFilter: 'blur(16px) saturate(120%)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius)',
+                  padding: '18px',
+                  boxShadow: 'var(--shadow-panel), var(--inner-hi)',
+                  color: 'var(--text-primary)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '18px',
+                }}>
+                  <div style={{ borderBottom: '1px solid var(--border)', paddingBottom: '8px', fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', letterSpacing: '0.5px', fontFamily: 'var(--font-ui)', textTransform: 'uppercase' }}>
+                    RigVision Control Panel
+                  </div>
+
+                  {/* Floor Filter */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <span style={labelStyle}>Floor View Filter</span>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      {['all', 0, 1].map((f) => (
+                        <button key={f} onClick={() => setFloorFilter(f)}
+                          style={{ ...segBtn(floorFilter === f), textTransform: 'uppercase' }}>
+                          {f === 'all' ? 'All' : `F${f}`}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Click Interaction Target Toggle */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <span style={labelStyle}>Click Interaction Target</span>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      <button onClick={() => setZoneSelectMode(true)} style={segBtn(zoneSelectMode)}>
+                        Zones
+                      </button>
+                      <button onClick={() => setZoneSelectMode(false)} style={segBtn(!zoneSelectMode)}>
+                        Avatars
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Wall Opacity Slider */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>WALL OPACITY</span>
+                      <span style={{ color: 'var(--accent-cobalt)' }}>{(wallOpacity * 100).toFixed(0)}%</span>
+                    </div>
+                    <input type="range" min="0.1" max="1.0" step="0.05" value={wallOpacity}
+                      onChange={(e) => setWallOpacity(parseFloat(e.target.value))} style={sliderStyle} />
+                  </div>
+
+                  {/* FPS Limiter Slider */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>SCENE RE-POLL / FPS LIMIT</span>
+                      <span style={{ color: 'var(--accent-cobalt)' }}>{fpsLimit} FPS</span>
+                    </div>
+                    <input type="range" min="1" max="30" step="1" value={fpsLimit}
+                      onChange={(e) => setFpsLimit(parseInt(e.target.value))} style={sliderStyle} />
+                  </div>
+
+                  {/* Toggles and Buttons */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '4px' }}>
+                    {/* Clear Tracking Cache Button */}
+                    <button
+                      onClick={handleClearCache}
+                      disabled={clearing}
+                      style={{
+                        width: '100%',
+                        background: 'var(--bg-card)',
+                        border: '1px solid var(--accent-red)',
+                        borderRadius: '4px',
+                        color: 'var(--accent-red)',
+                        padding: '8px',
+                        fontSize: '11px',
+                        cursor: clearing ? 'not-allowed' : 'pointer',
+                        letterSpacing: '0.5px',
+                        transition: 'all 0.15s',
+                        marginTop: '4px',
+                        opacity: clearing ? 0.6 : 1,
+                      }}
+                    >
+                      {clearing ? 'COMMAND SENT...' : 'CLEAR TRACKING CACHE'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
             </div>
-          </div>
-
-          {/* Wall Opacity Slider */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
-              <span style={{ color: 'var(--text-muted)' }}>WALL OPACITY</span>
-              <span style={{ color: 'var(--accent-cobalt)' }}>{(wallOpacity * 100).toFixed(0)}%</span>
-            </div>
-            <input type="range" min="0.1" max="1.0" step="0.05" value={wallOpacity}
-              onChange={(e) => setWallOpacity(parseFloat(e.target.value))} style={sliderStyle} />
-          </div>
-
-          {/* FPS Limiter Slider */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
-              <span style={{ color: 'var(--text-muted)' }}>SCENE RE-POLL / FPS LIMIT</span>
-              <span style={{ color: 'var(--accent-cobalt)' }}>{fpsLimit} FPS</span>
-            </div>
-            <input type="range" min="1" max="30" step="1" value={fpsLimit}
-              onChange={(e) => setFpsLimit(parseInt(e.target.value))} style={sliderStyle} />
-          </div>
-
-          {/* Toggles and Buttons */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '4px' }}>
-            {/* Clear Tracking Cache Button */}
-            <button
-              onClick={handleClearCache}
-              disabled={clearing}
-              style={{
-                width: '100%',
-                background: 'var(--bg-card)',
-                border: '1px solid var(--accent-red)',
-                borderRadius: '4px',
-                color: 'var(--accent-red)',
-                padding: '8px',
-                fontSize: '11px',
-                cursor: clearing ? 'not-allowed' : 'pointer',
-                letterSpacing: '0.5px',
-                transition: 'all 0.15s',
-                marginTop: '4px',
-                opacity: clearing ? 0.6 : 1,
-              }}
-            >
-              {clearing ? 'COMMAND SENT...' : 'CLEAR TRACKING CACHE'}
-            </button>
-          </div>
-        </div>
-      )}
-
-    </div>
-  )
+            )
 }
 
-// ── Main Scene ────────────────────────────────────────────────────────────────
-export default function Scene3D() {
+            // ── Main Scene ────────────────────────────────────────────────────────────────
+            export default function Scene3D() {
   const persons = useRigStore(s => s.persons)
   const zones = useRigStore(s => s.zones)
   const showAvatars = useRigStore(s => s.showAvatars)
@@ -596,125 +605,125 @@ export default function Scene3D() {
   const floorFilter = useRigStore(s => s.floorFilter)
   const clearSelection = useRigStore(s => s.clearSelection)
 
-  const showFloor0 = floorFilter === 'all' || floorFilter === 0
-  const showFloor1 = floorFilter === 'all' || floorFilter === 1
+            const showFloor0 = floorFilter === 'all' || floorFilter === 0
+            const showFloor1 = floorFilter === 'all' || floorFilter === 1
 
-  // Orbit target Y: mid-height of whichever floor(s) are shown. Room A centres at
-  // y≈1.5, Room B at y≈4.5, and the full stack at y≈3.0.
-  const targetY = floorFilter === 'all' ? 3.0 : (floorFilter === 1 ? 4.5 : 1.5)
+            // Orbit target Y: mid-height of whichever floor(s) are shown. Room A centres at
+            // y≈1.5, Room B at y≈4.5, and the full stack at y≈3.0.
+            const targetY = floorFilter === 'all' ? 3.0 : (floorFilter === 1 ? 4.5 : 1.5)
 
-  return (
-    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
-      <Canvas
-        shadows={{ type: THREE.PCFShadowMap }}
-        camera={{ position: [9, 7, 10], fov: 45, near: 0.1, far: 500 }}
-        gl={{ antialias: true, alpha: false }}
-        style={{ background: '#0b0e13' }}
-        onClick={clearSelection}
-      >
-        <Environment preset="city" />
-        <Lighting />
-        <Floor showFloor0={showFloor0} showFloor1={showFloor1} />
-        <RenderThrottler />
-        
-        {/* Origin Indicator Dot */}
-        <mesh position={[0, 0, 0]}>
-          <sphereGeometry args={[0.08, 16, 16]} />
-          <meshBasicMaterial color="#e06054" toneMapped={false} />
-          <Html distanceFactor={8} position={[0, 0.2, 0]} center>
-            <div style={{
-              background: 'rgba(20, 24, 31, 0.85)',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
-              padding: '2px 6px',
-              borderRadius: '4px',
-              fontFamily: 'var(--font-mono)',
-              fontSize: '9px',
-              color: 'var(--text-primary)',
-              whiteSpace: 'nowrap',
-              pointerEvents: 'none',
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.5)'
-            }}>
-              ORIGIN (0,0,0)
+            return (
+            <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+              <Canvas
+                shadows={{ type: THREE.PCFShadowMap }}
+                camera={{ position: [9, 7, 10], fov: 45, near: 0.1, far: 500 }}
+                gl={{ antialias: true, alpha: false }}
+                style={{ background: '#0b0e13' }}
+                onClick={clearSelection}
+              >
+                <Environment preset="city" />
+                <Lighting />
+                <Floor showFloor0={showFloor0} showFloor1={showFloor1} />
+                <RenderThrottler />
+
+                {/* Origin Indicator Dot */}
+                <mesh position={[0, 0, 0]}>
+                  <sphereGeometry args={[0.08, 16, 16]} />
+                  <meshBasicMaterial color="#e06054" toneMapped={false} />
+                  <Html distanceFactor={8} position={[0, 0.2, 0]} center>
+                    <div style={{
+                      background: 'rgba(20, 24, 31, 0.85)',
+                      border: '1px solid rgba(255, 255, 255, 0.1)',
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: '9px',
+                      color: 'var(--text-primary)',
+                      whiteSpace: 'nowrap',
+                      pointerEvents: 'none',
+                      boxShadow: '0 2px 8px rgba(0, 0, 0, 0.5)'
+                    }}>
+                      ORIGIN (0,0,0)
+                    </div>
+                  </Html>
+                </mesh>
+
+                <Suspense fallback={null}>
+                  {/* ROOM A — ground floor (zone_a), built in place spanning x∈[0,8], z∈[0,6] */}
+                  {showFloor0 && (
+                    <>
+                      <RigRoom baseY={0} zoneId="zone_a" isUpper={false} />
+                      <Equipment zoneId="zone_a" />
+                    </>
+                  )}
+
+                  {/* ROOM B — first floor (zone_b), stacked directly above Room A at y=3.0 */}
+                  {showFloor1 && (
+                    <>
+                      <RigRoom baseY={3.0} zoneId="zone_b" isUpper={true} />
+                      <Equipment zoneId="zone_b" />
+                    </>
+                  )}
+
+
+                </Suspense>
+
+                {/* Zone Overlays */}
+                {Object.entries(zones).map(([id, zone]) => {
+                  const staticDef = ZONES[id]
+                  if (!staticDef) return null
+
+                  // Filter zone by floor view
+                  const zoneFloor = staticDef.floor ?? 0
+                  const isVisible = floorFilter === 'all' || zoneFloor === floorFilter
+                  if (!isVisible) return null
+
+                  return <ZonePlane key={id} zoneId={id} zone={zone} staticDef={staticDef} />
+                })}
+
+                {/* Personnel Avatars */}
+                {showAvatars && persons.map(p => {
+                  // Default missing floor to floor 0
+                  const personFloor = p.floor ?? 0
+                  const isVisible = floorFilter === 'all' || personFloor === floorFilter
+                  if (!isVisible) return null
+
+                  return <PersonAvatar key={p.id} person={p} />
+                })}
+
+                {/* Cameras and Sensors */}
+                {showSensors && Object.entries(ZONES).map(([id, zone], idx) => {
+                  const zoneFloor = zone.floor ?? 0
+                  const isVisible = floorFilter === 'all' || zoneFloor === floorFilter
+                  if (!isVisible) return null
+
+                  return (
+                    <group key={`zone-sensors-${idx}`}>
+                      {/* Each zone now has 2 overlapping cameras (cameras[]); render an indicator for each. */}
+                      {(zone.cameras || []).map(camera => (
+                        <CameraIndicator key={camera.id} camera={camera} />
+                      ))}
+                      {(zone.sensors || []).map(sensor => (
+                        <SensorIndicator key={sensor.id} sensor={sensor} />
+                      ))}
+                    </group>
+                  )
+                })}
+
+                <OrbitControls
+                  target={[2.5, targetY, 1.925]}
+                  enableDamping dampingFactor={0.08}
+                  minDistance={3} maxDistance={70}
+                  minPolarAngle={0.1} maxPolarAngle={Math.PI / 2.05}
+                  makeDefault
+                />
+                <GizmoHelper alignment="bottom-right" margin={[60, 60]}>
+                  <GizmoViewport axisColors={['#e06054', '#46b17f', '#5b8def']} labelColor="#e6e9ef" />
+                </GizmoHelper>
+              </Canvas>
+
+              {/* Settings Overlay */}
+              <SettingsPanel />
             </div>
-          </Html>
-        </mesh>
-
-        <Suspense fallback={null}>
-          {/* ROOM A — ground floor (zone_a), built in place spanning x∈[0,8], z∈[0,6] */}
-          {showFloor0 && (
-            <>
-              <RigRoom baseY={0} zoneId="zone_a" isUpper={false} />
-              <Equipment zoneId="zone_a" />
-            </>
-          )}
-
-          {/* ROOM B — first floor (zone_b), stacked directly above Room A at y=3.0 */}
-          {showFloor1 && (
-            <>
-              <RigRoom baseY={3.0} zoneId="zone_b" isUpper={true} />
-              <Equipment zoneId="zone_b" />
-            </>
-          )}
-
-
-        </Suspense>
-
-        {/* Zone Overlays */}
-        {Object.entries(zones).map(([id, zone]) => {
-          const staticDef = ZONES[id]
-          if (!staticDef) return null
-          
-          // Filter zone by floor view
-          const zoneFloor = staticDef.floor ?? 0
-          const isVisible = floorFilter === 'all' || zoneFloor === floorFilter
-          if (!isVisible) return null
-
-          return <ZonePlane key={id} zoneId={id} zone={zone} staticDef={staticDef} />
-        })}
-
-        {/* Personnel Avatars */}
-        {showAvatars && persons.map(p => {
-          // Default missing floor to floor 0
-          const personFloor = p.floor ?? 0
-          const isVisible = floorFilter === 'all' || personFloor === floorFilter
-          if (!isVisible) return null
-
-          return <PersonAvatar key={p.id} person={p} />
-        })}
-
-        {/* Cameras and Sensors */}
-        {showSensors && Object.entries(ZONES).map(([id, zone], idx) => {
-          const zoneFloor = zone.floor ?? 0
-          const isVisible = floorFilter === 'all' || zoneFloor === floorFilter
-          if (!isVisible) return null
-
-          return (
-            <group key={`zone-sensors-${idx}`}>
-              {/* Each zone now has 2 overlapping cameras (cameras[]); render an indicator for each. */}
-              {(zone.cameras || []).map(camera => (
-                <CameraIndicator key={camera.id} camera={camera} />
-              ))}
-              {(zone.sensors || []).map(sensor => (
-                <SensorIndicator key={sensor.id} sensor={sensor} />
-              ))}
-            </group>
-          )
-        })}
-
-        <OrbitControls
-          target={[2.5, targetY, 1.925]}
-          enableDamping dampingFactor={0.08}
-          minDistance={3} maxDistance={70}
-          minPolarAngle={0.1} maxPolarAngle={Math.PI / 2.05}
-          makeDefault
-        />
-        <GizmoHelper alignment="bottom-right" margin={[60, 60]}>
-          <GizmoViewport axisColors={['#e06054', '#46b17f', '#5b8def']} labelColor="#e6e9ef" />
-        </GizmoHelper>
-      </Canvas>
-
-      {/* Settings Overlay */}
-      <SettingsPanel />
-    </div>
-  )
+            )
 }

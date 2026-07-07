@@ -41,7 +41,7 @@ app.use(cookieParser());
 // Health check route
 // ──────────────────────────────────────────────────────────
 app.get('/health', (req, res) => {
-  res.json({ 
+  res.json({
     success: true,
     status: 'Auth service is running',
     timestamp: new Date().toISOString()
@@ -71,10 +71,10 @@ app.use(errorHandler);
 // ──────────────────────────────────────────────────────────
 // Start server
 // ──────────────────────────────────────────────────────────
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5005;
 const server = app.listen(PORT, () => {
-  console.log(`🚀 Auth server running on port ${PORT}`);
-  console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(` Auth server running on port ${PORT}`);
+  console.log(` Environment: ${process.env.NODE_ENV || 'development'}`);
 });
 
 // Graceful shutdown
@@ -106,4 +106,4 @@ process.on('unhandledRejection', (err) => {
   process.exit(1);
 });
 
-module.exports = app;
+module.exports = app; // Trigger restart

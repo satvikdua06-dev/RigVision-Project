@@ -13,9 +13,9 @@ exports.protect = (req, res, next) => {
     }
 
     if (!token) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         success: false,
-        error: 'Not authorized to access this route' 
+        error: 'Not authorized to access this route'
       });
     }
 
@@ -24,15 +24,15 @@ exports.protect = (req, res, next) => {
       req.user = decoded;
       next();
     } catch (error) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         success: false,
-        error: 'Token is not valid' 
+        error: 'Token is not valid'
       });
     }
   } catch (error) {
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      error: error.message 
+      error: error.message
     });
   }
 };
@@ -41,9 +41,9 @@ exports.protect = (req, res, next) => {
 exports.authorize = (...allowedRoles) => {
   return (req, res, next) => {
     if (!allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({ 
+      return res.status(403).json({
         success: false,
-        error: 'User role is not authorized to access this route' 
+        error: 'User role is not authorized to access this route'
       });
     }
     next();
