@@ -43,9 +43,9 @@ function findAvatarInIntersections(intersections) {
 }
 
 // ── Facility dimensions (one bay) ───────────────────────────────────────────────
-// Each room is a 5m (X) × 3.85m (Z) bay, 3m tall. Built procedurally in local space
-// spanning x∈[0,5], z∈[0,3.85], y∈[0,3]; the group is shifted up by `baseY` per floor.
-const BAY_W = 5, BAY_D = 3.85, BAY_H = 3.0
+// Each room is a 6.0m (X) × 3.85m (Z) bay, 3m tall. Built procedurally in local space
+// spanning x∈[0,6], z∈[0,3.85], y∈[0,3]; the group is shifted up by `baseY` per floor.
+const BAY_W = 6.0, BAY_D = 3.85, BAY_H = 3.0
 
 // Shared material presets (memo-friendly plain objects fed to <meshStandardMaterial/>).
 const STEEL_DARK = { color: '#262c35', metalness: 0.85, roughness: 0.5 }
