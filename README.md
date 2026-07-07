@@ -36,7 +36,7 @@ RigVision-3D puts all of that into a single 3D view of the rig itself. The opera
 
 ### 1. Login
 
-![Login](docs/screenshots/login.jpeg)
+![Login](docs/screenshots/login.png)
 
 *The entry point. Authentication is handled by the Express + MongoDB service in `auth-rig/`, which issues a JWT cookie. Demo credentials are shown for evaluators.*
 
@@ -89,7 +89,7 @@ RigVision-3D puts all of that into a single 3D view of the rig itself. The opera
 **Frontend (Dashboard + Sensor Console)**
 React 19, Vite, TailwindCSS, React Router, Zustand
 Three.js, @react-three/fiber, @react-three/drei
-Recharts, Lucide React
+Recharts
 
 **Backend API**
 FastAPI, Uvicorn, Pydantic, Python 3.11
@@ -98,7 +98,7 @@ FastAPI, Uvicorn, Pydantic, Python 3.11
 Node.js, Express, MongoDB, JWT, bcrypt
 
 **Computer vision**
-YOLOv8L (Ultralytics), PyTorch + CUDA
+YOLOv8 (Ultralytics), PyTorch + CUDA
 BoT-SORT tracker (Kalman)
 OpenCV for calibration, ArUco markers, triangulation
 
@@ -109,7 +109,7 @@ Neo4j (knowledge graph), ChromaDB (vector search)
 Google Gemini (embeddings), LM Studio (local LLM for answers)
 
 **Infrastructure**
-Docker Compose for Redis, Postgres, Neo4j, Kafka, ChromaDB
+Docker Compose for Redis, Postgres, Neo4j, Kafka, ChromaDB, MongoDB
 
 ---
 
