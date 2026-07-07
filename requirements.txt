@@ -1,0 +1,37 @@
+# ──────────────────────────────────────────────────────────
+# RigVision-3D — All Dependencies (single file)
+# ──────────────────────────────────────────────────────────
+#
+# Install order:
+#   1. PyTorch with CUDA (RTX 4070) — must come first:
+#      pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+#   2. Everything else:
+#      pip install -r requirements.txt
+# ──────────────────────────────────────────────────────────
+
+# ── Shared ──
+numpy>=1.24.0
+redis>=5.0.0
+requests
+python-dotenv
+kafka-python>=2.1.0
+
+# ── CV Pipeline ──
+opencv-python>=4.8.0
+ultralytics>=8.0.0          # YOLOv8l person detection + yolov8n-face PPE
+torch                        # installed separately with CUDA (see above)
+torchvision                  # required by EfficientNet-B0 classifiers
+Pillow>=9.0.0                # image transforms in cv/PPE/classifier.py
+scipy>=1.11.0                # Kalman math + cosine distance in BoT-SORT
+lap>=0.4.0                   # Jonker-Volgenant linear assignment
+huggingface_hub              # auto-download yolov8n-face.pt on first PPE run
+datasets                     # HuggingFace CelebA loader (cv/PPE/generate_*_celeba.py)
+
+# ── Backend (FastAPI) ──
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pydantic>=2.0.0
+
+# ── Knowledge Graph + Diagnostics ──
+neo4j                        # Neo4j Python driver
+chromadb                     # vector store for RAG retrieval

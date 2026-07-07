@@ -1,0 +1,21 @@
+{
+  "item": "cap",
+  "architecture": "efficientnet_b0",
+  "img_size": 224,
+  "threshold": 0.5,
+  "class_names": [
+    "absent",
+    "present"
+  ],
+  "val_accuracy": 0.9775,
+  "mean": [
+    0.485,
+    0.456,
+    0.406
+  ],
+  "std": [
+    0.229,
+    0.224,
+    0.225
+  ]
+}

@@ -33,7 +33,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from typing import List, Tuple
+from typing import Tuple
 
 from PIL import Image, ImageDraw, ImageFont
 

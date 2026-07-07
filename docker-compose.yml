@@ -48,10 +48,14 @@ services:
     volumes:
       - neo4j_data:/data
     healthcheck:
-      test: ["CMD", "neo4j", "status"]
+      # `neo4j status` always fails in the image's console/foreground mode (no PID file),
+      # which flags the container unhealthy and triggers a restart loop. Probe Bolt with
+      # cypher-shell instead, and give Neo4j time to come up before counting failures.
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p rigvision_neo4j 'RETURN 1' || exit 1"]
       interval: 15s
-      timeout: 5s
+      timeout: 10s
       retries: 5
+      start_period: 40s
     restart: unless-stopped
 
   chromadb:

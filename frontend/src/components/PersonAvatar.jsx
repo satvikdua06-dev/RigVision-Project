@@ -15,11 +15,11 @@ const POSTURE_COLORS = {
 }
 
 function ppeAlert(ppe) {
-  return ppe.backpack === 'missing' || ppe.hat === 'missing'
+  return ppe.hat === 'missing' || ppe.glasses === 'missing'
 }
 
 function ppeUnknown(ppe) {
-  return ppe.backpack == null || ppe.backpack === 'unknown' || ppe.hat == null || ppe.hat === 'unknown'
+  return ppe.hat == null || ppe.hat === 'unknown' || ppe.glasses == null || ppe.glasses === 'unknown'
 }
 
 export default function PersonAvatar({ person }) {
@@ -49,8 +49,6 @@ export default function PersonAvatar({ person }) {
       if (ring) ring.material.emissiveIntensity = 0.2 + 0.25 * Math.abs(Math.sin(t))
     }
   })
-
-  const showDiagnosticsModal = useRigStore(s => s.showDiagnosticsModal)
 
   return (
     <group 
@@ -107,30 +105,28 @@ export default function PersonAvatar({ person }) {
       )}
 
       {/* Floating label */}
-      {!showDiagnosticsModal && (
-        <Html 
-          position={[0, 1.8, 0]} // Pushed slightly higher above the head
-          center 
-          distanceFactor={22} // stays readable and not too small
-          style={{ pointerEvents: 'none' }}
-        >
-          <div style={{
-            background: 'var(--bg-card)',
-            border: '1px solid var(--border-solid)',
-            borderRadius: 4, padding: '4px 10px',
-            fontFamily: 'var(--font-mono)',
-            fontSize: 12, fontWeight: 500,
-            color: 'var(--text-primary)', whiteSpace: 'nowrap',
-            display: 'flex', alignItems: 'center', gap: 6,
-          }}>
-            <span style={{
-              width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
-              background: hasAlert ? '#e06054' : hasUnknown ? '#8b93a3' : '#5b8def',
-            }} />
-            <span>P{person.id} · {person.zone.replace(/_/g,' ').toUpperCase()}</span>
-          </div>
-        </Html>
-      )}
+      <Html
+        position={[0, 1.8, 0]}
+        center
+        distanceFactor={22}
+        style={{ pointerEvents: 'none' }}
+      >
+        <div style={{
+          background: 'var(--bg-card)',
+          border: '1px solid var(--border-solid)',
+          borderRadius: 4, padding: '4px 10px',
+          fontFamily: 'var(--font-mono)',
+          fontSize: 12, fontWeight: 500,
+          color: 'var(--text-primary)', whiteSpace: 'nowrap',
+          display: 'flex', alignItems: 'center', gap: 6,
+        }}>
+          <span style={{
+            width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+            background: hasAlert ? '#e06054' : hasUnknown ? '#8b93a3' : '#5b8def',
+          }} />
+          <span>P{person.id} · {person.zone.replace(/_/g,' ').toUpperCase()}</span>
+        </div>
+      </Html>
 
 
     </group>
