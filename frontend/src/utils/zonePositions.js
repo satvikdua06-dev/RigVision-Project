@@ -5,7 +5,7 @@
  * Two stacked rooms, no corridor:
  *   - Room A (zone_a) on the ground floor (floor 0), y ∈ [0, 3]
  *   - Room B (zone_b) on the first floor (floor 1), y ∈ [3, 6], directly above A
- * Both rooms share the same 5×3.85m footprint (X ∈ [0,5], Z ∈ [0,3.85]).
+ * Both rooms share the same 6×3.85m footprint (X ∈ [0,6], Z ∈ [0,3.85]).
  * Each zone has 2 cameras with overlapping views (for stereo triangulation).
  *
  * `equipment[].position` is the mesh CENTRE (already includes the floor offset), so the
@@ -16,16 +16,16 @@ export const ZONES = {
   zone_a: {
     name: 'Room A',
     floor: 0,
-    center: [2.5, 1.5, 1.925],
-    size: [5, 3, 3.85],
+    center: [3.0, 1.5, 1.925],
+    size: [6, 3, 3.85],
     min: [0, 0, 0],
-    max: [5, 3, 3.85],
+    max: [6, 3, 3.85],
     color: '#4488ff',
     equipment: [
       { id: 'pump_01', name: 'Mud Pump #1', type: 'pump', position: [1.3, 0.6, 1.3], size: [1.0, 1.1, 0.7], color: '#6b7585' },
       { id: 'panel_01', name: 'Control Panel', type: 'control_panel', position: [3.1, 0.3, 3.6], size: [2.7, 0.8, 0.4], color: '#4a5666' },
       { id: 'pipe_rack_01', name: 'Pipe Rack', type: 'storage', position: [0.6, 1.1, 3.2], size: [0.6, 1.8, 1.0], color: '#7d7160' },
-      { id: 'temple_01', name: 'Temple Mandir', type: 'temple', position: [4.6, 0.9, 0.8], size: [0.6, 1.8, 0.5], color: '#3c2a21' },
+      { id: 'temple_01', name: 'Temple Mandir', type: 'temple', position: [5.7, 0.9, 0.8], size: [0.6, 1.8, 0.5], color: '#3c2a21' },
     ],
     cameras: [
       { id: 'cam0', position: [0.3, 2.7, 0.6], lookAt: [4.0, 0.9, 1.9] },
@@ -42,10 +42,10 @@ export const ZONES = {
   zone_b: {
     name: 'Room B',
     floor: 1,
-    center: [2.5, 4.5, 1.925],
-    size: [5, 3, 3.85],
+    center: [3.0, 4.5, 1.925],
+    size: [6, 3, 3.85],
     min: [0, 3, 0],
-    max: [5, 6, 3.85],
+    max: [6, 6, 3.85],
     color: '#44ff88',
     equipment: [
       { id: 'compressor_01', name: 'Compressor', type: 'compressor', position: [1.6, 3.7, 1.3], size: [1.1, 1.2, 0.8], color: '#566472' },

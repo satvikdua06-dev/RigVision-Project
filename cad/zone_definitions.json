@@ -1,15 +1,15 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "RigVision-3D Zone Definitions",
-  "description": "Physical layout of the monitoring area. Two stacked rooms: Room A on the ground floor (floor 0) and Room B directly above it on the first floor (floor 1). No corridor. Each room is 5m (X) x 3.85m (Z), 3m tall. All units in meters. Coordinate system: X = length, Y = up, Z = width. Origin at the ground-floor corner of Room A.",
+  "description": "Physical layout of the monitoring area. Two stacked rooms: Room A on the ground floor (floor 0) and Room B directly above it on the first floor (floor 1). No corridor. Each room is 6m (X) x 3.85m (Z), 3m tall. All units in meters. Coordinate system: X = length, Y = up, Z = width. Origin at the ground-floor corner of Room A.",
   "version": "4.0.0",
 
   "room": {
     "total_dimensions": {
-      "length_x": 5,
+      "length_x": 6,
       "height_y": 6,
       "width_z": 3.85,
-      "comment": "5m x 3.85m footprint, two 3m-tall floors stacked => 6m tall."
+      "comment": "6m x 3.85m footprint, two 3m-tall floors stacked => 6m tall."
     }
   },
 
@@ -20,7 +20,7 @@
       "description": "Ground-floor work area with drilling equipment.",
       "bounds": {
         "min": { "x": 0, "y": 0, "z": 0 },
-        "max": { "x": 5, "y": 3, "z": 3.85 }
+        "max": { "x": 6, "y": 3, "z": 3.85 }
       },
       "color": "#4488ff",
       "max_occupancy": 6,
@@ -70,7 +70,7 @@
           "id": "temple_01",
           "name": "Temple Mandir",
           "type": "temple",
-          "position": { "x": 0.6, "y": 0, "z": 0.6 },
+          "position": { "x": 5.7, "y": 0, "z": 0.6 },
           "dimensions": { "x": 0.6, "y": 1.8, "z": 0.5 },
           "color": "#3c2a21",
           "sensors": []
@@ -91,7 +91,7 @@
       "description": "First-floor area (directly above Room A) with compressor and wellhead equipment.",
       "bounds": {
         "min": { "x": 0, "y": 3, "z": 0 },
-        "max": { "x": 5, "y": 6, "z": 3.85 }
+        "max": { "x": 6, "y": 6, "z": 3.85 }
       },
       "color": "#44ff88",
       "max_occupancy": 6,
