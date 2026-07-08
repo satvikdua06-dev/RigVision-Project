@@ -1,0 +1,319 @@
+<svg viewBox="0 0 1100 2380" xmlns="http://www.w3.org/2000/svg" style="background:#0f1117; font-family: 'Segoe UI', Arial, sans-serif;">
+<title>RigVision PPE Detection Pipeline</title>
+
+<defs>
+  <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+    <path d="M0,0 L0,6 L8,3 z" fill="#4a7fc1"/>
+  </marker>
+  <marker id="arr-g" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+    <path d="M0,0 L0,6 L8,3 z" fill="#3dba7c"/>
+  </marker>
+  <marker id="arr-r" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+    <path d="M0,0 L0,6 L8,3 z" fill="#d94f4f"/>
+  </marker>
+  <marker id="arr-y" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+    <path d="M0,0 L0,6 L8,3 z" fill="#c9963c"/>
+  </marker>
+</defs>
+
+<!-- TITLE -->
+<text x="550" y="36" text-anchor="middle" fill="#e8eaf0" font-size="18" font-weight="700" letter-spacing="1">RigVision — PPE Detection Pipeline</text>
+<text x="550" y="54" text-anchor="middle" fill="#6a7090" font-size="11">cv/pipeline.py  ·  cv/PPE/ppe_monitor.py  ·  cv/detection/detector.py  ·  cv/tracking/</text>
+
+<!-- SECTION LABELS -->
+<rect x="8" y="68" width="92" height="220" rx="6" fill="none" stroke="#2a3050" stroke-width="1" stroke-dasharray="4 3"/>
+<text x="54" y="92" text-anchor="middle" fill="#4a7fc1" font-size="9.5" font-weight="700">INPUT</text>
+<rect x="8" y="296" width="92" height="360" rx="6" fill="none" stroke="#2a3050" stroke-width="1" stroke-dasharray="4 3"/>
+<text x="54" y="320" text-anchor="middle" fill="#4a7fc1" font-size="9.5" font-weight="700">DETECT</text>
+<rect x="8" y="664" width="92" height="360" rx="6" fill="none" stroke="#2a3050" stroke-width="1" stroke-dasharray="4 3"/>
+<text x="54" y="688" text-anchor="middle" fill="#4a7fc1" font-size="9.5" font-weight="700">TRACK</text>
+<rect x="8" y="1032" width="92" height="640" rx="6" fill="none" stroke="#2a3050" stroke-width="1" stroke-dasharray="4 3"/>
+<text x="54" y="1056" text-anchor="middle" fill="#e09050" font-size="9.5" font-weight="700">PPE</text>
+<rect x="8" y="1680" width="92" height="360" rx="6" fill="none" stroke="#2a3050" stroke-width="1" stroke-dasharray="4 3"/>
+<text x="54" y="1704" text-anchor="middle" fill="#3dba7c" font-size="9.5" font-weight="700">FUSION</text>
+<rect x="8" y="2048" width="92" height="280" rx="6" fill="none" stroke="#2a3050" stroke-width="1" stroke-dasharray="4 3"/>
+<text x="54" y="2072" text-anchor="middle" fill="#3dba7c" font-size="9.5" font-weight="700">OUTPUT</text>
+
+<!-- ① VIDEO INPUT -->
+<rect x="110" y="72" width="880" height="208" rx="8" fill="#141929" stroke="#2a3a5c" stroke-width="1.2"/>
+<text x="134" y="96" fill="#e8eaf0" font-size="12" font-weight="700">① Video / Camera Input</text>
+<rect x="134" y="108" width="390" height="152" rx="6" fill="#0d1b30" stroke="#2a4a7c" stroke-width="1"/>
+<text x="156" y="127" fill="#4a9be8" font-size="10.5" font-weight="700">ZONE A — Ground Floor (floor: 0)</text>
+<rect x="148" y="134" width="166" height="114" rx="5" fill="#0a1525" stroke="#2a3a5c" stroke-width="1"/>
+<text x="164" y="151" fill="#8090b0" font-size="9.5" font-weight="600">cam0</text>
+<rect x="160" y="157" width="130" height="72" rx="3" fill="#060e1e" stroke="#1a2a40"/>
+<text x="225" y="198" text-anchor="middle" fill="#4a6a8c" font-size="8.5">vid1.mp4 / RTSP / USB</text>
+<text x="225" y="212" text-anchor="middle" fill="#2a4a6c" font-size="7.5">primary stereo left</text>
+<rect x="326" y="134" width="166" height="114" rx="5" fill="#0a1525" stroke="#2a3a5c" stroke-width="1"/>
+<text x="342" y="151" fill="#8090b0" font-size="9.5" font-weight="600">cam1</text>
+<rect x="338" y="157" width="130" height="72" rx="3" fill="#060e1e" stroke="#1a2a40"/>
+<text x="403" y="198" text-anchor="middle" fill="#4a6a8c" font-size="8.5">vid2.mp4 / RTSP / USB</text>
+<text x="403" y="212" text-anchor="middle" fill="#2a4a6c" font-size="7.5">primary stereo right</text>
+<rect x="546" y="108" width="390" height="152" rx="6" fill="#0d1b30" stroke="#2a4a7c" stroke-width="1"/>
+<text x="568" y="127" fill="#4a9be8" font-size="10.5" font-weight="700">ZONE B — First Floor (floor: 1)</text>
+<rect x="560" y="134" width="166" height="114" rx="5" fill="#0a1525" stroke="#2a3a5c" stroke-width="1"/>
+<text x="576" y="151" fill="#8090b0" font-size="9.5" font-weight="600">cam2</text>
+<rect x="572" y="157" width="130" height="72" rx="3" fill="#060e1e" stroke="#1a2a40"/>
+<text x="637" y="198" text-anchor="middle" fill="#4a6a8c" font-size="8.5">RTSP / USB</text>
+<text x="637" y="212" text-anchor="middle" fill="#6a4a3c" font-size="7.5">no video file in demo</text>
+<rect x="738" y="134" width="166" height="114" rx="5" fill="#0a1525" stroke="#2a3a5c" stroke-width="1"/>
+<text x="754" y="151" fill="#8090b0" font-size="9.5" font-weight="600">cam3</text>
+<rect x="750" y="157" width="130" height="72" rx="3" fill="#060e1e" stroke="#1a2a40"/>
+<text x="815" y="198" text-anchor="middle" fill="#4a6a8c" font-size="8.5">RTSP / USB</text>
+<text x="815" y="212" text-anchor="middle" fill="#6a4a3c" font-size="7.5">no video file in demo</text>
+<line x1="329" y1="280" x2="329" y2="300" stroke="#4a7fc1" stroke-width="1.5" marker-end="url(#arr)"/>
+<line x1="611" y1="280" x2="611" y2="300" stroke="#4a7fc1" stroke-width="1.5" marker-end="url(#arr)"/>
+<text x="470" y="293" text-anchor="middle" fill="#4a6a90" font-size="8.5">~30 fps per zone group · BGR frames</text>
+
+<!-- ② PERSON DETECTION -->
+<rect x="110" y="300" width="880" height="348" rx="8" fill="#141929" stroke="#2a3a5c" stroke-width="1.2"/>
+<text x="134" y="324" fill="#e8eaf0" font-size="12" font-weight="700">② Person Detection — YOLOv8n · detect_batch()</text>
+<text x="134" y="340" fill="#6a7090" font-size="9">cv/detection/detector.py · classes=[0] person only · batch inference for both cams per zone</text>
+<rect x="310" y="350" width="420" height="56" rx="6" fill="#0c1928" stroke="#2a5a9c" stroke-width="1.5"/>
+<text x="520" y="373" text-anchor="middle" fill="#6ab4ff" font-size="11" font-weight="600">YOLOv8n (COCO, class 0 = person)</text>
+<text x="520" y="390" text-anchor="middle" fill="#4a6a90" font-size="9">conf=0.3 threshold · non-max suppression · returns bbox (x1,y1,x2,y2) + confidence</text>
+<rect x="134" y="420" width="230" height="100" rx="6" fill="#0c1928" stroke="#2a3a5c" stroke-width="1"/>
+<text x="249" y="441" text-anchor="middle" fill="#e8eaf0" font-size="10" font-weight="600">Detection Record</text>
+<text x="149" y="458" fill="#6ab4ff" font-size="8.5">bbox</text><text x="352" y="458" text-anchor="end" fill="#8090b0" font-size="8.5">(x1,y1,x2,y2) px</text>
+<text x="149" y="471" fill="#6ab4ff" font-size="8.5">confidence</text><text x="352" y="471" text-anchor="end" fill="#8090b0" font-size="8.5">0.0 – 1.0</text>
+<text x="149" y="484" fill="#6ab4ff" font-size="8.5">foot_point</text><text x="352" y="484" text-anchor="end" fill="#8090b0" font-size="8.5">bottom-center of bbox</text>
+<text x="149" y="497" fill="#6ab4ff" font-size="8.5">class_id</text><text x="352" y="497" text-anchor="end" fill="#8090b0" font-size="8.5">0 (person)</text>
+<text x="149" y="510" fill="#6ab4ff" font-size="8.5">class_name</text><text x="352" y="510" text-anchor="end" fill="#8090b0" font-size="8.5">"person"</text>
+<rect x="384" y="420" width="234" height="100" rx="6" fill="#0c1928" stroke="#2a3a5c" stroke-width="1"/>
+<text x="501" y="441" text-anchor="middle" fill="#e8eaf0" font-size="10" font-weight="600">Posture Classification</text>
+<text x="399" y="458" fill="#a070d0" font-size="8.5">RTMPose keypoints</text><text x="606" y="458" text-anchor="end" fill="#8090b0" font-size="8.5">17 COCO joints</text>
+<text x="399" y="472" fill="#a070d0" font-size="8.5">standing</text><text x="606" y="472" text-anchor="end" fill="#8090b0" font-size="8.5">default upright</text>
+<text x="399" y="486" fill="#a070d0" font-size="8.5">sitting</text><text x="606" y="486" text-anchor="end" fill="#8090b0" font-size="8.5">leg_h &lt; 0.85×torso_h</text>
+<text x="399" y="500" fill="#a070d0" font-size="8.5">lying</text><text x="606" y="500" text-anchor="end" fill="#8090b0" font-size="8.5">w/h &gt; 1.25 or y-spread</text>
+<text x="399" y="514" fill="#a070d0" font-size="8.5">bending</text><text x="606" y="514" text-anchor="end" fill="#8090b0" font-size="8.5">torso_w/torso_h &gt; 1.0</text>
+<rect x="638" y="420" width="238" height="100" rx="6" fill="#0c1928" stroke="#2a3a5c" stroke-width="1"/>
+<text x="757" y="441" text-anchor="middle" fill="#e8eaf0" font-size="10" font-weight="600">ArUco Identity</text>
+<text x="653" y="458" fill="#e09050" font-size="8.5">Dictionary</text><text x="864" y="458" text-anchor="end" fill="#8090b0" font-size="8.5">DICT_4X4_50</text>
+<text x="653" y="472" fill="#e09050" font-size="8.5">Crop padding</text><text x="864" y="472" text-anchor="end" fill="#8090b0" font-size="8.5">±8% person bbox</text>
+<text x="653" y="486" fill="#e09050" font-size="8.5">personnel_id</text><text x="864" y="486" text-anchor="end" fill="#8090b0" font-size="8.5">aruco marker int</text>
+<text x="653" y="500" fill="#e09050" font-size="8.5">confidence</text><text x="864" y="500" text-anchor="end" fill="#8090b0" font-size="8.5">marker_area / crop_area</text>
+<text x="653" y="514" fill="#e09050" font-size="8.5">method</text><text x="864" y="514" text-anchor="end" fill="#8090b0" font-size="8.5">"aruco" | None</text>
+<line x1="520" y1="350" x2="520" y2="334" stroke="#4a7fc1" stroke-width="1.4"/>
+<line x1="249" y1="334" x2="757" y2="334" stroke="#4a7fc1" stroke-width="1.4"/>
+<line x1="249" y1="334" x2="249" y2="420" stroke="#4a7fc1" stroke-width="1.2"/>
+<line x1="501" y1="334" x2="501" y2="420" stroke="#4a7fc1" stroke-width="1.2"/>
+<line x1="757" y1="334" x2="757" y2="420" stroke="#4a7fc1" stroke-width="1.2"/>
+<line x1="249" y1="406" x2="249" y2="420" stroke="#4a7fc1" stroke-width="1.2" marker-end="url(#arr)"/>
+<line x1="501" y1="406" x2="501" y2="420" stroke="#4a7fc1" stroke-width="1.2" marker-end="url(#arr)"/>
+<line x1="757" y1="406" x2="757" y2="420" stroke="#4a7fc1" stroke-width="1.2" marker-end="url(#arr)"/>
+<text x="520" y="545" text-anchor="middle" fill="#6a7090" font-size="8.5">Posture fallback if rtmlib absent: aspect-ratio heuristic · ArUco fallback if no marker: personnel_id = None</text>
+<line x1="550" y1="648" x2="550" y2="668" stroke="#4a7fc1" stroke-width="1.5" marker-end="url(#arr)"/>
+
+<!-- ③ TRACKING -->
+<rect x="110" y="668" width="880" height="348" rx="8" fill="#141929" stroke="#2a3a5c" stroke-width="1.2"/>
+<text x="134" y="692" fill="#e8eaf0" font-size="12" font-weight="700">③ Multi-Object Tracking — BoT-SORT · cv/tracking/tracker.py</text>
+<text x="134" y="708" fill="#6a7090" font-size="9">One BoT-SORT instance per camera · persistent track_id across frames · Kalman filter + IoU association</text>
+<rect x="310" y="718" width="420" height="50" rx="6" fill="#0c1928" stroke="#2a4070" stroke-width="1.5"/>
+<text x="520" y="738" text-anchor="middle" fill="#6ab4ff" font-size="11" font-weight="600">BoT-SORT Kalman Tracker (per camera)</text>
+<text x="520" y="754" text-anchor="middle" fill="#4a6a90" font-size="9">track_high=0.5  track_low=0.1  new_track=0.6  buffer=30f  match=0.8</text>
+<rect x="134" y="782" width="218" height="104" rx="6" fill="#0c1928" stroke="#2a3a5c"/>
+<text x="243" y="800" text-anchor="middle" fill="#e8eaf0" font-size="10" font-weight="600">TrackedPerson</text>
+<text x="149" y="817" fill="#6ab4ff" font-size="8.5">track_id</text><text x="340" y="817" text-anchor="end" fill="#8090b0" font-size="8.5">persistent per cam</text>
+<text x="149" y="830" fill="#6ab4ff" font-size="8.5">bbox</text><text x="340" y="830" text-anchor="end" fill="#8090b0" font-size="8.5">Kalman-predicted</text>
+<text x="149" y="843" fill="#6ab4ff" font-size="8.5">foot_point</text><text x="340" y="843" text-anchor="end" fill="#8090b0" font-size="8.5">bottom-center</text>
+<text x="149" y="856" fill="#6ab4ff" font-size="8.5">frames_seen</text><text x="340" y="856" text-anchor="end" fill="#8090b0" font-size="8.5">age of track</text>
+<text x="149" y="869" fill="#6ab4ff" font-size="8.5">features</text><text x="340" y="869" text-anchor="end" fill="#8090b0" font-size="8.5">appearance embed</text>
+<rect x="370" y="782" width="218" height="104" rx="6" fill="#0c1928" stroke="#2a3a5c"/>
+<text x="479" y="800" text-anchor="middle" fill="#e8eaf0" font-size="10" font-weight="600">Cross-Camera Match</text>
+<text x="385" y="817" fill="#a070d0" font-size="8.5">ArUco ID</text><text x="576" y="817" text-anchor="end" fill="#8090b0" font-size="8.5">strongest signal</text>
+<text x="385" y="830" fill="#a070d0" font-size="8.5">Epipolar geom.</text><text x="576" y="830" text-anchor="end" fill="#8090b0" font-size="8.5">fundamental matrix F</text>
+<text x="385" y="843" fill="#a070d0" font-size="8.5">Appearance</text><text x="576" y="843" text-anchor="end" fill="#8090b0" font-size="8.5">ReID / aspect ratio</text>
+<text x="385" y="856" fill="#a070d0" font-size="8.5">Hungarian alg.</text><text x="576" y="856" text-anchor="end" fill="#8090b0" font-size="8.5">scipy.optimize</text>
+<text x="385" y="869" fill="#a070d0" font-size="8.5">global_id</text><text x="576" y="869" text-anchor="end" fill="#8090b0" font-size="8.5">cross-camera identity</text>
+<rect x="606" y="782" width="270" height="104" rx="6" fill="#0c1928" stroke="#2a3a5c"/>
+<text x="741" y="800" text-anchor="middle" fill="#e8eaf0" font-size="10" font-weight="600">3D Triangulation (DLT)</text>
+<text x="621" y="817" fill="#e09050" font-size="8.5">Method</text><text x="864" y="817" text-anchor="end" fill="#8090b0" font-size="8.5">Direct Linear Transform</text>
+<text x="621" y="830" fill="#e09050" font-size="8.5">Inputs</text><text x="864" y="830" text-anchor="end" fill="#8090b0" font-size="8.5">foot_point x2 cams</text>
+<text x="621" y="843" fill="#e09050" font-size="8.5">Undistort</text><text x="864" y="843" text-anchor="end" fill="#8090b0" font-size="8.5">cv2.undistortPoints + K</text>
+<text x="621" y="856" fill="#e09050" font-size="8.5">Output</text><text x="864" y="856" text-anchor="end" fill="#8090b0" font-size="8.5">world (x, y, z) metres</text>
+<text x="621" y="869" fill="#e09050" font-size="8.5">Gate</text><text x="864" y="869" text-anchor="end" fill="#8090b0" font-size="8.5">reprojection error check</text>
+<line x1="520" y1="768" x2="520" y2="718" stroke="#4a7fc1" stroke-width="1.4"/>
+<line x1="520" y1="768" x2="243" y2="782" stroke="#4a7fc1" stroke-width="1.2" marker-end="url(#arr)"/>
+<line x1="520" y1="768" x2="479" y2="782" stroke="#4a7fc1" stroke-width="1.2" marker-end="url(#arr)"/>
+<line x1="520" y1="768" x2="741" y2="782" stroke="#4a7fc1" stroke-width="1.2" marker-end="url(#arr)"/>
+<rect x="390" y="898" width="260" height="36" rx="5" fill="#0a1a30" stroke="#2a5070"/>
+<text x="520" y="914" text-anchor="middle" fill="#4a9be8" font-size="9.5" font-weight="600">Zone Assignment — assign_zone()</text>
+<text x="520" y="928" text-anchor="middle" fill="#6a8090" font-size="8.5">3D bbox intersection test → zone_a | zone_b | unknown</text>
+<line x1="741" y1="886" x2="741" y2="892" stroke="#4a7fc1" stroke-width="1.2"/>
+<line x1="741" y1="892" x2="520" y2="892" stroke="#4a7fc1" stroke-width="1.2"/>
+<line x1="520" y1="892" x2="520" y2="898" stroke="#4a7fc1" stroke-width="1.2" marker-end="url(#arr)"/>
+<line x1="550" y1="1016" x2="550" y2="1036" stroke="#e09050" stroke-width="1.5" marker-end="url(#arr-y)"/>
+
+<!-- ④ PPE DETECTION -->
+<rect x="110" y="1036" width="880" height="628" rx="8" fill="#1a1408" stroke="#4a3010" stroke-width="1.5"/>
+<text x="134" y="1060" fill="#e8c87a" font-size="12" font-weight="700">④ PPE Detection — Two-Stage Pipeline · cv/PPE/ppe_monitor.py</text>
+<text x="134" y="1076" fill="#8a7050" font-size="9">process_multi() (pipeline) or process() (demo) called once per frame per person per camera</text>
+
+<!-- Stage A -->
+<rect x="130" y="1086" width="860" height="220" rx="6" fill="#10100a" stroke="#3a3010" stroke-width="1"/>
+<text x="154" y="1106" fill="#f0c060" font-size="11" font-weight="700">Stage A — Face Detection · yolov8n-face</text>
+<text x="154" y="1121" fill="#6a5030" font-size="8.5">HuggingFace: ElenaRyumina/MASAI_models · FACE_CONFIDENCE=0.5 · predict on full frame</text>
+<rect x="350" y="1130" width="360" height="44" rx="5" fill="#0c0c08" stroke="#4a4010" stroke-width="1.5"/>
+<text x="530" y="1149" text-anchor="middle" fill="#f0b840" font-size="10.5" font-weight="600">yolov8n-face  (predict on full frame)</text>
+<text x="530" y="1166" text-anchor="middle" fill="#6a5020" font-size="8.5">returns all face bboxes → filter to this person's bbox region</text>
+<rect x="154" y="1184" width="310" height="100" rx="5" fill="#0c0c08" stroke="#3a3010"/>
+<text x="309" y="1203" text-anchor="middle" fill="#e8c870" font-size="9.5" font-weight="600">Candidate Filtering</text>
+<text x="169" y="1220" fill="#9a8040" font-size="8.5">face centre (cx,cy)</text><text x="452" y="1220" text-anchor="end" fill="#6a5030" font-size="8.5">must lie within person bbox</text>
+<text x="169" y="1234" fill="#9a8040" font-size="8.5">select largest</text><text x="452" y="1234" text-anchor="end" fill="#6a5030" font-size="8.5">by face area among candidates</text>
+<text x="169" y="1248" fill="#9a8040" font-size="8.5">multi-person</text><text x="452" y="1248" text-anchor="end" fill="#6a5030" font-size="8.5">OR logic across cameras</text>
+<text x="169" y="1262" fill="#9a8040" font-size="8.5">no face found</text><text x="452" y="1262" text-anchor="end" fill="#d04030" font-size="8.5">skip (do NOT feed NOT_WORN)</text>
+<rect x="482" y="1184" width="324" height="100" rx="5" fill="#0c0c08" stroke="#3a3010"/>
+<text x="644" y="1203" text-anchor="middle" fill="#e8c870" font-size="9.5" font-weight="600">Padded Face Crop</text>
+<text x="497" y="1220" fill="#9a8040" font-size="8.5">PAD_TOP</text><text x="794" y="1220" text-anchor="end" fill="#6a5030" font-size="8.5">0.3 x face_h (captures cap crown)</text>
+<text x="497" y="1234" fill="#9a8040" font-size="8.5">PAD_BOTTOM</text><text x="794" y="1234" text-anchor="end" fill="#6a5030" font-size="8.5">0.1 x face_h</text>
+<text x="497" y="1248" fill="#9a8040" font-size="8.5">PAD_LEFT / RIGHT</text><text x="794" y="1248" text-anchor="end" fill="#6a5030" font-size="8.5">0.2 x face_w (glasses temples)</text>
+<text x="497" y="1262" fill="#9a8040" font-size="8.5">Fallback crop</text><text x="794" y="1262" text-anchor="end" fill="#6a5030" font-size="8.5">geometric HEAD_REGION=0.5 of body</text>
+<line x1="530" y1="1174" x2="530" y2="1130" stroke="#e09050" stroke-width="1.2"/>
+<line x1="530" y1="1174" x2="309" y2="1184" stroke="#e09050" stroke-width="1.2" marker-end="url(#arr-y)"/>
+<line x1="530" y1="1174" x2="644" y2="1184" stroke="#e09050" stroke-width="1.2" marker-end="url(#arr-y)"/>
+
+<!-- Stage B -->
+<rect x="130" y="1316" width="860" height="174" rx="6" fill="#10100a" stroke="#3a3010" stroke-width="1"/>
+<text x="154" y="1336" fill="#f0c060" font-size="11" font-weight="700">Stage B — EfficientNet-B0 Binary Classifiers · cv/PPE/classifier.py</text>
+<text x="154" y="1352" fill="#6a5030" font-size="8.5">Both classifiers run on the SAME padded crop in one pass · ImageNet normalisation · 224x224 resize</text>
+<rect x="154" y="1362" width="380" height="114" rx="5" fill="#0c0c08" stroke="#3a3010"/>
+<text x="344" y="1381" text-anchor="middle" fill="#e8c870" font-size="9.5" font-weight="600">cap_classifier · EfficientNet-B0</text>
+<text x="169" y="1398" fill="#9a8040" font-size="8.5">Weights</text><text x="522" y="1398" text-anchor="end" fill="#6a5030" font-size="8.5">models/cap_classifier/best_model.pth</text>
+<text x="169" y="1412" fill="#9a8040" font-size="8.5">Output</text><text x="522" y="1412" text-anchor="end" fill="#6a5030" font-size="8.5">P(cap present) = softmax[1]</text>
+<text x="169" y="1426" fill="#9a8040" font-size="8.5">CONFIRM threshold</text><text x="522" y="1426" text-anchor="end" fill="#e09050" font-size="8.5">0.97 onset (rejects hair ~0.7)</text>
+<text x="169" y="1440" fill="#9a8040" font-size="8.5">MAINTAIN threshold</text><text x="522" y="1440" text-anchor="end" fill="#e09050" font-size="8.5">0.55 hold through occlusions</text>
+<text x="169" y="1454" fill="#9a8040" font-size="8.5">Training data</text><text x="522" y="1454" text-anchor="end" fill="#6a5030" font-size="8.5">CelebA + caps_dataset (YOLO fmt)</text>
+<text x="169" y="1468" fill="#9a8040" font-size="8.5">Dropout</text><text x="522" y="1468" text-anchor="end" fill="#6a5030" font-size="8.5">0.3 · LR 3e-4 / backbone 3e-5</text>
+<rect x="552" y="1362" width="380" height="114" rx="5" fill="#0c0c08" stroke="#3a3010"/>
+<text x="742" y="1381" text-anchor="middle" fill="#e8c870" font-size="9.5" font-weight="600">glasses_classifier · EfficientNet-B0</text>
+<text x="567" y="1398" fill="#9a8040" font-size="8.5">Weights</text><text x="920" y="1398" text-anchor="end" fill="#6a5030" font-size="8.5">models/glasses_classifier/best_model.pth</text>
+<text x="567" y="1412" fill="#9a8040" font-size="8.5">Output</text><text x="920" y="1412" text-anchor="end" fill="#6a5030" font-size="8.5">P(glasses present) = softmax[1]</text>
+<text x="567" y="1426" fill="#9a8040" font-size="8.5">CONFIRM threshold</text><text x="920" y="1426" text-anchor="end" fill="#e09050" font-size="8.5">0.50 onset</text>
+<text x="567" y="1440" fill="#9a8040" font-size="8.5">MAINTAIN threshold</text><text x="920" y="1440" text-anchor="end" fill="#e09050" font-size="8.5">0.35 hold through occlusions</text>
+<text x="567" y="1454" fill="#9a8040" font-size="8.5">Training data</text><text x="920" y="1454" text-anchor="end" fill="#6a5030" font-size="8.5">CelebA + glasses_dataset</text>
+<text x="567" y="1468" fill="#9a8040" font-size="8.5">Dropout</text><text x="920" y="1468" text-anchor="end" fill="#6a5030" font-size="8.5">0.3 · val_accuracy in config.json</text>
+<line x1="530" y1="1284" x2="530" y2="1300" stroke="#e09050" stroke-width="1.3"/>
+<line x1="530" y1="1300" x2="344" y2="1316" stroke="#e09050" stroke-width="1.2" marker-end="url(#arr-y)"/>
+<line x1="530" y1="1300" x2="742" y2="1316" stroke="#e09050" stroke-width="1.2" marker-end="url(#arr-y)"/>
+
+<!-- Stage C -->
+<rect x="130" y="1500" width="860" height="150" rx="6" fill="#10100a" stroke="#3a3010" stroke-width="1"/>
+<text x="154" y="1520" fill="#f0c060" font-size="11" font-weight="700">Stage C — Rolling Average Windows + Hysteresis (Schmitt-Trigger)</text>
+<text x="154" y="1536" fill="#6a5030" font-size="8.5">Dual-speed buffer prevents false positives (fast onset) and false negatives (slow hold)</text>
+<rect x="154" y="1546" width="380" height="90" rx="5" fill="#0c0c08" stroke="#3a3010"/>
+<text x="344" y="1564" text-anchor="middle" fill="#e8c870" font-size="9.5" font-weight="600">FAST Window (Onset Detection)</text>
+<text x="169" y="1581" fill="#9a8040" font-size="8.5">cap_fast</text><text x="522" y="1581" text-anchor="end" fill="#6a5030" font-size="8.5">deque maxlen=10 frames</text>
+<text x="169" y="1595" fill="#9a8040" font-size="8.5">glasses_fast</text><text x="522" y="1595" text-anchor="end" fill="#6a5030" font-size="8.5">deque maxlen=10 frames</text>
+<text x="169" y="1609" fill="#9a8040" font-size="8.5">Logic</text><text x="522" y="1609" text-anchor="end" fill="#3dba7c" font-size="8.5">avg &gt;= confirm_threshold → ONSET</text>
+<text x="169" y="1623" fill="#6a5030" font-size="8">Hair (~0.7) never crosses 0.97 · real hat (~0.99) crosses in 1 frame</text>
+<rect x="552" y="1546" width="380" height="90" rx="5" fill="#0c0c08" stroke="#3a3010"/>
+<text x="742" y="1564" text-anchor="middle" fill="#e8c870" font-size="9.5" font-weight="600">SLOW Window (Hold State)</text>
+<text x="567" y="1581" fill="#9a8040" font-size="8.5">cap_slow</text><text x="920" y="1581" text-anchor="end" fill="#6a5030" font-size="8.5">deque maxlen=90 frames (~3s)</text>
+<text x="567" y="1595" fill="#9a8040" font-size="8.5">glasses_slow</text><text x="920" y="1595" text-anchor="end" fill="#6a5030" font-size="8.5">deque maxlen=90 frames (~3s)</text>
+<text x="567" y="1609" fill="#9a8040" font-size="8.5">Logic</text><text x="920" y="1609" text-anchor="end" fill="#3dba7c" font-size="8.5">avg &gt;= maintain_threshold → HOLD</text>
+<text x="567" y="1623" fill="#6a5030" font-size="8">Once "detected", brief occlusions do not flip back to "missing"</text>
+
+<!-- Stage D -->
+<line x1="550" y1="1650" x2="550" y2="1656" stroke="#d04030" stroke-width="1.5" marker-end="url(#arr-r)"/>
+<rect x="130" y="1656" width="860" height="44" rx="6" fill="#200808" stroke="#6a1a10" stroke-width="1.5"/>
+<text x="530" y="1675" text-anchor="middle" fill="#ff9070" font-size="10.5" font-weight="600">Stage D — 3-Second Debounce · ItemState · DETECT_SECONDS=3.0</text>
+<text x="530" y="1692" text-anchor="middle" fill="#8a4030" font-size="8.5">States: unknown → detected | missing | no_person  ·  Streak must hold 3s before committing transition</text>
+<rect x="680" y="1710" width="296" height="44" rx="5" fill="#1a0808" stroke="#602010"/>
+<text x="828" y="1728" text-anchor="middle" fill="#d05030" font-size="9.5" font-weight="600">Proof Frame (on "missing" transition)</text>
+<text x="828" y="1742" text-anchor="middle" fill="#7a3020" font-size="8">annotate bbox → JPEG to cv/ppe_proof/ + base64 → rigvision:ppe:proof:{item}</text>
+<line x1="728" y1="1700" x2="828" y2="1710" stroke="#c04020" stroke-width="1" stroke-dasharray="3 2"/>
+<line x1="400" y1="1706" x2="400" y2="1726" stroke="#3dba7c" stroke-width="1.5" marker-end="url(#arr-g)"/>
+
+<!-- ⑤ ZONE FUSION -->
+<rect x="110" y="1726" width="880" height="304" rx="8" fill="#0e1a14" stroke="#1a4030" stroke-width="1.2"/>
+<text x="134" y="1750" fill="#e8eaf0" font-size="12" font-weight="700">⑤ Zone State Fusion — build_zone_states() · cv/zone_state.py</text>
+<text x="134" y="1766" fill="#4a7060" font-size="9">Runs each pipeline tick · reads rigvision:sensors:latest · staleness gate SENSOR_STALE_SECONDS=10</text>
+<rect x="134" y="1776" width="260" height="138" rx="5" fill="#0a1510" stroke="#1a3020"/>
+<text x="264" y="1795" text-anchor="middle" fill="#3dba7c" font-size="10" font-weight="600">Sensor Fusion</text>
+<text x="149" y="1812" fill="#3a8060" font-size="8.5">Source</text><text x="382" y="1812" text-anchor="end" fill="#4a6050" font-size="8.5">rigvision:sensors:latest</text>
+<text x="149" y="1826" fill="#3a8060" font-size="8.5">Staleness</text><text x="382" y="1826" text-anchor="end" fill="#4a6050" font-size="8.5">now - updated_at &lt;= 10s</text>
+<text x="149" y="1840" fill="#3a8060" font-size="8.5">manual</text><text x="382" y="1840" text-anchor="end" fill="#4a6050" font-size="8.5">never stale</text>
+<text x="149" y="1854" fill="#3a8060" font-size="8.5">Aggregation</text><text x="382" y="1854" text-anchor="end" fill="#4a6050" font-size="8.5">max() per sensor type</text>
+<text x="149" y="1868" fill="#3a8060" font-size="8.5">threshold src</text><text x="382" y="1868" text-anchor="end" fill="#4a6050" font-size="8.5">rigvision:thresholds:resolved</text>
+<text x="149" y="1882" fill="#3a8060" font-size="8.5">fallback</text><text x="382" y="1882" text-anchor="end" fill="#4a6050" font-size="8.5">zone_definitions.json limits</text>
+<text x="149" y="1896" fill="#3a8060" font-size="8.5">sensors</text><text x="382" y="1896" text-anchor="end" fill="#4a6050" font-size="8.5">temp · vib · noise · gas · pressure</text>
+<rect x="414" y="1776" width="244" height="138" rx="5" fill="#0a1510" stroke="#1a3020"/>
+<text x="536" y="1795" text-anchor="middle" fill="#3dba7c" font-size="10" font-weight="600">Zone Status (escalation)</text>
+<text x="429" y="1812" fill="#3a8060" font-size="8.5">normal</text><text x="646" y="1812" text-anchor="end" fill="#4a9060" font-size="8.5">all sensors in range</text>
+<text x="429" y="1826" fill="#3a8060" font-size="8.5">warning</text><text x="646" y="1826" text-anchor="end" fill="#c0a040" font-size="8.5">sensor &gt;= warn_threshold</text>
+<text x="429" y="1840" fill="#3a8060" font-size="8.5">warning</text><text x="646" y="1840" text-anchor="end" fill="#c0a040" font-size="8.5">PPE violation detected</text>
+<text x="429" y="1854" fill="#3a8060" font-size="8.5">critical</text><text x="646" y="1854" text-anchor="end" fill="#d04030" font-size="8.5">sensor &gt;= crit_threshold</text>
+<text x="429" y="1868" fill="#3a8060" font-size="8.5">critical</text><text x="646" y="1868" text-anchor="end" fill="#d04030" font-size="8.5">overcrowded &gt; max_occupancy</text>
+<text x="429" y="1882" fill="#3a8060" font-size="8.5">severity</text><text x="646" y="1882" text-anchor="end" fill="#4a6050" font-size="8.5">normal→warning→critical monotonic</text>
+<text x="429" y="1896" fill="#3a8060" font-size="8.5">warning_reason</text><text x="646" y="1896" text-anchor="end" fill="#4a6050" font-size="8.5">human-readable string</text>
+<rect x="678" y="1776" width="272" height="138" rx="5" fill="#0a1510" stroke="#1a3020"/>
+<text x="814" y="1795" text-anchor="middle" fill="#3dba7c" font-size="10" font-weight="600">_merge_zone_states()</text>
+<text x="693" y="1812" fill="#3a8060" font-size="8.5">CV-owned fields</text><text x="938" y="1812" text-anchor="end" fill="#4a6050" font-size="8.5">always written</text>
+<text x="693" y="1826" fill="#3a8060" font-size="8.5">SCADA-owned</text><text x="938" y="1826" text-anchor="end" fill="#e09050" font-size="8.5">only if not yet set</text>
+<text x="693" y="1840" fill="#3a8060" font-size="8.5">status</text><text x="938" y="1840" text-anchor="end" fill="#4a6050" font-size="8.5">CV overwrites each tick</text>
+<text x="693" y="1854" fill="#3a8060" font-size="8.5">person_count</text><text x="938" y="1854" text-anchor="end" fill="#4a6050" font-size="8.5">CV overwrites each tick</text>
+<text x="693" y="1868" fill="#3a8060" font-size="8.5">ppe_violations</text><text x="938" y="1868" text-anchor="end" fill="#4a6050" font-size="8.5">CV overwrites each tick</text>
+<text x="693" y="1882" fill="#3a8060" font-size="8.5">temperature/vib...</text><text x="938" y="1882" text-anchor="end" fill="#e09050" font-size="8.5">protected from CV overwrite</text>
+<text x="693" y="1896" fill="#3a8060" font-size="8.5">sensor_meta</text><text x="938" y="1896" text-anchor="end" fill="#4a6050" font-size="8.5">threshold bounds per type</text>
+<line x1="264" y1="1776" x2="264" y2="1766" stroke="#3dba7c" stroke-width="1"/>
+<line x1="264" y1="1766" x2="814" y2="1766" stroke="#3dba7c" stroke-width="1"/>
+<line x1="536" y1="1776" x2="536" y2="1766" stroke="#3dba7c" stroke-width="1"/>
+<line x1="814" y1="1776" x2="814" y2="1766" stroke="#3dba7c" stroke-width="1"/>
+<line x1="550" y1="2030" x2="550" y2="2050" stroke="#3dba7c" stroke-width="1.5" marker-end="url(#arr-g)"/>
+
+<!-- ⑥ OUTPUTS -->
+<rect x="110" y="2054" width="880" height="268" rx="8" fill="#0e150e" stroke="#1a4020" stroke-width="1.2"/>
+<text x="134" y="2078" fill="#e8eaf0" font-size="12" font-weight="700">⑥ Redis Outputs → WebSocket → 3D Dashboard</text>
+<rect x="134" y="2088" width="196" height="100" rx="5" fill="#0a1208" stroke="#2a4020"/>
+<text x="232" y="2106" text-anchor="middle" fill="#3dba7c" font-size="9" font-weight="700">rigvision:zones</text>
+<text x="149" y="2122" fill="#3a7050" font-size="8">status</text><text x="318" y="2122" text-anchor="end" fill="#5a8060" font-size="8">normal|warning|critical</text>
+<text x="149" y="2135" fill="#3a7050" font-size="8">temperature/vib/...</text><text x="318" y="2135" text-anchor="end" fill="#5a8060" font-size="8">float values</text>
+<text x="149" y="2148" fill="#3a7050" font-size="8">person_count</text><text x="318" y="2148" text-anchor="end" fill="#5a8060" font-size="8">int</text>
+<text x="149" y="2161" fill="#3a7050" font-size="8">ppe_violations</text><text x="318" y="2161" text-anchor="end" fill="#5a8060" font-size="8">string list</text>
+<text x="149" y="2174" fill="#3a7050" font-size="8">sensor_sources</text><text x="318" y="2174" text-anchor="end" fill="#5a8060" font-size="8">modbus|mqtt|manual</text>
+<text x="149" y="2187" fill="#3a7050" font-size="8">sensor_meta</text><text x="318" y="2187" text-anchor="end" fill="#5a8060" font-size="8">warn/crit thresholds</text>
+<rect x="342" y="2088" width="196" height="100" rx="5" fill="#0a1208" stroke="#2a4020"/>
+<text x="440" y="2106" text-anchor="middle" fill="#3dba7c" font-size="9" font-weight="700">rigvision:persons</text>
+<text x="357" y="2122" fill="#3a7050" font-size="8">id</text><text x="526" y="2122" text-anchor="end" fill="#5a8060" font-size="8">global track id</text>
+<text x="357" y="2135" fill="#3a7050" font-size="8">position_3d</text><text x="526" y="2135" text-anchor="end" fill="#5a8060" font-size="8">[x,y,z] metres</text>
+<text x="357" y="2148" fill="#3a7050" font-size="8">zone</text><text x="526" y="2148" text-anchor="end" fill="#5a8060" font-size="8">zone_a|zone_b</text>
+<text x="357" y="2161" fill="#3a7050" font-size="8">ppe.hat</text><text x="526" y="2161" text-anchor="end" fill="#5a8060" font-size="8">detected|missing|unknown</text>
+<text x="357" y="2174" fill="#3a7050" font-size="8">ppe.glasses</text><text x="526" y="2174" text-anchor="end" fill="#5a8060" font-size="8">detected|missing|unknown</text>
+<text x="357" y="2187" fill="#3a7050" font-size="8">posture</text><text x="526" y="2187" text-anchor="end" fill="#5a8060" font-size="8">standing|sitting|...</text>
+<rect x="550" y="2088" width="196" height="100" rx="5" fill="#0a1208" stroke="#2a4020"/>
+<text x="648" y="2106" text-anchor="middle" fill="#3dba7c" font-size="9" font-weight="700">rigvision:ppe:latest</text>
+<text x="565" y="2122" fill="#3a7050" font-size="8">person_present</text><text x="734" y="2122" text-anchor="end" fill="#5a8060" font-size="8">bool</text>
+<text x="565" y="2135" fill="#3a7050" font-size="8">head_protection</text><text x="734" y="2135" text-anchor="end" fill="#5a8060" font-size="8">status + since + proof</text>
+<text x="565" y="2148" fill="#3a7050" font-size="8">eye_protection</text><text x="734" y="2148" text-anchor="end" fill="#5a8060" font-size="8">status + since + proof</text>
+<text x="565" y="2161" fill="#3a7050" font-size="8">Updated</text><text x="734" y="2161" text-anchor="end" fill="#5a8060" font-size="8">only on state change</text>
+<text x="565" y="2174" fill="#3a7050" font-size="8">Mode</text><text x="734" y="2174" text-anchor="end" fill="#5a8060" font-size="8">demo only</text>
+<rect x="758" y="2088" width="196" height="100" rx="5" fill="#0a1208" stroke="#2a4020"/>
+<text x="856" y="2106" text-anchor="middle" fill="#d05030" font-size="9" font-weight="700">rigvision:ppe:proof:{item}</text>
+<text x="773" y="2122" fill="#3a7050" font-size="8">Encoding</text><text x="942" y="2122" text-anchor="end" fill="#5a8060" font-size="8">base64 JPEG string</text>
+<text x="773" y="2135" fill="#3a7050" font-size="8">Trigger</text><text x="942" y="2135" text-anchor="end" fill="#d05030" font-size="8">"missing" transition only</text>
+<text x="773" y="2148" fill="#3a7050" font-size="8">Disk copy</text><text x="942" y="2148" text-anchor="end" fill="#5a8060" font-size="8">cv/ppe_proof/{item}_{ts}.jpg</text>
+<text x="773" y="2161" fill="#3a7050" font-size="8">Overlay</text><text x="942" y="2161" text-anchor="end" fill="#5a8060" font-size="8">red bbox + timestamp banner</text>
+<text x="773" y="2174" fill="#3a7050" font-size="8">Cleared</text><text x="942" y="2174" text-anchor="end" fill="#5a8060" font-size="8">on "detected" transition</text>
+<rect x="134" y="2202" width="820" height="42" rx="5" fill="#081208" stroke="#1a4020" stroke-width="1.5"/>
+<text x="544" y="2220" text-anchor="middle" fill="#3dba7c" font-size="10.5" font-weight="700">WebSocket /ws/state → React 3D Dashboard</text>
+<text x="544" y="2236" text-anchor="middle" fill="#4a6050" font-size="8.5">Zone colours (green/yellow/red) · Person dots in 3D scene · PPE violation badges · Live sensor bars</text>
+<line x1="232" y1="2188" x2="232" y2="2202" stroke="#3dba7c" stroke-width="1.2" marker-end="url(#arr-g)"/>
+<line x1="440" y1="2188" x2="440" y2="2202" stroke="#3dba7c" stroke-width="1.2" marker-end="url(#arr-g)"/>
+<line x1="648" y1="2188" x2="648" y2="2202" stroke="#3dba7c" stroke-width="1.2" marker-end="url(#arr-g)"/>
+<line x1="856" y1="2188" x2="856" y2="2202" stroke="#d05030" stroke-width="1.2" marker-end="url(#arr-r)"/>
+<text x="550" y="2260" text-anchor="middle" fill="#4a6050" font-size="8.5">Pipeline runs at ~28-30 fps · zone_a and zone_b processed independently per tick</text>
+
+<!-- LEGEND -->
+<rect x="110" y="2278" width="880" height="60" rx="6" fill="#0a0f18" stroke="#1a2a40" stroke-width="1"/>
+<text x="134" y="2296" fill="#6a7090" font-size="9" font-weight="700">LEGEND</text>
+<line x1="200" y1="2293" x2="240" y2="2293" stroke="#4a7fc1" stroke-width="1.5" marker-end="url(#arr)"/>
+<text x="244" y="2297" fill="#4a7fc1" font-size="8.5">Detection / tracking flow</text>
+<line x1="400" y1="2293" x2="440" y2="2293" stroke="#e09050" stroke-width="1.5" marker-end="url(#arr-y)"/>
+<text x="444" y="2297" fill="#e09050" font-size="8.5">PPE classification flow</text>
+<line x1="600" y1="2293" x2="640" y2="2293" stroke="#3dba7c" stroke-width="1.5" marker-end="url(#arr-g)"/>
+<text x="644" y="2297" fill="#3dba7c" font-size="8.5">Zone fusion / Redis write</text>
+<line x1="800" y1="2293" x2="840" y2="2293" stroke="#d04030" stroke-width="1.5" marker-end="url(#arr-r)"/>
+<text x="844" y="2297" fill="#d04030" font-size="8.5">Evidence / alert path</text>
+<text x="134" y="2326" fill="#4a5070" font-size="8">Files: cv/pipeline.py · cv/PPE/ppe_monitor.py · cv/PPE/classifier.py · cv/detection/detector.py · cv/tracking/tracker.py · cv/tracking/cross_camera.py · cv/tracking/triangulation.py · cv/zone_state.py</text>
+
+</svg>
