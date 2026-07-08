@@ -5,6 +5,7 @@ import base64
 import json
 import logging
 import os
+import struct
 import sys
 import time
 from contextlib import asynccontextmanager
@@ -172,9 +173,9 @@ async def redis_to_websocket_bridge():
     _last_zone_statuses: Dict[str, str] = {}
     while True:
         try:
-            p_raw, z_raw, d_raw, ppe_raw, prog_map = await asyncio.gather(
+            p_raw, z_hash, d_raw, ppe_raw, prog_map = await asyncio.gather(
                 r.get("rigvision:persons"),
-                r.get("rigvision:zones"),
+                r.hgetall("rigvision:zones"),
                 r.get("rigvision:diagnostics"),
                 r.get("rigvision:ppe:latest"),
                 r.hgetall(PROGRESS_KEY),
@@ -196,11 +197,14 @@ async def redis_to_websocket_bridge():
             if stale_eids:
                 await r.hdel(PROGRESS_KEY, *stale_eids)
 
+            # Reconstruct zone state dictionary from Hash
+            zones_now = {zid: json.loads(val) for zid, val in z_hash.items()} if z_hash else {}
+            z_raw = json.dumps(zones_now, sort_keys=True) if zones_now else ""
+
             # Auto-diagnose when any zone newly enters warning/critical.
             # dedup=True means a standing breach (same severity + sensors) is only
             # published once; it re-fires only when the breach signature changes.
-            if z_raw:
-                zones_now = json.loads(z_raw)
+            if zones_now:
                 new_breach = False
                 for zid, zstate in zones_now.items():
                     cur_status = zstate.get("status", "normal")
@@ -210,8 +214,8 @@ async def redis_to_websocket_bridge():
                     _last_zone_statuses[zid] = cur_status
                 if new_breach:
                     try:
-                        sensors_raw = await r.get(SENSORS_KEY)
-                        sensors = json.loads(sensors_raw) if sensors_raw else {}
+                        sensors_hash = await r.hgetall(SENSORS_KEY)
+                        sensors = {sid: json.loads(val) for sid, val in sensors_hash.items()} if sensors_hash else {}
                         await _evaluate_and_publish(sensors, dedup=True)
                     except Exception as e:
                         logger.warning("Auto-diagnose failed: %s", e)
@@ -224,7 +228,7 @@ async def redis_to_websocket_bridge():
                         "type": "realtime_update",
                         "timestamp": time.time(),
                         "persons": json.loads(p_raw) if p_raw else [],
-                        "zones": json.loads(z_raw) if z_raw else {},
+                        "zones": zones_now,
                         "diagnostics": json.loads(d_raw) if d_raw else [],
                         "ppe": json.loads(ppe_raw) if ppe_raw else {},
                         "diag_progress": diag_progress,
@@ -286,9 +290,9 @@ async def lifespan(app: FastAPI):
     # Run startup evaluation check of current sensor values in Redis
     try:
         r = get_redis()
-        sensors_raw = await r.get(SENSORS_KEY)
-        if sensors_raw:
-            sensors = json.loads(sensors_raw)
+        sensors_hash = await r.hgetall(SENSORS_KEY)
+        if sensors_hash:
+            sensors = {sid: json.loads(val) for sid, val in sensors_hash.items()}
             await _evaluate_and_publish(sensors, dedup=False)
             logger.info("Startup diagnostics check completed.")
     except Exception as e:
@@ -366,8 +370,8 @@ async def get_persons():
 
 @app.get("/api/zones")
 async def get_zones():
-    raw = await get_redis().get("rigvision:zones")
-    return json.loads(raw) if raw else {}
+    z_hash = await get_redis().hgetall("rigvision:zones")
+    return {zid: json.loads(val) for zid, val in z_hash.items()} if z_hash else {}
 
 @app.get("/api/diagnostics")
 async def get_diagnostics():
@@ -448,24 +452,25 @@ async def clear_diagnostics():
     await r.delete("rigvision:diagnostics")
     
     # Broadcast an immediate WebSocket update so that clients clear their local arrays instantly
-    p_raw, z_raw = await asyncio.gather(
+    p_raw, z_hash = await asyncio.gather(
         r.get("rigvision:persons"),
-        r.get("rigvision:zones")
+        r.hgetall("rigvision:zones")
     )
+    zones_now = {zid: json.loads(val) for zid, val in z_hash.items()} if z_hash else {}
     msg = {
         "type": "realtime_update",
         "timestamp": time.time(),
         "persons": json.loads(p_raw) if p_raw else [],
-        "zones": json.loads(z_raw) if z_raw else {},
+        "zones": zones_now,
         "diagnostics": [],
     }
     await manager.broadcast(json.dumps(msg))
     
     # Re-evaluate current sensor readings so standing breaches are immediately re-published and diagnosed
     try:
-        sensors_raw = await r.get(SENSORS_KEY)
-        if sensors_raw:
-            sensors = json.loads(sensors_raw)
+        sensors_hash = await r.hgetall(SENSORS_KEY)
+        if sensors_hash:
+            sensors = {sid: json.loads(val) for sid, val in sensors_hash.items()}
             await _evaluate_and_publish(sensors, dedup=True)
     except Exception as e:
         logger.error("Error running re-evaluation after clear: %s", e)
@@ -558,8 +563,8 @@ async def run_diagnostics():
     sensor snapshot and publish an alert for every flagged zone, regardless of
     whether it was already alerted. Auto-check on sensor send (POST /api/sensors)
     covers the hands-off path; this button is the manual re-trigger."""
-    sensors_raw = await get_redis().get(SENSORS_KEY)
-    sensors = json.loads(sensors_raw) if sensors_raw else {}
+    sensors_hash = await get_redis().hgetall(SENSORS_KEY)
+    sensors = {sid: json.loads(val) for sid, val in sensors_hash.items()} if sensors_hash else {}
     return await _evaluate_and_publish(sensors, dedup=False)
 
 @app.get("/api/thresholds")
@@ -576,6 +581,92 @@ async def refresh_thresholds():
     await asyncio.to_thread(threshold_resolver.refresh)
     table = await publish_resolved_thresholds()
     return {"status": threshold_resolver.status(), "sensor_count": len(table)}
+
+# ── SCADA protocol simulation ─────────────────────────────────────────────────
+# Mirrors the register map (scada/config/register_map.yaml) and MQTT topic config
+# so every reading from the Sensor Console goes through the same encode→decode
+# round-trip that a real Modbus PLC or MQTT broker would produce.
+#
+# Modbus (zone_a): value → int16/float32 raw register → decoded eng value
+#   Any precision beyond the register resolution is naturally quantised here.
+# MQTT (zone_b): value → JSON float (3 dp) → decoded — effectively pass-through.
+# Manual (others): pass-through with 4 dp rounding.
+
+_MODBUS_REG: Dict[str, dict] = {
+    "temp_a":     {"scale": 0.1,  "offset": 0.0, "dtype": "int16",   "unit": "°C"},
+    "vib_a":      {"scale": 0.01, "offset": 0.0, "dtype": "int16",   "unit": "g_rms"},
+    "gas_a":      {"scale": 0.1,  "offset": 0.0, "dtype": "int16",   "unit": "ppm"},
+    "noise_a":    {"scale": 0.1,  "offset": 0.0, "dtype": "int16",   "unit": "dB"},
+    "pressure_a": {"scale": 1.0,  "offset": 0.0, "dtype": "float32", "unit": "bar"},
+}
+
+_MQTT_SENSORS: Dict[str, dict] = {
+    "temp_b":     {"unit": "°C"},
+    "vib_b":      {"unit": "g_rms"},
+    "gas_b":      {"unit": "ppm"},
+    "noise_b":    {"unit": "dB"},
+    "pressure_b": {"unit": "bar"},
+}
+
+def _protocol_normalize(sensor_id: str, value: float) -> tuple[float, str, str]:
+    """
+    Simulate the SCADA encode→decode round-trip for one reading.
+    Returns (quantized_value, protocol, unit).
+    """
+    if sensor_id in _MODBUS_REG:
+        reg = _MODBUS_REG[sensor_id]
+        scale, offset, dtype = reg["scale"], reg["offset"], reg["dtype"]
+        if dtype == "float32":
+            # IEEE 754 single-precision round-trip (same as pymodbus would produce)
+            quantized = struct.unpack(">f", struct.pack(">f", value))[0]
+        else:
+            # int16: encode → clamp → decode
+            raw = int(round((value - offset) / scale))
+            raw = max(-32768, min(32767, raw))
+            quantized = round(raw * scale + offset, 6)
+        return round(quantized, 4), "modbus", reg["unit"]
+    if sensor_id in _MQTT_SENSORS:
+        # MQTT JSON payload carries 3 decimal places; scale=1.0, offset=0
+        return round(value, 3), "mqtt", _MQTT_SENSORS[sensor_id]["unit"]
+    return round(value, 4), "manual", ""
+
+
+def _pg_write_scada(rows: list) -> None:
+    """
+    Best-effort synchronous write to the scada_readings TimescaleDB table.
+    Called via asyncio.to_thread so it never blocks the event loop.
+    Silently skipped if Postgres is unavailable.
+    """
+    try:
+        import psycopg2
+        from datetime import datetime, timezone
+        conn = psycopg2.connect(
+            host=os.getenv("POSTGRES_HOST", "localhost"),
+            port=int(os.getenv("POSTGRES_PORT", "5432")),
+            dbname=os.getenv("POSTGRES_DB", "rigvision"),
+            user=os.getenv("POSTGRES_USER", "rigvision"),
+            password=os.getenv("POSTGRES_PASSWORD", "rigvision_dev_password"),
+        )
+        with conn.cursor() as cur:
+            cur.executemany(
+                "INSERT INTO scada_readings "
+                "  (time, sensor_id, value, unit, quality, protocol, device) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                [
+                    (
+                        datetime.fromtimestamp(r["timestamp"], tz=timezone.utc),
+                        r["sensor_id"], r["value"], r["unit"],
+                        r["quality"],  r["protocol"], r["device"],
+                    )
+                    for r in rows
+                ],
+            )
+        conn.commit()
+        conn.close()
+        logger.debug("SCADA DB: wrote %d reading(s)", len(rows))
+    except Exception as e:
+        logger.debug("SCADA DB write skipped (%s)", e)
+
 
 # ── Sensor ingestion (the seam) ──────────────────────────────────────────
 # Producers (manual dashboard now, MQTT bridge later) write rigvision:sensors:latest.
@@ -616,33 +707,106 @@ async def get_sensor_manifest():
 @app.get("/api/sensors")
 async def get_sensors():
     """Current values of rigvision:sensors:latest (to populate sliders on open)."""
-    raw = await get_redis().get(SENSORS_KEY)
-    return json.loads(raw) if raw else {}
+    sensors_hash = await get_redis().hgetall(SENSORS_KEY)
+    return {sid: json.loads(val) for sid, val in sensors_hash.items()} if sensors_hash else {}
 
 @app.post("/api/sensors", dependencies=[Depends(require_api_key)])
 async def post_sensors(body: SensorReadingsRequest):
-    """Validated merge-write into rigvision:sensors:latest. Unknown sensor IDs
-    (not in zone_definitions.json) are rejected.
+    """Validated ingestion with full SCADA pipeline simulation.
 
-    After the write, the new snapshot is auto-checked against the resolved
-    thresholds; any zone that newly breaches (or changes breach state) publishes a
-    Kafka alert straight to the anomaly_listener — no RUN DIAGNOSTICS click needed.
-    Set auto_diagnose=false to only store the values."""
+    Each reading is routed through _protocol_normalize so the stored value
+    is exactly what the real Modbus/MQTT pipeline would produce:
+      - zone_a (Modbus): int16/float32 register encode→decode (quantisation applied)
+      - zone_b (MQTT):   JSON float 3 dp round-trip
+      - others:          pass-through
+
+    Writes flow to:
+      1. rigvision:sensors:latest  — live snapshot (frontend Sensor Console)
+      2. scada:setpoints           — Modbus sim register bank
+      3. rigvision:zones           — 3D dashboard real-time overlay
+      4. scada_readings (Postgres) — historical time-series (best-effort)
+      5. Kafka anomaly_listener    — threshold evaluation (auto_diagnose=true)
+    """
     valid_ids = _build_sensor_manifest()["valid_ids"]
     unknown = [sid for sid in body.readings if sid not in valid_ids]
     if unknown:
         raise HTTPException(status_code=422, detail=f"Unknown sensor IDs: {unknown}")
 
     r = get_redis()
-    raw = await r.get(SENSORS_KEY)
-    current = json.loads(raw) if raw else {}
+    sensors_hash = await r.hgetall(SENSORS_KEY)
+    current = {sid: json.loads(val) for sid, val in sensors_hash.items()} if sensors_hash else {}
 
     now = int(time.time())
+
+    # ── 1. Protocol encode→decode simulation ──────────────────────────────
+    # normalized maps sensor_id → (quantized_value, protocol, unit)
+    normalized: Dict[str, tuple] = {}
+    to_hset = {}
     for sid, value in body.readings.items():
-        current[sid] = {"value": value, "updated_at": now, "source": body.source}
+        norm_value, protocol, unit = _protocol_normalize(sid, value)
+        normalized[sid] = (norm_value, protocol, unit)
+        sensor_data = {"value": norm_value, "updated_at": now, "source": protocol}
+        current[sid] = sensor_data
+        to_hset[sid] = json.dumps(sensor_data)
 
-    await r.set(SENSORS_KEY, json.dumps(current))
+    # ── 2. Write sensors:latest ───────────────────────────────────────────
+    if to_hset:
+        await r.hset(SENSORS_KEY, mapping=to_hset)
 
+    # ── 3. Write setpoints (quantized) so Modbus sim stays consistent ─────
+    await r.hset("scada:setpoints", mapping={
+        sid: str(vals[0]) for sid, vals in normalized.items()
+    })
+
+    # ── 4. Merge into rigvision:zones for the 3D dashboard ───────────────
+    _SENSOR_FIELD = {
+        "temp": "temperature", "vib": "vibration",
+        "gas": "gas_h2s", "noise": "noise", "pressure": "pressure",
+    }
+    # Group updates by zone to avoid multiple round-trips or overwrite races
+    zones_to_update = {}
+    for sid, (norm_value, protocol, _unit) in normalized.items():
+        parts = sid.rsplit("_", 1)
+        if len(parts) != 2:
+            continue
+        prefix, zone_suffix = parts
+        zone_id = f"zone_{zone_suffix}"
+        field = next((f for key, f in _SENSOR_FIELD.items() if prefix.startswith(key)), None)
+        if not field:
+            continue
+        if zone_id not in zones_to_update:
+            zones_to_update[zone_id] = []
+        zones_to_update[zone_id].append((field, norm_value, protocol))
+
+    for zone_id, updates in zones_to_update.items():
+        zones_raw = await r.hget("rigvision:zones", zone_id)
+        zone_data = json.loads(zones_raw) if zones_raw else {
+            "status": "normal", "temperature": 25.0, "vibration": 0.0,
+            "noise": 40.0, "gas_h2s": 0.0, "pressure": 1.0,
+            "person_count": 0, "ppe_violations": [], "updated_at": now,
+        }
+        for field, norm_value, protocol in updates:
+            zone_data[field] = round(norm_value, 3)
+            zone_data.setdefault("sensor_sources", {})[field] = protocol
+        zone_data["updated_at"] = now
+        await r.hset("rigvision:zones", zone_id, json.dumps(zone_data))
+
+    # ── 5. TimescaleDB — fire-and-forget, never blocks the response ───────
+    db_rows = [
+        {
+            "sensor_id": sid,
+            "value":     vals[0],
+            "unit":      vals[2],
+            "quality":   "good",
+            "protocol":  vals[1],
+            "device":    "sensor-console",
+            "timestamp": now,
+        }
+        for sid, vals in normalized.items()
+    ]
+    asyncio.create_task(asyncio.to_thread(_pg_write_scada, db_rows))
+
+    # ── 6. Anomaly detection ──────────────────────────────────────────────
     diagnostics = None
     if body.auto_diagnose:
         try:
@@ -650,8 +814,13 @@ async def post_sensors(body: SensorReadingsRequest):
         except HTTPException as e:
             diagnostics = {"status": "error", "detail": e.detail}
 
-    return {"status": "ok", "updated": list(body.readings.keys()),
-            "count": len(current), "diagnostics": diagnostics}
+    return {
+        "status": "ok",
+        "updated": list(normalized.keys()),
+        "normalized": {sid: {"value": v[0], "protocol": v[1]} for sid, v in normalized.items()},
+        "count": len(current),
+        "diagnostics": diagnostics,
+    }
 
 @app.websocket("/ws/realtime")
 async def websocket_realtime(websocket: WebSocket):

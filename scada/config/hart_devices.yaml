@@ -1,0 +1,35 @@
+# ──────────────────────────────────────────────────────────────
+# HART-IP Multiplexer Devices
+# ──────────────────────────────────────────────────────────────
+# One entry per HART multiplexer in `multiplexers`. The gateway
+# starts one HARTPortWorker thread per multiplexer.
+#
+# Each multiplexer entry lists the HART devices (by short address
+# 0–15) connected to it, and maps HART dynamic variables to
+# RigVision sensor IDs:
+#   pv → Primary Variable   (most transmitters: the main process value)
+#   sv → Secondary Variable  (e.g. temperature on a pressure transmitter)
+#   tv → Tertiary Variable
+#   qv → Quaternary Variable
+#
+# Only mapped variables are emitted (omit pv/sv/tv/qv to skip).
+# ──────────────────────────────────────────────────────────────
+
+# No HART hardware in the dev environment.
+# Uncomment and fill in when a real HART-IP multiplexer is available.
+multiplexers: {}
+
+# Example:
+# multiplexers:
+#   MUX-01:
+#     host: 192.168.1.100
+#     port: 5094            # HART-IP UDP port
+#     poll_interval_s: 2
+#     devices:
+#       - address: 0        # HART short address of first transmitter
+#         sensors:
+#           pv: temp_a      # PV → temp_a sensor
+#           sv: pressure_a  # SV → pressure_a sensor (if transmitter reports it)
+#       - address: 1
+#         sensors:
+#           pv: gas_a

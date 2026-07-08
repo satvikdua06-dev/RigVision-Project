@@ -21,7 +21,7 @@ services:
     image: timescale/timescaledb:latest-pg16
     container_name: rigvision-postgres
     ports:
-      - "5432:5432"
+      - "5433:5432"
     environment:
       POSTGRES_DB: rigvision
       POSTGRES_USER: rigvision
@@ -65,6 +65,15 @@ services:
       - "8100:8000"
     volumes:
       - chroma_data:/chroma/chroma
+    restart: unless-stopped
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: rigvision-mosquitto
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
     restart: unless-stopped
 
   zookeeper:

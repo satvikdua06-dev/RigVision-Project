@@ -9,7 +9,8 @@
 # ──────────────────────────────────────────────────────────
 
 .PHONY: up down backend frontend cv-demo cv-live demo install clean logs \
-        sensor-sim kafka-bridge
+        sensor-sim kafka-bridge \
+        scada scada-modbus-sim scada-mqtt-sim
 
 # ── Infrastructure ──
 
@@ -48,18 +49,34 @@ sensor-sim:
 kafka-bridge:
 	python -m sensors.ingest.kafka_bridge
 
+scada:
+	python -m scada.gateway
+
+scada-modbus-sim:
+	python -m scada.simulators.modbus_server
+
+scada-mqtt-sim:
+	python -m scada.simulators.mqtt_publisher
+
 # ── Combo Commands ──
 
 # Full demo: requires 3 terminal windows
 demo:
-	@echo "🚀 RigVision-3D Demo Mode"
+	@echo "RigVision-3D Demo Mode"
 	@echo "Run these in separate terminals:"
 	@echo ""
 	@echo "  Terminal 1:  make backend"
 	@echo "  Terminal 2:  make cv-demo"
 	@echo "  Terminal 3:  make frontend"
-	@echo "  Terminal 4:  make sensor-sim    (optional — fake sensor data via Kafka)"
-	@echo "  Terminal 5:  make kafka-bridge  (optional — bridges Kafka sensors to Redis)"
+	@echo ""
+	@echo "SCADA data path (protocols → Redis + TimescaleDB):"
+	@echo "  Terminal 4:  make scada-modbus-sim   (Modbus TCP slave, zone_a sensors)"
+	@echo "  Terminal 5:  make scada-mqtt-sim     (MQTT publisher, zone_b sensors)"
+	@echo "  Terminal 6:  make scada              (SCADA gateway — reads protocols, writes DB)"
+	@echo ""
+	@echo "Legacy Kafka path (optional, parallel to SCADA):"
+	@echo "  Terminal 7:  make sensor-sim"
+	@echo "  Terminal 8:  make kafka-bridge"
 	@echo ""
 	@echo "Then open: http://localhost:5173"
 

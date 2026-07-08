@@ -1,0 +1,89 @@
+# ──────────────────────────────────────────────────────────────
+# Modbus TCP Register Map
+# ──────────────────────────────────────────────────────────────
+# One entry per PLC/device. The gateway starts one PortWorker
+# thread per entry.
+#
+# data_type: int16 | uint16 | float32
+#   int16   — one register, signed (raw > 32767 → raw - 65536)
+#   uint16  — one register, unsigned
+#   float32 — two consecutive registers, big-endian IEEE 754
+#
+# eng_value = raw * scale + offset
+# ──────────────────────────────────────────────────────────────
+
+devices:
+  # Zone A — ground floor (Modbus simulator: scada/simulators/modbus_server.py)
+  SIM-PLC-TEMP:
+    host: localhost
+    port: 5021
+    poll_interval_s: 1
+    registers:
+      - address: 40001
+        sensor_id: temp_a
+        data_type: int16
+        scale: 0.1
+        offset: 0
+        unit: "°C"
+
+  SIM-PLC-VIB:
+    host: localhost
+    port: 5022
+    poll_interval_s: 1
+    registers:
+      - address: 40002
+        sensor_id: vib_a
+        data_type: int16
+        scale: 0.01
+        offset: 0
+        unit: g_rms
+
+  SIM-PLC-GAS:
+    host: localhost
+    port: 5023
+    poll_interval_s: 1
+    registers:
+      - address: 40003
+        sensor_id: gas_a
+        data_type: int16
+        scale: 0.1
+        offset: 0
+        unit: ppm
+
+  SIM-PLC-NOISE:
+    host: localhost
+    port: 5024
+    poll_interval_s: 1
+    registers:
+      - address: 40004
+        sensor_id: noise_a
+        data_type: int16
+        scale: 0.1
+        offset: 0
+        unit: dB
+
+  SIM-PLC-PRESSURE:
+    host: localhost
+    port: 5025
+    poll_interval_s: 1
+    registers:
+      - address: 40005
+        sensor_id: pressure_a
+        data_type: float32
+        scale: 1.0
+        offset: 0
+        unit: bar
+
+  # Add real PLCs here using the same structure.
+  # Example (commented out):
+  # FIELD-PLC-01:
+  #   host: 192.168.1.10
+  #   port: 502
+  #   poll_interval_s: 2
+  #   registers:
+  #     - address: 40001
+  #       sensor_id: temp_a
+  #       data_type: int16
+  #       scale: 0.1
+  #       offset: 0
+  #       unit: "°C"

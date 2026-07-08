@@ -50,8 +50,15 @@ def assign_zone(position_3d: Optional[Tuple[float, float, float]], zone_defs: di
 def read_sensor_readings(redis_client: redis.Redis) -> dict:
     """Read the sensor seam (rigvision:sensors:latest)."""
     try:
-        raw = redis_client.get(SENSORS_KEY)
-        return json.loads(raw) if raw else {}
+        raw = redis_client.hgetall(SENSORS_KEY)
+        if not raw:
+            return {}
+        decoded = {}
+        for k, v in raw.items():
+            key = k.decode("utf-8") if isinstance(k, bytes) else k
+            val = v.decode("utf-8") if isinstance(v, bytes) else v
+            decoded[key] = json.loads(val)
+        return decoded
     except Exception as e:
         print(f"[sensors] read error: {e}")
         return {}

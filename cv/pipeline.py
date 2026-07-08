@@ -474,6 +474,45 @@ class DemoDataGenerator:
         return res
 
 
+_SENSOR_FIELDS = ("temperature", "vibration", "noise", "gas_h2s", "pressure")
+
+def _merge_zone_states(redis_client: redis.Redis, cv_states: dict) -> None:
+    """Merge CV pipeline output into rigvision:zones without touching SCADA sensor values.
+
+    The pipeline owns: status, warning_reason, person_count, ppe_violations,
+                       sensor_meta, label, floor, sensor_types, updated_at.
+    SCADA publisher owns: temperature, vibration, noise, gas_h2s, pressure,
+                          sensor_sources.
+    On first write (zone not yet in Redis) the full cv_state is written so the
+    key always exists for the frontend.
+    """
+    try:
+        for zid, cv in cv_states.items():
+            raw = redis_client.hget("rigvision:zones", zid)
+            if not raw:
+                # zone not yet in Redis — write full state
+                redis_client.hset("rigvision:zones", zid, json.dumps(cv))
+            else:
+                z = json.loads(raw)
+                # CV-owned fields
+                z["status"]         = cv["status"]
+                z["warning_reason"] = cv.get("warning_reason")
+                z["person_count"]   = cv["person_count"]
+                z["ppe_violations"] = cv["ppe_violations"]
+                z["sensor_meta"]    = cv.get("sensor_meta", z.get("sensor_meta", {}))
+                z["label"]          = cv.get("label", z.get("label", zid))
+                z["floor"]          = cv.get("floor", z.get("floor", 0))
+                z["sensor_types"]   = cv.get("sensor_types", z.get("sensor_types", []))
+                z["updated_at"]     = cv["updated_at"]
+                # SCADA-owned sensor fields: only write if SCADA hasn't set them yet
+                for f in _SENSOR_FIELDS:
+                    if f not in z or z[f] is None:
+                        z[f] = cv.get(f)
+                redis_client.hset("rigvision:zones", zid, json.dumps(z))
+    except Exception as e:
+        print(f"[redis] zone merge error: {e}")
+
+
 def run_demo_mode(redis_client: redis.Redis, zone_defs: dict) -> None:
     print("[*] DEMO mode (simulated people in both rooms, real sensor feed). Ctrl+C to stop.")
     generator = DemoDataGenerator(zone_defs, num_persons=4)
@@ -487,7 +526,7 @@ def run_demo_mode(redis_client: redis.Redis, zone_defs: dict) -> None:
         resolved_thresholds = read_resolved_thresholds(redis_client)
         zone_states = build_zone_states(persons, sensor_readings, zone_defs, resolved_thresholds)
         redis_client.set("rigvision:persons", json.dumps(persons))
-        redis_client.set("rigvision:zones", json.dumps(zone_states))
+        _merge_zone_states(redis_client, zone_states)
         frame_count += 1
         if frame_count % 50 == 0:
             print(f"  [demo] frame={frame_count} persons={len(persons)}")
@@ -745,7 +784,7 @@ def run_producer_mode(
         zone_states = build_zone_states(persons_all, sensor_readings, zone_defs, resolved_thresholds)
         try:
             redis_client.set("rigvision:persons", json.dumps(persons_all))
-            redis_client.set("rigvision:zones", json.dumps(zone_states))
+            _merge_zone_states(redis_client, zone_states)
         except Exception as e:
             print(f"[redis] write error: {e}")
 

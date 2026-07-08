@@ -1,13 +1,12 @@
 """
-RigVision-3D — Sensor Simulator
-=================================
+RigVision-3D — Sensor Simulator (Per-Sensor Threads)
+===================================================
 
-Publishes fake sensor data to Kafka topic `rigvision.sensors` for testing
-without real IoT hardware. Uses sinusoidal patterns with Gaussian noise.
+Spawns a separate simulator thread for each sensor ID. Each thread publishes
+individual sensor reading messages to the Kafka topic `rigvision.sensors`.
 
 USAGE:
     python -m sensors.simulator.simulate
-    python -m sensors.simulator.simulate --rate 2.0 --bootstrap-servers localhost:9092
 """
 
 from __future__ import annotations
@@ -39,31 +38,60 @@ def signal_handler(sig: int, frame: object) -> None:
 
 signal.signal(signal.SIGINT, signal_handler)
 
-# Two stacked rooms: Room A (ground floor) and Room B (first floor). No corridor.
-ZONES = ["zone_a", "zone_b"]
+# 10 individual sensors across Zone A and Zone B
+SENSORS = [
+    "temp_a", "gas_a", "vib_a", "noise_a", "pressure_a",
+    "temp_b", "gas_b", "vib_b", "noise_b", "pressure_b",
+]
 
 
-def generate_reading(zone_id: str, t: float) -> dict:
-    zone_offset = hash(zone_id) % 100 / 10.0
+def generate_reading_value(sensor_id: str, t: float) -> float:
+    sensor_offset = hash(sensor_id) % 100 / 10.0
 
-    temperature = 28.0 + 3.0 * math.sin(0.05 * t + zone_offset) + np.random.normal(0, 0.5)
-    vibration = max(0.1, 1.5 + 0.5 * math.sin(0.1 * t + zone_offset) + np.random.normal(0, 0.2))
-    noise = 70.0 + 5.0 * math.sin(0.08 * t + zone_offset) + np.random.normal(0, 2)
-    gas_h2s = max(0.0, 1.0 + 0.5 * abs(math.sin(0.02 * t + zone_offset)) + np.random.normal(0, 0.3))
-    pressure = 12.0 + 2.0 * math.sin(0.03 * t + zone_offset) + np.random.normal(0, 0.5)
+    if "temp" in sensor_id:
+        val = 28.0 + 3.0 * math.sin(0.05 * t + sensor_offset) + np.random.normal(0, 0.5)
+        if sensor_id == "temp_a" and int(t) % 60 > 50:
+            val += 15.0
+        return round(float(val), 1)
+    elif "vib" in sensor_id:
+        val = max(0.1, 1.5 + 0.5 * math.sin(0.1 * t + sensor_offset) + np.random.normal(0, 0.2))
+        return round(float(val), 2)
+    elif "gas" in sensor_id:
+        val = max(0.0, 1.0 + 0.5 * abs(math.sin(0.02 * t + sensor_offset)) + np.random.normal(0, 0.3))
+        return round(float(val), 2)
+    elif "noise" in sensor_id:
+        val = 70.0 + 5.0 * math.sin(0.08 * t + sensor_offset) + np.random.normal(0, 2)
+        return round(float(val), 1)
+    elif "pressure" in sensor_id:
+        val = 12.0 + 2.0 * math.sin(0.03 * t + sensor_offset) + np.random.normal(0, 0.5)
+        return round(float(val), 1)
 
-    if zone_id == "zone_a" and int(t) % 60 > 50:
-        temperature += 15.0
+    return 0.0
 
-    return {
-        "zone_id": zone_id,
-        "temperature": round(float(temperature), 1),
-        "vibration": round(float(vibration), 2),
-        "noise": round(float(noise), 1),
-        "gas_h2s": round(float(gas_h2s), 2),
-        "pressure": round(float(pressure), 1),
-        "timestamp": int(time.time() * 1000),
-    }
+
+def sensor_worker(sensor_id: str, producer, topic: str, rate: float) -> None:
+    logger.info(f"Started worker thread for sensor: {sensor_id}")
+    start_time = time.time()
+    
+    while not shutdown_event.is_set():
+        t = time.time() - start_time
+        val = generate_reading_value(sensor_id, t)
+        
+        payload = {
+            "sensor_id": sensor_id,
+            "value": val,
+            "timestamp": int(time.time() * 1000),
+        }
+        
+        try:
+            producer.send(topic, value=payload)
+        except Exception as e:
+            logger.error(f"Error publishing {sensor_id}: {e}")
+            
+        sleep_time = max(0.1, 1.0 / rate)
+        shutdown_event.wait(timeout=sleep_time)
+
+    logger.info(f"Stopped worker thread for sensor: {sensor_id}")
 
 
 def run_simulator(
@@ -82,37 +110,38 @@ def run_simulator(
         bootstrap_servers=bootstrap_servers,
         value_serializer=lambda v: json.dumps(v).encode("utf-8"),
     )
-    logger.info("Kafka producer connected. Publishing at %.1f Hz per zone...", rate)
+    logger.info("Kafka producer connected. Spawning %d sensor threads at %.1f Hz...", len(SENSORS), rate)
 
-    start_time = time.time()
-    msg_count = 0
+    threads = []
+    for sensor_id in SENSORS:
+        t = threading.Thread(
+            target=sensor_worker,
+            args=(sensor_id, producer, topic, rate),
+            name=f"Sim-{sensor_id}",
+            daemon=True
+        )
+        t.start()
+        threads.append(t)
 
+    # Keep main thread alive to handle interruption signals
     while not shutdown_event.is_set():
-        t = time.time() - start_time
+        time.sleep(0.5)
 
-        for zone_id in ZONES:
-            reading = generate_reading(zone_id, t)
-            producer.send(topic, value=reading)
-            msg_count += 1
-
-        if msg_count % (len(ZONES) * 10) == 0:
-            logger.info("Published %d sensor readings", msg_count)
-
-        sleep_time = max(0, (1.0 / rate) - (time.time() - start_time - t))
-        if sleep_time > 0:
-            shutdown_event.wait(timeout=sleep_time)
-
+    # Join threads (with timeout to prevent hanging on exit)
+    for t in threads:
+        t.join(timeout=1.0)
+        
     producer.flush()
     producer.close()
-    logger.info("Sensor simulator stopped after %d messages", msg_count)
+    logger.info("Sensor simulator stopped.")
 
 
 def main() -> None:
     import argparse
-    parser = argparse.ArgumentParser(description="RigVision-3D Sensor Simulator")
-    parser.add_argument("--bootstrap-servers", default=os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"))
+    parser = argparse.ArgumentParser(description="RigVision-3D Multi-Threaded Sensor Simulator")
+    parser.add_argument("--bootstrap-servers", default=os.getenv("KAFKA_BROKER_HOSTS", "localhost:9092"))
     parser.add_argument("--topic", default=os.getenv("KAFKA_SENSOR_TOPIC", "rigvision.sensors"))
-    parser.add_argument("--rate", type=float, default=1.0, help="Readings per second per zone (default: 1.0)")
+    parser.add_argument("--rate", type=float, default=1.0, help="Updates per second per sensor (default: 1.0)")
     args = parser.parse_args()
 
     run_simulator(

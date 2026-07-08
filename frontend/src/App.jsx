@@ -16,6 +16,27 @@ const SENSOR_ROWS = [
 ]
 const SC = { normal: '#46b17f', warning: '#d9a64e', critical: '#e06054' }
 
+const PROTO_BADGE = {
+  modbus: { label: 'MB',     color: '#5b8def', bg: 'rgba(91,141,239,0.13)' },
+  mqtt:   { label: 'MQ',     color: '#46b17f', bg: 'rgba(70,177,127,0.13)' },
+  manual: { label: 'MAN',    color: '#d9a64e', bg: 'rgba(217,166,78,0.13)' },
+  scada:  { label: 'SCADA',  color: '#9b8fc4', bg: 'rgba(155,143,196,0.13)' },
+}
+
+function SourceBadge({ source }) {
+  if (!source) return null
+  const s = PROTO_BADGE[source] || PROTO_BADGE.manual
+  return (
+    <span style={{
+      fontFamily: 'var(--font-mono)', fontSize: 8, letterSpacing: 0.6,
+      color: s.color, background: s.bg,
+      border: `1px solid ${s.color}40`,
+      borderRadius: 3, padding: '0px 4px', marginLeft: 5,
+      verticalAlign: 'middle',
+    }}>{s.label}</span>
+  )
+}
+
 function ZoneDetailPanel() {
   const selectedZone   = useRigStore(s => s.selectedZone)
   const zones          = useRigStore(s => s.zones)
@@ -95,11 +116,15 @@ function ZoneDetailPanel() {
             else if (hiWarn || loWarn) color = 'var(--accent-amber)'
             else color = 'var(--accent-green)'
           }
+          const source = zone.sensor_sources?.[type]
           return (
-            <div key={type} style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <div key={type} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ color: 'var(--text-muted)' }}>{icon} {lbl}</span>
-              <span style={{ color, fontWeight: color !== 'var(--text-primary)' ? 600 : 400 }}>
-                {val != null ? `${val} ${unit}` : '—'}
+              <span style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <span style={{ color, fontWeight: color !== 'var(--text-primary)' ? 600 : 400 }}>
+                  {val != null ? `${val} ${unit}` : '—'}
+                </span>
+                <SourceBadge source={source} />
               </span>
             </div>
           )

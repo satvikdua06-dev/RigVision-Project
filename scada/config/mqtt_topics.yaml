@@ -1,0 +1,57 @@
+# ──────────────────────────────────────────────────────────────
+# MQTT Broker Subscriptions
+# ──────────────────────────────────────────────────────────────
+# One entry per broker in the `brokers` list. The gateway starts
+# one MQTTWorker thread per broker.
+#
+# Payload format accepted per topic:
+#   JSON object : {"value": 28.5}   (sensor_id field ignored)
+#   JSON number : 28.5
+#   Plain text  : "28.5"
+#
+# eng_value = raw_value * scale + offset
+# ──────────────────────────────────────────────────────────────
+
+brokers:
+  # Zone B — first floor (MQTT publisher simulator: scada/simulators/mqtt_publisher.py)
+  - host: localhost
+    port: 1883
+    subscriptions:
+      - topic: "rig/zone_b/temp_b"
+        sensor_id: temp_b
+        scale: 1.0
+        offset: 0
+        unit: "°C"
+
+      - topic: "rig/zone_b/vib_b"
+        sensor_id: vib_b
+        scale: 1.0
+        offset: 0
+        unit: g_rms
+
+      - topic: "rig/zone_b/gas_b"
+        sensor_id: gas_b
+        scale: 1.0
+        offset: 0
+        unit: ppm
+
+      - topic: "rig/zone_b/noise_b"
+        sensor_id: noise_b
+        scale: 1.0
+        offset: 0
+        unit: dB
+
+      - topic: "rig/zone_b/pressure_b"
+        sensor_id: pressure_b
+        scale: 1.0
+        offset: 0
+        unit: bar
+
+  # Add more brokers or a WirelessHART gateway here:
+  # - host: 192.168.1.50
+  #   port: 1883
+  #   subscriptions:
+  #     - topic: "field/sensor/42"
+  #       sensor_id: temp_a
+  #       scale: 0.1
+  #       unit: "°C"

@@ -43,9 +43,23 @@ CAP_MODEL_DIR     = os.getenv("PPE_CAP_MODEL_DIR",
 GLASSES_MODEL_DIR = os.getenv("PPE_GLASSES_MODEL_DIR",
                                str(_HERE / "models" / "glasses_classifier"))
 
-CAP_THRESHOLD     = float(os.getenv("PPE_CAP_THRESHOLD",     "0.97"))
-GLASSES_THRESHOLD = float(os.getenv("PPE_GLASSES_THRESHOLD", "0.5"))
-SCORE_WINDOW      = int(os.getenv("PPE_SCORE_WINDOW",        "90"))   # rolling-avg frames (~3s @ 30fps, matches video_test_classifier.py)
+# Onset threshold: must exceed this (on the fast window) to first call item "detected".
+# Keep high to reject hair false-positives.
+CAP_CONFIRM_THRESHOLD     = float(os.getenv("PPE_CAP_THRESHOLD",             "0.97"))
+GLASSES_CONFIRM_THRESHOLD = float(os.getenv("PPE_GLASSES_THRESHOLD",         "0.5"))
+
+# Maintain threshold: once "detected", only drop back to "missing" when the slow
+# rolling average falls below this.  Much lower so brief occlusions don't flip status.
+CAP_MAINTAIN_THRESHOLD     = float(os.getenv("PPE_CAP_MAINTAIN_THRESHOLD",     "0.55"))
+GLASSES_MAINTAIN_THRESHOLD = float(os.getenv("PPE_GLASSES_MAINTAIN_THRESHOLD", "0.35"))
+
+# Fast window: short buffer used for onset detection — hat appears → detected in
+# ~CAP_FAST_WINDOW frames instead of waiting for the full 90-frame average to rise.
+CAP_FAST_WINDOW     = int(os.getenv("PPE_CAP_FAST_WINDOW",     "10"))
+GLASSES_FAST_WINDOW = int(os.getenv("PPE_GLASSES_FAST_WINDOW", "10"))
+
+# Slow window: long buffer used to hold "detected" state through occlusions / transients.
+SCORE_WINDOW = int(os.getenv("PPE_SCORE_WINDOW", "90"))   # ~3s @ 30fps
 
 PERSON_CONFIDENCE = float(os.getenv("PPE_PERSON_CONFIDENCE", "0.3"))
 DETECT_SECONDS    = float(os.getenv("PPE_DETECT_SECONDS",    "3.0"))
@@ -181,16 +195,18 @@ class PPEMonitor:
         self.face_model.to(self.device)
 
         print(f"[ppe] Ready on {self.device} | "
-              f"cap_thr={CAP_THRESHOLD}  gl_thr={GLASSES_THRESHOLD}  "
-              f"window={SCORE_WINDOW}f  debounce={DETECT_SECONDS}s")
+              f"cap_confirm={CAP_CONFIRM_THRESHOLD}  cap_maintain={CAP_MAINTAIN_THRESHOLD}  "
+              f"fast_win={CAP_FAST_WINDOW}f  slow_win={SCORE_WINDOW}f  debounce={DETECT_SECONDS}s")
 
         # Demo (single-person) state
         self.states: Dict[str, ItemState] = {item: ItemState() for item in ITEMS}
         self._prev_payload: Optional[str] = None
         self.last_boxes: Dict[str, List[Box]] = {"person": [], "head_crop": []}
         self._global_scores: Dict[str, deque] = {
-            "cap":     deque(maxlen=SCORE_WINDOW),
-            "glasses": deque(maxlen=SCORE_WINDOW),
+            "cap_fast":     deque(maxlen=CAP_FAST_WINDOW),
+            "cap_slow":     deque(maxlen=SCORE_WINDOW),
+            "glasses_fast": deque(maxlen=GLASSES_FAST_WINDOW),
+            "glasses_slow": deque(maxlen=SCORE_WINDOW),
         }
 
         # Multi-person (pipeline) state
@@ -268,10 +284,23 @@ class PPEMonitor:
         self,
         frame: np.ndarray,
         box: Box,
-        cap_buf: deque,
-        glasses_buf: deque,
+        cap_fast: deque,
+        cap_slow: deque,
+        glasses_fast: deque,
+        glasses_slow: deque,
+        cap_confirmed: str = "unknown",
+        glasses_confirmed: str = "unknown",
     ) -> Tuple[Optional[bool], Optional[bool], Optional[Box]]:
-        """Get face crop, classify, update rolling-average buffers, threshold.
+        """Get face crop, classify, update rolling-average buffers, apply hysteresis threshold.
+
+        Hysteresis logic (Schmitt-trigger style):
+          • ONSET  — uses the SHORT fast buffer vs the high confirm threshold.
+                     Hair scores (~0.7) won't average above 0.97 in 10 frames.
+                     A real hat (~0.99) crosses the threshold in ~1 frame.
+          • HOLD   — once "detected", uses the LONG slow buffer vs a much lower
+                     maintain threshold.  Brief occlusions and lighting dips don't
+                     flip the status back to "missing" prematurely.
+
         Returns (cap_present, glasses_present, crop_box).
         All three are None when no face was detected — callers must treat None as
         'no data' and NOT feed it into WORN/NOT_WORN logic."""
@@ -280,11 +309,27 @@ class PPEMonitor:
             return None, None, None
         crop, crop_box = result
         cap_p, gl_p = self._classify(crop)
-        cap_buf.append(cap_p)
-        glasses_buf.append(gl_p)
-        cap_avg = sum(cap_buf) / len(cap_buf)
-        gl_avg  = sum(glasses_buf) / len(glasses_buf)
-        return cap_avg >= CAP_THRESHOLD, gl_avg >= GLASSES_THRESHOLD, crop_box
+
+        cap_fast.append(cap_p)
+        cap_slow.append(cap_p)
+        glasses_fast.append(gl_p)
+        glasses_slow.append(gl_p)
+
+        cap_fast_avg = sum(cap_fast) / len(cap_fast)
+        cap_slow_avg = sum(cap_slow) / len(cap_slow)
+        if cap_confirmed == "detected":
+            cap_present = cap_slow_avg >= CAP_MAINTAIN_THRESHOLD
+        else:
+            cap_present = cap_fast_avg >= CAP_CONFIRM_THRESHOLD
+
+        gl_fast_avg = sum(glasses_fast) / len(glasses_fast)
+        gl_slow_avg = sum(glasses_slow) / len(glasses_slow)
+        if glasses_confirmed == "detected":
+            gl_present = gl_slow_avg >= GLASSES_MAINTAIN_THRESHOLD
+        else:
+            gl_present = gl_fast_avg >= GLASSES_CONFIRM_THRESHOLD
+
+        return cap_present, gl_present, crop_box
 
     # ── Pipeline path: multi-person, multi-camera ────────────────────────────
     def process_multi(
@@ -308,18 +353,26 @@ class PPEMonitor:
             ps = self.person_states.setdefault(
                 pid, {item: ItemState() for item in ITEMS})
             psc = self.person_scores.setdefault(pid, {
-                "cap":     deque(maxlen=SCORE_WINDOW),
-                "glasses": deque(maxlen=SCORE_WINDOW),
+                "cap_fast":     deque(maxlen=CAP_FAST_WINDOW),
+                "cap_slow":     deque(maxlen=SCORE_WINDOW),
+                "glasses_fast": deque(maxlen=GLASSES_FAST_WINDOW),
+                "glasses_slow": deque(maxlen=SCORE_WINDOW),
             })
 
             cap_any = glasses_any = False
             face_seen = False
+            cap_conf     = ps["head_protection"].confirmed
+            glasses_conf = ps["eye_protection"].confirmed
             for cam_id, box in cam_boxes.items():
                 frame = frames_by_cam.get(cam_id)
                 if frame is None:
                     continue
                 cap_present, gl_present, _ = self._detect_with_buffers(
-                    frame, box, psc["cap"], psc["glasses"])
+                    frame, box,
+                    psc["cap_fast"], psc["cap_slow"],
+                    psc["glasses_fast"], psc["glasses_slow"],
+                    cap_conf, glasses_conf,
+                )
                 if cap_present is None:
                     continue  # no face detected on this feed — skip, don't count as NOT_WORN
                 face_seen = True
@@ -380,11 +433,16 @@ class PPEMonitor:
 
         cap_any = glasses_any = False
         face_seen = False
+        cap_conf     = self.states["head_protection"].confirmed
+        glasses_conf = self.states["eye_protection"].confirmed
         for box in persons:
             cap_p, gl_p, crop_box = self._detect_with_buffers(
                 frame, box,
-                self._global_scores["cap"],
-                self._global_scores["glasses"],
+                self._global_scores["cap_fast"],
+                self._global_scores["cap_slow"],
+                self._global_scores["glasses_fast"],
+                self._global_scores["glasses_slow"],
+                cap_conf, glasses_conf,
             )
             if crop_box is not None:
                 head_crops.append(crop_box)
