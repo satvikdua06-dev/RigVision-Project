@@ -31,6 +31,24 @@ def determine_sensor_status(readings: dict[str, float]) -> tuple[str, Optional[s
                 status, reason = "warning", f"{k} = {v:.1f} exceeds warning ({t['warning']})"
     return status, reason
 
+def _sensor_to_zone(sensor_id: str) -> str:
+    clean_id = sensor_id
+    if clean_id.endswith("_f1"):
+        clean_id = clean_id[:-3]
+    parts = clean_id.split("_")
+    if len(parts) > 1:
+        suffix = parts[-1]
+        return f"zone_{suffix}"
+    return "unknown"
+
+SF_MAP = {
+    "temp": "temperature",
+    "vib": "vibration",
+    "noise": "noise",
+    "gas": "gas_h2s",
+    "pressure": "pressure",
+}
+
 def run_bridge(bootstrap_servers="localhost:9092", topic="rigvision.sensors", redis_host="localhost", redis_port=6379, redis_password=None, consumer_group="rigvision-bridge") -> None:
     try:
         from kafka import KafkaConsumer
@@ -51,30 +69,51 @@ def run_bridge(bootstrap_servers="localhost:9092", topic="rigvision.sensors", re
                 for msg in messages:
                     try:
                         data = msg.value
-                        zone_id = data.get("zone_id")
-                        if not zone_id: continue
-                        readings = {f: float(data[f]) for f in SF if f in data}
-                        if not readings: continue
-
-                        zones_raw = r_client.get("rigvision:zones")
-                        zones = json.loads(zones_raw) if zones_raw else {}
-                        state = zones.get(zone_id, {
+                        sensor_id = data.get("sensor_id")
+                        if not sensor_id: continue
+                        value = float(data.get("value", 0))
+                        timestamp_ms = data.get("timestamp", int(time.time() * 1000))
+                        
+                        # 1. Update rigvision:sensors:latest
+                        sensor_data = {
+                            "value": value,
+                            "updated_at": timestamp_ms / 1000.0,
+                            "source": "kafka"
+                        }
+                        r_client.hset("rigvision:sensors:latest", sensor_id, json.dumps(sensor_data))
+                        
+                        # 2. Update rigvision:zones
+                        zone_id = _sensor_to_zone(sensor_id)
+                        if zone_id == "unknown":
+                            continue
+                            
+                        prefix = sensor_id.split("_")[0]
+                        field = SF_MAP.get(prefix)
+                        if not field:
+                            continue
+                            
+                        zones_raw = r_client.hget("rigvision:zones", zone_id)
+                        state = json.loads(zones_raw) if zones_raw else {
                             "status": "normal", "warning_reason": None,
                             "temperature": 28.0, "vibration": 1.2, "noise": 72.0, "gas_h2s": 0.5, "pressure": 12.0,
                             "person_count": 0, "ppe_violations": [], "updated_at": int(time.time()),
-                        })
-                        for f, v in readings.items(): state[f] = round(v, 2)
+                        }
+                        
+                        state[field] = round(value, 2)
+                        state.setdefault("sensor_sources", {})[field] = "kafka"
+                        
+                        # Recalculate status for this zone
                         status, reason = determine_sensor_status({f: state.get(f, 0) for f in SF})
-
+                        
                         if state.get("ppe_violations") and status != "critical":
                             state["status"], state["warning_reason"] = "warning", reason
                         else:
                             state["status"], state["warning_reason"] = status, reason
-
+                            
                         state["updated_at"] = int(time.time())
-                        zones[zone_id] = state
-                        r_client.set("rigvision:zones", json.dumps(zones))
+                        r_client.hset("rigvision:zones", zone_id, json.dumps(state))
                         msg_count += 1
+                        
                     except Exception as e:
                         logger.warning("Failed to process message: %s", e)
         except Exception as e:

@@ -35,3 +35,9 @@ pydantic>=2.0.0
 # ── Knowledge Graph + Diagnostics ──
 neo4j                        # Neo4j Python driver
 chromadb                     # vector store for RAG retrieval
+
+# ── SCADA Gateway ──
+pymodbus>=3.6.0              # Modbus TCP/RTU — ModbusTcpClient (sync) + server for simulator
+paho-mqtt>=2.0.0             # MQTT subscribe/publish (loop_start threaded mode)
+psycopg2-binary>=2.9.0       # PostgreSQL + TimescaleDB writes
+pyyaml>=6.0                  # YAML config files (register_map, mqtt_topics, hart_devices)
