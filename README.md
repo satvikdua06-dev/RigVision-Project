@@ -28,7 +28,8 @@ RigVision-3D puts all of that into a single 3D view of the rig itself. The opera
 
 ## Architecture
 
-[View the full pipeline diagram →](https://excalidraw.com/#json=2VaPHIh9iJR5x3oa9L2LB,BCY4lSp5uUsJrcMfZiQdyw)
+[View the full pipeline diagram →](https://excalidraw.com/#json=0n3xeZB19GUJ1IpRqmND1,v6buYu_nCWh8VcsiWxy-Eg)
+
 
 ---
 
