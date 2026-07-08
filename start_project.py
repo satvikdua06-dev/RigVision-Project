@@ -21,25 +21,45 @@ processes_to_run = [
     },
     {
         "name": "Backend",
-        "command": ["python", "main.py"],
+        "command": ["python3", "main.py"],
         "cwd": "backend",
         "color": "\033[92m" # Green
     },
     {
         "name": "Anomaly_Listener",
-        "command": ["python", "knowledge/extraction/anomaly_listener.py"],
+        "command": ["python3", "knowledge/extraction/anomaly_listener.py"],
         "cwd": ".",
         "color": "\033[95m" # Magenta
     },
     {
         "name": "Pipeline",
-        "command": ["python", "pipeline.py", "--mode", "video", "--cameras", "vid1.mp4", "vid2.mp4"],
+        "command": ["python3", "pipeline.py", "--mode", "video", "--cameras", "vid1.mp4", "vid2.mp4"],
         "cwd": "cv",
         "color": "\033[93m" # Yellow
     },
 ]
 
 running_processes = []
+
+def get_python_executable(target_dir):
+    """
+    Finds the correct Python executable by checking common virtual environment
+    directories in the target directory and the project root.
+    """
+    venv_names = ['venv', 'env', '.venv', 'ven','myenv']
+    base_dirs = [target_dir, os.getcwd()]
+    
+    for base in base_dirs:
+        for venv in venv_names:
+            if sys.platform == "win32":
+                py_path = os.path.join(base, venv, 'Scripts', 'python.exe')
+            else:
+                py_path = os.path.join(base, venv, 'bin', 'python')
+                
+            if os.path.isfile(py_path) and os.access(py_path, os.X_OK):
+                return py_path
+                
+    return "python3" if sys.platform == "darwin" else "python"
 
 def run_process(proc_info):
     name = proc_info["name"]
@@ -51,12 +71,18 @@ def run_process(proc_info):
     try:
         # Start the process
         actual_cmd = list(cmd)
+        target_dir = os.path.join(os.getcwd(), cwd) if cwd != "." else os.getcwd()
+        
+        # Use venv Python if running a python command
+        if actual_cmd[0] in ("python", "python3"):
+            actual_cmd[0] = get_python_executable(target_dir)
+
         if os.name == "nt" and actual_cmd[0] == "npm":
             actual_cmd[0] = "npm.cmd"
 
         p = subprocess.Popen(
             actual_cmd,
-            cwd=os.path.join(os.getcwd(), cwd) if cwd != "." else os.getcwd(),
+            cwd=target_dir,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,

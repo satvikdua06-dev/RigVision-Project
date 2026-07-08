@@ -123,65 +123,61 @@ An NVIDIA GPU is recommended for live camera mode, demo mode runs on CPU.
 ```bash
 git clone https://github.com/satvikdua06-dev/RigVision.git RigVision
 cd RigVision
-cp .env.example .env
 ```
 
-Edit `.env` and fill in the camera URLs, your Gemini API key, or the LM Studio model name.
+You must configure **two** `.env` files for the system to run correctly:
+
+**Global Backend/CV `.env`** (Root directory)
+Copy the example file:
+```bash
+cp .env.example .env
+```
+Ensure you fill in your Gemini API key or LM Studio model name.
+
+**Auth Service `.env`** (`auth-rig/` directory)
+Create `auth-rig/.env` and add the MongoDB URI and ensure the port is set to `5001` to avoid macOS AirPlay conflicts:
+```env
+NODE_ENV=development
+PORT=5001
+MONGO_URI=mongodb://127.0.0.1:27017/auth_rig
+JWT_SECRET=your_super_secret_key_here
+JWT_EXPIRE=30d
+SECURITY_MANAGER_USERNAME=security_manager
+SECURITY_MANAGER_EMAIL=security.manager@rigvision.dev
+SECURITY_MANAGER_PASSWORD=OngcSecurity2026!
+```
+
+*(Optional: If you use Port 5001 for auth, create `frontend/.env.local` containing `VITE_AUTH_API=http://localhost:5001/api/auth`)*
 
 **2. Start the infrastructure**
 
 ```bash
 docker compose up -d
 ```
+This brings up Redis, PostgreSQL, Neo4j, Kafka, MongoDB, and ChromaDB.
 
-This brings up Redis, PostgreSQL, Neo4j, Kafka, and ChromaDB.
+**3. Install Dependencies (Global Setup)**
 
-**3. Seed the knowledge graph**
-
+Use the built-in Makefile command to install all Python and Node.js dependencies across the project:
 ```bash
-cd knowledge
-python -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-python graph/seed_graph.py
+make install
 ```
 
-**4. Install the backend and CV pipeline**
+**4. Seed the Graph Database**
 
+For a fresh install, seed the Neo4j knowledge graph:
 ```bash
-# Backend
-cd backend
-python -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-
-# CV (PyTorch with CUDA first)
-cd ../cv
-python -m venv ven && source ven/bin/activate
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
-pip install -r requirements.txt
+python knowledge/graph/seed_graph.py
 ```
 
-**5. Start the auth service**
+**5. Start the Entire Project (One-Click)**
+
+Instead of opening 6 different terminals, RigVision-3D uses a multiplexer script that handles all background processes, automatically detects your virtual environments, and color-codes all logs into a single window:
 
 ```bash
-cd auth-rig
-npm install
-npm run dev
+python3 start_project.py
 ```
 
-**6. Run everything**
+**6. Open the Dashboard**
 
-Open one terminal per process:
-
-```bash
-python backend/main.py                              # FastAPI on :8000
-python cv/pipeline.py --mode demo                   # demo people, no cameras needed
-python knowledge/extraction/anomaly_listener.py     # diagnostics worker
-
-cd frontend && npm install && npm run dev           # dashboard on :5173
-cd frontend && npm run dev:sensors                  # sensor console on :5174
-```
-
-**7. Open the dashboard**
-
-Go to `http://localhost:5173`, sign in, and you should see the 3D rig.
-`http://localhost:5174` opens the Sensor Console where you can push values and trigger diagnostics.
+Go to `http://localhost:5173`, sign in using the Security Manager credentials from your `.env`, and you should see the 3D rig!
