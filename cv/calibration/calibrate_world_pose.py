@@ -213,7 +213,8 @@ def main() -> None:
 
     # Reprojection error (lower = better; ~1-2px is good).
     proj, _ = cv2.projectPoints(obj_pts, rvec, tvec, K, dist)
-    err = float(np.linalg.norm(img_pts - proj.reshape(-1, 2), axis=1).mean())
+    per_tag_err = np.linalg.norm(img_pts - proj.reshape(-1, 2), axis=1)
+    err = float(per_tag_err.mean())
 
     # Camera centre in world: where the phone physically is.
     C = (-R.T @ t).ravel()
@@ -229,6 +230,10 @@ def main() -> None:
     print("=" * 56)
     print(f"  tags used            : {len(idx)} / {len(obj_pts)} matched")
     print(f"  reprojection error   : {err:.3f} px   {'(good)' if err < 2 else '(HIGH - check survey/IDs)'}")
+    print(f"\n  per-tag reprojection error:")
+    for tag_id, e in zip(used, per_tag_err):
+        flag = "  <-- fix this" if e > 4.0 else ""
+        print(f"    tag {tag_id:>3d} : {e:.2f} px{flag}")
     print(f"  R (world->camera):\n{np.array2string(R, precision=4, suppress_small=True)}")
     print(f"  t (world->camera): {np.array2string(t.ravel(), precision=4, suppress_small=True)}")
     print(f"  camera centre (x,y,z) in room metres: "

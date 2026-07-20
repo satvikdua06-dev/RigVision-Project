@@ -23,7 +23,7 @@ export const ZONES = {
     color: '#4488ff',
     equipment: [
       { id: 'pump_01', name: 'Mud Pump #1', type: 'pump', position: [1.3, 0.6, 1.3], size: [1.0, 1.1, 0.7], color: '#6b7585' },
-      { id: 'panel_01', name: 'Control Panel', type: 'control_panel', position: [3.1, 0.3, 3.6], size: [2.7, 0.8, 0.4], color: '#4a5666' },
+      { id: 'panel_01', name: 'Control Panel', type: 'control_panel', position: [2.9, 0.3, 3.6], size: [2.1, 0.8, 0.4], color: '#4a5666' },
       { id: 'pipe_rack_01', name: 'Pipe Rack', type: 'storage', position: [0.6, 1.1, 3.2], size: [0.6, 1.8, 1.0], color: '#7d7160' },
       { id: 'temple_01', name: 'Temple Mandir', type: 'temple', position: [5.7, 0.9, 0.8], size: [0.6, 1.8, 0.5], color: '#3c2a21' },
     ],

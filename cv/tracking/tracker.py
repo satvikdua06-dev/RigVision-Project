@@ -162,7 +162,7 @@ def update_tracker(
             aruco_id=aruco_id,
             aruco_confidence=aruco_confidence,
             recognition_method=recognition_method,
-            frames_seen=1,
+            frames_seen=int(getattr(track, "tracklet_len", 1)),
         ))
 
     return result

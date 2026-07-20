@@ -105,13 +105,29 @@ def calibrate_extrinsic(master_id: int, target_id: int, intrinsics_dir: str,
         criteria=criteria,
     )
 
+    # Per-pair reprojection error — solve board pose per camera per pair.
+    pair_errors = []
+    for op, pm, pt in zip(objpoints, pts_master, pts_target):
+        _, rvec_m, tvec_m = cv2.solvePnP(op, pm, K_master, dist_master)
+        _, rvec_t, tvec_t = cv2.solvePnP(op, pt, K_target, dist_target)
+        proj_m, _ = cv2.projectPoints(op, rvec_m, tvec_m, K_master, dist_master)
+        proj_t, _ = cv2.projectPoints(op, rvec_t, tvec_t, K_target, dist_target)
+        err_m = float(np.linalg.norm(pm.reshape(-1, 2) - proj_m.reshape(-1, 2), axis=1).mean())
+        err_t = float(np.linalg.norm(pt.reshape(-1, 2) - proj_t.reshape(-1, 2), axis=1).mean())
+        pair_errors.append((err_m + err_t) / 2)
+
     os.makedirs(output_dir, exist_ok=True)
     output_path = os.path.join(output_dir, f'extrinsics_{master_id}_to_{target_id}.npz')
     np.savez_compressed(output_path, R=R, T=T, F=F, reprojection_error=ret)
 
     print(f"\nStereo {master_id}->{target_id}: reprojection error = {ret:.4f} px  ({len(objpoints)} pair(s))")
     print(f"  baseline |T| = {np.linalg.norm(T):.3f} m")
-    print(f"Saved -> {output_path}")
+    print(f"\n  per-pair reprojection error (worst to best):")
+    ranked = sorted(zip(pair_errors, pair_dirs), reverse=True)
+    for e, pd in ranked:
+        flag = "  <-- delete this" if e > 1.5 else ""
+        print(f"    {e:.2f} px  [{os.path.basename(pd)}]{flag}")
+    print(f"\nSaved -> {output_path}")
 
 
 def main() -> None:

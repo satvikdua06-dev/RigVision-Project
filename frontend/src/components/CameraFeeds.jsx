@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useRigStore } from '../stores/useRigStore.js'
 
 const POSTURE_COLORS = {
@@ -50,12 +50,20 @@ export default function CameraFeeds() {
     return () => clearTimeout(timer)
   }, [failedCams])
 
+  // Remember the last non-empty camera set instead of falling back to a
+  // hardcoded [0,1,2] — a single tick where `persons` is momentarily empty
+  // (e.g. a transient triangulation miss, see TRIAG_GRACE_SECONDS in
+  // cv/pipeline.py) would otherwise flash a phantom "CAM 2 OFFLINE" panel.
+  const lastCameraIdsRef = useRef([])
   const cameraIds = useMemo(() => {
     const ids = new Set()
     persons.forEach(p => {
       if (p.camera_ids) p.camera_ids.forEach(id => ids.add(id))
     })
-    return ids.size > 0 ? [...ids].sort((a, b) => a - b) : [0, 1, 2]
+    if (ids.size > 0) {
+      lastCameraIdsRef.current = [...ids].sort((a, b) => a - b)
+    }
+    return lastCameraIdsRef.current
   }, [persons])
 
   if (selectedPerson === null || selectedPerson === undefined) return null
@@ -89,6 +97,7 @@ export default function CameraFeeds() {
     }}>
       {/* Person Detailed Info Card */}
       {person ? (() => {
+        const displayName = person.name || `PERSON #${person.id}`
         return (
           <div style={{
             borderBottom: '1px solid var(--border)',
@@ -97,7 +106,8 @@ export default function CameraFeeds() {
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
               <span style={{ fontFamily: 'var(--font-ui)', fontSize: 16, fontWeight: 600, letterSpacing: 0.3, color: 'var(--text-primary)' }}>
-                PERSON #{person.id}
+                {displayName}
+                {person.name && <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 400, fontSize: 11, color: 'var(--text-muted)', marginLeft: 6 }}>#{person.id}</span>}
               </span>
               {hasAlert ? pill('PPE VIOLATION', 'var(--accent-red)')
                 : hasUnknown ? pill('UNMONITORED', 'var(--text-muted)')

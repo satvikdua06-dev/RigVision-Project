@@ -1,4 +1,4 @@
-import { Suspense, useState, useMemo, useRef } from 'react'
+import { Suspense, useState, useMemo, useRef, useEffect } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { OrbitControls, GizmoHelper, GizmoViewport, Grid, Environment, Html } from '@react-three/drei'
 import * as THREE from 'three'
@@ -438,12 +438,24 @@ function EquipmentProp({ item, zoneId }) {
   const clearTrackingCache = useRigStore(s => s.clearTrackingCache)
   const zoneSelectMode = useRigStore(s => s.zoneSelectMode)
   const setZoneSelectMode = useRigStore(s => s.setZoneSelectMode)
+  const pipelinePaused = useRigStore(s => s.pipelinePaused)
+  const togglePipelinePause = useRigStore(s => s.togglePipelinePause)
+  const fetchPipelineStatus = useRigStore(s => s.fetchPipelineStatus)
             const [clearing, setClearing] = useState(false)
+  const [toggling, setToggling] = useState(false)
+
+  useEffect(() => { fetchPipelineStatus() }, [])
 
   const handleClearCache = async () => {
               setClearing(true)
     await clearTrackingCache()
     setTimeout(() => setClearing(false), 1000)
+  }
+
+  const handlePauseToggle = async () => {
+    setToggling(true)
+    await togglePipelinePause()
+    setTimeout(() => setToggling(false), 600)
   }
 
   // Segmented-control button style (active = filled cobalt, inactive = flat steel).
@@ -567,6 +579,28 @@ function EquipmentProp({ item, zoneId }) {
 
                   {/* Toggles and Buttons */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '4px' }}>
+                    {/* Pause / Resume Pipeline Button */}
+                    <button
+                      onClick={handlePauseToggle}
+                      disabled={toggling}
+                      style={{
+                        width: '100%',
+                        background: pipelinePaused ? 'var(--accent-cobalt)' : 'var(--bg-card)',
+                        border: `1px solid ${pipelinePaused ? 'var(--accent-cobalt)' : 'var(--accent-amber)'}`,
+                        borderRadius: '4px',
+                        color: pipelinePaused ? 'var(--bg-deep)' : 'var(--accent-amber)',
+                        padding: '8px',
+                        fontSize: '11px',
+                        cursor: toggling ? 'not-allowed' : 'pointer',
+                        letterSpacing: '0.5px',
+                        transition: 'all 0.15s',
+                        opacity: toggling ? 0.6 : 1,
+                        fontFamily: 'var(--font-mono)',
+                      }}
+                    >
+                      {pipelinePaused ? '▶  RESUME PIPELINE' : '⏸  PAUSE PIPELINE'}
+                    </button>
+
                     {/* Clear Tracking Cache Button */}
                     <button
                       onClick={handleClearCache}

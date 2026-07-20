@@ -72,7 +72,7 @@ processes_to_run = [
     },
     {
         "name": "Pipeline",
-        "command": ["python", "pipeline.py", "--mode", "video", "--cameras", "vid1.mp4", "vid2.mp4"],
+        "command": ["python", "pipeline.py", "--mode", "video", "--cameras", "test0.mp4", "test1.mp4"],
         "cwd": "cv",
         "color": YELLOW,
         "delay_before": 1.0,

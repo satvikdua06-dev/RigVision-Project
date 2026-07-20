@@ -234,7 +234,7 @@ async def redis_to_websocket_bridge():
                         "diag_progress": diag_progress,
                     }
                     await manager.broadcast(json.dumps(msg))
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.033)
         except Exception as e:
             logger.error("Bridge error: %s", e)
             await asyncio.sleep(1)
@@ -424,6 +424,21 @@ async def get_mjpeg_stream(camera_id: str):
 async def post_clear_cache():
     await get_redis().publish("rigvision:commands", "clear_cache")
     return {"status": "ok", "message": "clear_cache command published"}
+
+@app.post("/api/control/pause", dependencies=[Depends(require_api_key)])
+async def post_pause():
+    await get_redis().set("rigvision:pipeline:paused", "1")
+    return {"status": "ok", "paused": True}
+
+@app.post("/api/control/resume", dependencies=[Depends(require_api_key)])
+async def post_resume():
+    await get_redis().delete("rigvision:pipeline:paused")
+    return {"status": "ok", "paused": False}
+
+@app.get("/api/control/status")
+async def get_control_status():
+    val = await get_redis().get("rigvision:pipeline:paused")
+    return {"paused": val == "1"}
 
 @app.get("/api/documents/manuals")
 async def get_all_manuals():

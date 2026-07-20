@@ -8,6 +8,28 @@ const API_BASE = import.meta.env.VITE_API_URL || `http://${host}:8000/api`;
 
 let globalRafId = null;
 
+// Stream-controls persistence — survives a page refresh via localStorage.
+// Scoped to just these 4 fields (not the whole store) since most state
+// (persons, connected, ws, ...) is live/transient and shouldn't persist.
+const STREAM_CONTROLS_KEY = 'rigvision:streamControls';
+function loadStreamControls() {
+  try {
+    const raw = localStorage.getItem(STREAM_CONTROLS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+function saveStreamControls(partial) {
+  try {
+    const current = loadStreamControls();
+    localStorage.setItem(STREAM_CONTROLS_KEY, JSON.stringify({ ...current, ...partial }));
+  } catch {
+    // localStorage unavailable (private mode, quota) — controls just won't persist.
+  }
+}
+const _savedControls = loadStreamControls();
+
 export const useRigStore = create((set, get) => ({
   // ── State ──────────────────────────────────────────────
   persons: [],
@@ -33,11 +55,14 @@ export const useRigStore = create((set, get) => ({
   preexistingSignatures: [],
   isNotificationsInitialized: false,
 
-  // Stream controls
-  wallOpacity: 0.4,
-  fpsLimit: 30,
-  floorFilter: 'all',
-  zoneSelectMode: true,
+  // Stream controls (restored from localStorage if previously set)
+  wallOpacity: _savedControls.wallOpacity ?? 0.4,
+  fpsLimit: _savedControls.fpsLimit ?? 30,
+  floorFilter: _savedControls.floorFilter ?? 'all',
+  zoneSelectMode: _savedControls.zoneSelectMode ?? true,
+
+  // Pipeline pause state (synced with backend /api/control/status)
+  pipelinePaused: false,
 
   // ── WebSocket & Rendering Decoupler ─────────────────────
   _ws: null,
@@ -185,14 +210,51 @@ export const useRigStore = create((set, get) => ({
   },
 
   // ── UI Actions ─────────────────────────────────────────
-  setWallOpacity: (val) => set({ wallOpacity: val }),
+  setWallOpacity: (val) => {
+    set({ wallOpacity: val });
+    saveStreamControls({ wallOpacity: val });
+  },
   setFpsLimit: (val) => {
     set({ fpsLimit: val });
+    saveStreamControls({ fpsLimit: val });
     get()._restartRenderLoop();
   },
-  setFloorFilter: (val) => set({ floorFilter: val }),
-  setZoneSelectMode: (val) => set({ zoneSelectMode: val }),
-  
+  setFloorFilter: (val) => {
+    set({ floorFilter: val });
+    saveStreamControls({ floorFilter: val });
+  },
+  setZoneSelectMode: (val) => {
+    set({ zoneSelectMode: val });
+    saveStreamControls({ zoneSelectMode: val });
+  },
+
+  fetchPipelineStatus: async () => {
+    try {
+      const res = await fetch(`${API_BASE}/control/status`);
+      if (res.ok) {
+        const data = await res.json();
+        set({ pipelinePaused: data.paused });
+      }
+    } catch {}
+  },
+
+  togglePipelinePause: async () => {
+    const state = get();
+    const pausing = !state.pipelinePaused;
+    const endpoint = pausing ? 'pause' : 'resume';
+    try {
+      const res = await fetch(`${API_BASE}/control/${endpoint}`, {
+        method: 'POST',
+        headers: authHeaders(),
+      });
+      if (res.ok) {
+        set({ pipelinePaused: pausing });
+      }
+    } catch (err) {
+      console.error('[pipeline] pause/resume error:', err);
+    }
+  },
+
   clearTrackingCache: async () => {
     try {
       const res = await fetch(`${API_BASE}/control/clear_cache`, { method: 'POST', headers: authHeaders() });

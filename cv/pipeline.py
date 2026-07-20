@@ -177,8 +177,8 @@ def place_in_zone(pos_local: Tuple[float, float, float], zdef: dict) -> Tuple[fl
 # ── BoT-SORT config ────────────────────────────────────────────────────────────
 def default_botsort_args() -> SimpleNamespace:
     return SimpleNamespace(
-        track_high_thresh=0.5, track_low_thresh=0.1, new_track_thresh=0.6,
-        track_buffer=30, match_thresh=0.8, proximity_thresh=0.5,
+        track_high_thresh=0.35, track_low_thresh=0.1, new_track_thresh=0.6,
+        track_buffer=15, match_thresh=0.8, proximity_thresh=0.5,
         appearance_thresh=0.25, with_reid=False, mot20=False, device="cpu",
         fast_reid_config=None, fast_reid_weights=None,
     )
@@ -186,10 +186,32 @@ def default_botsort_args() -> SimpleNamespace:
 
 def make_aruco():
     """Build the ArUco detector the detector module uses for identity. Owned here
-    (the detection functions are stateless and take these as arguments)."""
+    (the detection functions are stateless and take these as arguments).
+
+    Tuned away from OpenCV's defaults for small/distant markers — chest badges
+    on a person several meters from camera, downscaled to resize_width, are
+    often near the decode floor for a 4x4 dictionary. Defaults are conservative
+    (built for close-up, well-lit markers) and reject borderline detections
+    rather than risk false positives."""
     import cv2
     dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
     params = cv2.aruco.DetectorParameters()
+    # Default 0.03 rejects anything under 3% of the scanned crop's perimeter —
+    # too strict for a small chest marker in a tight crop. Lower catches more
+    # without materially increasing false positives (still gated by the
+    # dictionary's error-correction check).
+    params.minMarkerPerimeterRate = 0.01
+    # Slightly more lenient quad approximation tolerates motion blur / compression
+    # artifacts in the marker's edges (default 0.03).
+    params.polygonalApproxAccuracyRate = 0.05
+    # Wider adaptive-threshold window range handles uneven lighting across the
+    # crop better than the default fixed range.
+    params.adaptiveThreshWinSizeMin = 3
+    params.adaptiveThreshWinSizeMax = 53
+    params.adaptiveThreshWinSizeStep = 4
+    # Default CORNER_REFINE_NONE leaves marginal/blurred edges unrefined; subpixel
+    # refinement recovers some detections that would otherwise fail to decode.
+    params.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX
     try:
         detector = cv2.aruco.ArucoDetector(dictionary, params)
     except Exception:
@@ -268,12 +290,22 @@ class DisplayLoop:
         import cv2
         key = f"rigvision:camera:frame:{self.cam_id}"
         last_seq = -1
+        last_jpeg_b64: Optional[str] = None
+        last_pub_t = 0.0
         t_log = time.time()
         while self.running and not shutdown_event.is_set():
             t_start = time.time()
             ret, frame, seq = self.cam.read_with_seq()
             if not ret or frame is None or seq == last_seq:
-                # No new frame yet; sleep a fraction of a frame interval and try again.
+                # No new frame (camera paused or briefly offline). Re-publish the
+                # last known JPEG every 1 s to keep the Redis TTL alive so the
+                # MJPEG feed stays visible instead of going dark during a pause.
+                if last_jpeg_b64 is not None and time.time() - last_pub_t >= 1.0:
+                    try:
+                        self.redis.set(key, last_jpeg_b64, ex=3)
+                        last_pub_t = time.time()
+                    except Exception:
+                        pass
                 time.sleep(min(0.01, self.frame_interval * 0.5))
                 continue
             last_seq = seq
@@ -281,8 +313,20 @@ class DisplayLoop:
             tracks = self.tracks.get(self.cam_id)
             if tracks:
                 annotated = frame.copy()
+                fh, fw = annotated.shape[:2]
                 for t in tracks:
-                    x1, y1, x2, y2 = map(int, t.bbox)
+                    bx1, by1, bx2, by2 = t.bbox
+                    bw, bh = bx2 - bx1, by2 - by1
+                    # Expand the drawn box by 12% horizontally and 5% vertically.
+                    # The YOLO bbox can be tight on a moving person (especially
+                    # mid-stride or at an angle), and the DisplayLoop shows the
+                    # last YOLO result which may be ~100ms stale at 10fps YOLO.
+                    # This is purely cosmetic — foot_point and triangulation still
+                    # use the original (unexpanded) track bbox.
+                    x1 = max(0,  int(bx1 - 0.12 * bw))
+                    y1 = max(0,  int(by1 - 0.05 * bh))
+                    x2 = min(fw, int(bx2 + 0.12 * bw))
+                    y2 = min(fh, int(by2 + 0.05 * bh))
                     cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 200, 255), 2)
                     label = f"#{t.track_id}"
                     if getattr(t, "aruco_id", None) is not None:
@@ -297,7 +341,10 @@ class DisplayLoop:
                 ok, jpeg = cv2.imencode('.jpg', annotated,
                                         [int(cv2.IMWRITE_JPEG_QUALITY), self.jpeg_quality])
                 if ok:
-                    self.redis.set(key, base64.b64encode(jpeg.tobytes()).decode('utf-8'), ex=2)
+                    encoded = base64.b64encode(jpeg.tobytes()).decode('utf-8')
+                    last_jpeg_b64 = encoded
+                    last_pub_t = time.time()
+                    self.redis.set(key, encoded, ex=2)
                     self._frames_published += 1
             except Exception as e:
                 print(f"[display] cam{self.cam_id} encode/redis error: {e}")
@@ -334,12 +381,16 @@ class ThreadedCamera:
     continuous "live-like" stream regardless of how often the YOLO loop samples it.
     Live sources reconnect after a disconnect; video sources just seek to frame 0.
     """
-    def __init__(self, source: str, *, is_video: bool = False, resize_width: Optional[int] = None) -> None:
+    def __init__(self, source: str, *, is_video: bool = False, resize_width: Optional[int] = None,
+                 start_frame: int = 0,
+                 pause_event: Optional[threading.Event] = None) -> None:
         import cv2
         self.source = source
         self.is_video = is_video
         self.is_usb = False
         self.resize_width = resize_width
+        self._start_frame = start_frame
+        self._pause_event = pause_event
 
         if is_video:
             self.cap = cv2.VideoCapture(source)
@@ -357,6 +408,8 @@ class ThreadedCamera:
         if self.is_usb:
             self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
             self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        if is_video and start_frame > 0:
+            self.cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
 
         # Pace video files at their native FPS so the simulated stream behaves like
         # real cameras — otherwise the file plays as fast as the disk allows and the
@@ -375,6 +428,11 @@ class ThreadedCamera:
     def _update(self) -> None:
         import cv2
         while self.running:
+            # Pause support: block here while the pipeline is paused so video
+            # doesn't advance (and the YOLO loop sees stale frames on resume).
+            if self._pause_event is not None and not self._pause_event.is_set():
+                time.sleep(0.05)
+                continue
             t_start = time.time()
             ret, frame = self.cap.read()
             if ret:
@@ -387,8 +445,9 @@ class ThreadedCamera:
                     self.frame = frame.copy() if frame is not None else None
                     self.frame_seq += 1
             elif self.is_video:
-                # End of file → loop back to the start; no reconnect dance needed.
-                self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                # End of file → seek back to the original start_frame so the
+                # video offset is preserved on every loop, not just the first play.
+                self.cap.set(cv2.CAP_PROP_POS_FRAMES, self._start_frame)
                 continue
             else:
                 # Live stream dropped (phone disconnected): release and retry in 2s.
@@ -548,6 +607,141 @@ def _grab_frame(cap: ThreadedCamera, resize_width: Optional[int]):
     return frame
 
 
+class VideoFramePublisher:
+    """Background thread that JPEG-encodes and publishes annotated video frames to
+    Redis without blocking the YOLO loop."""
+
+    def __init__(self, redis_client: redis.Redis, jpeg_quality: int = 70) -> None:
+        import queue
+        self.redis = redis_client
+        self.jpeg_quality = jpeg_quality
+        self._q: queue.Queue = queue.Queue(maxsize=8)
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def publish(self, cam_id: int, frame: np.ndarray, tracks: list) -> None:
+        try:
+            self._q.put_nowait((cam_id, frame, tracks))
+        except Exception:
+            pass
+
+    def _run(self) -> None:
+        import cv2
+        while True:
+            cam_id, frame, tracks = self._q.get()
+            try:
+                annotated = frame.copy()
+                for t in tracks:
+                    x1, y1, x2, y2 = map(int, t.bbox)
+                    cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 200, 255), 2)
+                    cv2.putText(annotated, f"#{t.track_id}", (x1, max(0, y1 - 8)),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 200, 255), 2)
+                ok, jpeg = cv2.imencode('.jpg', annotated,
+                                        [int(cv2.IMWRITE_JPEG_QUALITY), self.jpeg_quality])
+                if ok:
+                    self.redis.set(f"rigvision:camera:frame:{cam_id}",
+                                   base64.b64encode(jpeg.tobytes()).decode('utf-8'), ex=2)
+            except Exception as e:
+                print(f"[video-pub] cam{cam_id} error: {e}")
+
+
+class SyncedVideoReader:
+    """Reads multiple video files in lockstep in a background thread — frame N from
+    every file is consumed together so stereo pairs stay aligned. The main loop calls
+    read() to get the latest ready pair without blocking on disk I/O."""
+
+    def __init__(self, sources: Dict[int, str], offsets: Dict[int, int],
+                 resize_width: Optional[int] = None,
+                 pause_event: Optional[threading.Event] = None) -> None:
+        import cv2
+        self.caps: Dict[int, cv2.VideoCapture] = {}
+        self.resize_width = resize_width
+        self._pause_event = pause_event
+        # Remember the per-camera start frame so every loop restarts at the
+        # correct offset position, not at frame 0.
+        self._start_frames: Dict[int, int] = {}
+        for cam_id, path in sources.items():
+            cap = cv2.VideoCapture(path)
+            if not cap.isOpened():
+                raise RuntimeError(f"Cannot open video: {path}")
+            skip = offsets.get(cam_id, 0)
+            if skip > 0:
+                cap.set(cv2.CAP_PROP_POS_FRAMES, skip)
+                print(f"[sync] cam{cam_id}: skipping {skip} frames to align")
+            self._start_frames[cam_id] = skip
+            self.caps[cam_id] = cap
+        fps_vals = [c.get(cv2.CAP_PROP_FPS) or 30.0 for c in self.caps.values()]
+        self._interval = 1.0 / (sum(fps_vals) / len(fps_vals))
+        self._latest: Dict[int, Optional[np.ndarray]] = {}
+        self._lock = threading.Lock()
+        self._running = True
+        # Incremented (under _lock) every time any camera hits EOF and loops.
+        # The main loop watches this to know when to reset tracker state.
+        self.loop_count = 0
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def _run(self) -> None:
+        import cv2
+        # The anchor camera has the smallest start offset. Its EOF marks the
+        # end of one complete cycle. When it loops, ALL cameras are reset to
+        # their respective start offsets so temporal alignment is restored.
+        # Non-anchor cameras (with positive offsets) loop independently
+        # mid-cycle — we just seek them back without signalling a full loop.
+        anchor_cam = min(self._start_frames, key=lambda k: self._start_frames[k])
+        while self._running:
+            # Pause support: stop advancing video frames while paused so the
+            # main loop sees stale frames (not new ones) on every paused tick.
+            if self._pause_event is not None and not self._pause_event.is_set():
+                time.sleep(0.05)
+                continue
+            t = time.time()
+            frames: Dict[int, Optional[np.ndarray]] = {}
+
+            # Read one frame from every camera.
+            looped_this_batch = False
+            for cam_id, cap in self.caps.items():
+                ret, frame = cap.read()
+                if not ret:
+                    if cam_id == anchor_cam:
+                        # Full cycle complete. Seek ALL cameras back to their
+                        # individual start offsets so the inter-camera temporal
+                        # gap stays exactly as configured on every loop. If only
+                        # this camera were seeked, the other cameras would drift
+                        # further ahead each cycle (22 frames → 44 → 66 → ...).
+                        for cid, c in self.caps.items():
+                            c.set(cv2.CAP_PROP_POS_FRAMES, self._start_frames.get(cid, 0))
+                        looped_this_batch = True
+                    else:
+                        # Non-anchor hit its end mid-cycle (expected for cameras
+                        # with a positive offset). Seek only this camera back.
+                        cap.set(cv2.CAP_PROP_POS_FRAMES, self._start_frames.get(cam_id, 0))
+                    ret, frame = cap.read()
+                if ret and frame is not None and self.resize_width:
+                    h, w = frame.shape[:2]
+                    frame = cv2.resize(frame, (self.resize_width, int(self.resize_width * (h / w))),
+                                       interpolation=cv2.INTER_LINEAR)
+                frames[cam_id] = frame if ret else None
+
+            with self._lock:
+                self._latest = frames
+                if looped_this_batch:
+                    self.loop_count += 1
+            sleep = self._interval - (time.time() - t)
+            if sleep > 0:
+                time.sleep(sleep)
+
+    def read(self) -> Dict[int, Optional[np.ndarray]]:
+        with self._lock:
+            return dict(self._latest)
+
+    def release(self) -> None:
+        self._running = False
+        self._thread.join(timeout=1.0)
+        for cap in self.caps.values():
+            cap.release()
+
+
 def run_producer_mode(
     redis_client: redis.Redis,
     zone_defs: dict,
@@ -559,7 +753,21 @@ def run_producer_mode(
     triag_width: Optional[int] = None,
     max_fps: Optional[float] = None,
     is_video: bool = False,
+    video_offsets: Optional[Dict[int, int]] = None,
 ) -> None:
+    # Load ArUco-ID → personnel name mapping from configs/personnel.json.
+    # Keys are ArUco marker IDs (ints); values are display names.
+    # Edit that file to add/remove mappings without touching this code.
+    _personnel_names: Dict[int, str] = {}
+    _personnel_path = Path(__file__).resolve().parent.parent / "configs" / "personnel.json"
+    if _personnel_path.exists():
+        try:
+            with open(_personnel_path) as _f:
+                _personnel_names = {int(k): v for k, v in json.load(_f).items()}
+            print(f"[*] Personnel names loaded: {_personnel_names}")
+        except Exception as _e:
+            print(f"[warn] Could not load personnel names: {_e}")
+
     from ultralytics import YOLO
     from detection.detector import detect_batch
     from tracking.tracker import update_tracker
@@ -583,7 +791,7 @@ def run_producer_mode(
     _triag_width = triag_width or (resize_width or 960)
     _foot_scale = _triag_width / (resize_width or _triag_width)
     zone_calibs = load_zone_calibrations(zone_groups, configs_dir, _triag_width)
-    reproj_threshold = float(os.getenv("REPROJ_THRESHOLD", "40.0"))
+    reproj_threshold = float(os.getenv("REPROJ_THRESHOLD", "80.0"))
 
     # ONE detector for all cameras (batched), ONE ArUco detector, ONE BoT-SORT tracker
     # PER camera (each camera has its own persistent track-id space).
@@ -602,20 +810,51 @@ def run_producer_mode(
     # global ids never collide between rooms.
     matching_state: dict = {"previous_matches": {}, "aruco_matches": {}, "next_global_id": 100000}
 
-    # Open every camera referenced by the zone groups. Both modes go through
-    # ThreadedCamera now — video files are paced to native FPS and looped on EOF
-    # inside the threaded reader, so the main loop sees the same "always-latest-frame"
-    # API regardless of source kind.
-    caps: Dict[int, ThreadedCamera] = {}
-    for cam_id, src in sources.items():
-        if is_video and not os.path.exists(src):
-            print(f"Video not found: {src}")
-            sys.exit(1)
-        caps[cam_id] = ThreadedCamera(src, is_video=is_video, resize_width=resize_width)
+    # Pause/Resume: a threading.Event controlled by a Redis key.
+    # set   = pipeline running (normal)
+    # clear = pipeline paused (YOLO loop + video readers all block)
+    _pipeline_running = threading.Event()
+    _pipeline_running.set()
 
-    # Phase 3: decoupled MJPEG. One display thread per camera publishes annotated
-    # frames at the camera's native FPS, independent of YOLO. The YOLO loop just
-    # swaps the latest tracks into `latest_tracks` — no JPEG work on the hot path.
+    def _command_watcher() -> None:
+        while not shutdown_event.is_set():
+            try:
+                paused = redis_client.get("rigvision:pipeline:paused") == "1"
+                if paused and _pipeline_running.is_set():
+                    _pipeline_running.clear()
+                    print("[pipeline] PAUSED")
+                elif not paused and not _pipeline_running.is_set():
+                    _pipeline_running.set()
+                    print("[pipeline] RESUMED")
+            except Exception:
+                pass
+            time.sleep(0.2)
+
+    threading.Thread(target=_command_watcher, daemon=True, name="cmd-watcher").start()
+
+    # Video mode: SyncedVideoReader (background thread, lockstep) for YOLO,
+    # plus ThreadedCamera per camera for the DisplayLoop feed.
+    # Live mode: ThreadedCamera only (always-latest-frame, auto-reconnect).
+    synced_reader: Optional[SyncedVideoReader] = None
+    caps: Dict[int, ThreadedCamera] = {}
+    if is_video:
+        for src in sources.values():
+            if not os.path.exists(src):
+                print(f"Video not found: {src}")
+                sys.exit(1)
+        synced_reader = SyncedVideoReader(sources, video_offsets or {}, resize_width,
+                                          pause_event=_pipeline_running)
+    # In live-camera mode, ThreadedCamera grabs frames independently so DisplayLoop
+    # can publish the MJPEG feed at the camera's native FPS without being gated on
+    # YOLO speed.  In video mode we skip this: SyncedVideoReader is the only reader
+    # of each file, so the YOLO loop annotates and publishes frames directly.
+    # Having two independent cv2.VideoCapture objects on the same file causes them
+    # to drift apart across loops, making bboxes appear ahead of or behind the person.
+    if not is_video:
+        for cam_id, src in sources.items():
+            caps[cam_id] = ThreadedCamera(src, is_video=False, resize_width=resize_width,
+                                          pause_event=_pipeline_running)
+
     latest_tracks = LatestTracks()
     display_fps = float(os.getenv("DISPLAY_FPS", "25"))
     display_loops = [
@@ -632,7 +871,7 @@ def run_producer_mode(
     # PPE_CAMERA_IDS is a comma list (e.g. "0,1"); PPE_CAMERA_ID kept as a fallback alias.
     _ppe_ids_env = os.getenv("PPE_CAMERA_IDS", os.getenv("PPE_CAMERA_ID", "0"))
     ppe_cam_ids = {int(x) for x in _ppe_ids_env.split(",") if x.strip() != ""}
-    ppe_every_n = max(1, int(os.getenv("PPE_EVERY_N_FRAMES", "3")))
+    ppe_every_n = max(1, int(os.getenv("PPE_EVERY_N_FRAMES", "1")))
     if os.getenv("PPE_ENABLED", "1") not in ("0", "false", "False"):
         try:
             from PPE.ppe_monitor import PPEMonitor
@@ -641,30 +880,106 @@ def run_producer_mode(
         except Exception as e:
             print(f"[warn] PPE monitor disabled: {e}")
 
+    _DEBUG_TRIAG = os.getenv("DEBUG_TRIANGULATION", "0") not in ("0", "false", "False")
+
+    # ── PPE background thread ─────────────────────────────────────────────────
+    # process_multi() runs face-YOLO + 2× EfficientNet on GPU — ~50-100ms per
+    # call. Running it in a daemon thread lets the main loop keep producing
+    # person positions without stalling on PPE inference.
+    import queue as _queue
+    _ppe_queue: "_queue.Queue" = _queue.Queue(maxsize=1)
+
+    def _ppe_worker() -> None:
+        while True:
+            item = _ppe_queue.get()
+            if item is None:
+                break
+            frames_snap, boxes_snap = item
+            try:
+                ppe_monitor.process_multi(frames_snap, boxes_snap, redis_client)
+            except Exception as e:
+                print(f"[ppe] process error: {e}")
+
+    if ppe_monitor is not None:
+        _ppe_thread = threading.Thread(target=_ppe_worker, daemon=True, name="ppe-worker")
+        _ppe_thread.start()
+
+    # Grace-period cache: a single bad triangulation tick (occlusion, transient
+    # reprojection-error spike, momentary CCM mismatch) used to drop the person
+    # entirely from persons_all for that tick, causing the frontend avatar +
+    # sidebar to flicker to "lost" even though they're still visible in the raw
+    # 2D feed. Hold the last good position for a short window instead.
+    _TRIAG_GRACE_SECONDS = float(os.getenv("TRIAG_GRACE_SECONDS", "0.5"))
+    _last_known_pos: Dict[int, Tuple[Tuple[float, float, float], float]] = {}
+
+    # EMA smoothing on the triangulated 3D position.
+    # A tight YOLO bbox or Kalman lag produces a wrong foot_point → wrong pos_world
+    # for that tick. Blending with the recent EMA absorbs single-frame spikes while
+    # still tracking genuine movement: at alpha=0.4, one bad frame contributes
+    # only 40% of the output and real motion converges within 3-4 frames.
+    _POS_EMA_ALPHA = float(os.getenv("POS_EMA_ALPHA", "0.4"))
+    _pos_ema: Dict[int, Tuple[float, float, float]] = {}
+    # Tracks which global_ids are currently being served from the grace-period
+    # cache (i.e. triangulation failed last tick). When a gid transitions from
+    # grace → fresh triangulation we bypass the EMA for that one frame so the
+    # stale history from the occlusion doesn't drag the position sideways.
+    _in_grace: set = set()
+    # Consecutive-frame counter for each gid's valid triangulation.
+    # We only write to _last_known_pos (the grace-period cache) once a person
+    # has been cleanly triangulated for this many frames in a row. This prevents
+    # a bad partial-bbox position from the first 1-2 frames of entry (when the
+    # person is already partially behind someone) from poisoning the grace cache
+    # and causing the avatar to lerp from a wrong location on re-emergence.
+    _TRIAG_MIN_CONFIRMED = int(os.getenv("TRIAG_MIN_CONFIRMED", "3"))
+    _triag_confirmed: Dict[int, int] = {}
+
     frame_count = 0
+    _last_loop_count = 0  # tracks SyncedVideoReader.loop_count across ticks
     while not shutdown_event.is_set():
+        # Block here while paused; the command-watcher thread sets/clears the event.
+        _pipeline_running.wait()
+        if shutdown_event.is_set():
+            break
+
+        # Detect video loop: when the reader wraps around, tracker IDs and
+        # Kalman velocities from the previous pass are stale — the same people
+        # reappear at the same positions but BoT-SORT thinks they jumped
+        # discontinuously, which causes escalating reprojection errors.
+        # Fresh tracker + matching state every loop keeps quality consistent.
+        if synced_reader is not None and synced_reader.loop_count != _last_loop_count:
+            _last_loop_count = synced_reader.loop_count
+            print(f"[pipeline] Video loop #{_last_loop_count} — resetting tracker + matching state")
+            for cam_id in list(trackers.keys()):
+                trackers[cam_id] = BoTSORT(default_botsort_args(), frame_rate=30)
+            matching_state.clear()
+            matching_state.update({"previous_matches": {}, "aruco_matches": {}, "next_global_id": 100000})
+            _last_known_pos.clear()
+            _pos_ema.clear()
+            _in_grace.clear()
+            _triag_confirmed.clear()
+
         t_start = time.time()
         persons_all: List[dict] = []
-        # PPE feeds for this tick, accumulated across zones: {cam_id: frame} and
-        # {person_id: {cam_id: box}}. Run once after the zone loop so a person seen on
-        # multiple feeds is OR-merged into a single per-person verdict.
         ppe_frames: Dict[int, np.ndarray] = {}
         ppe_person_cam_boxes: Dict[int, Dict[int, Tuple[float, float, float, float]]] = {}
+
+        # In video mode, read all cameras in lockstep once per tick.
+        synced_frames: Dict[int, Optional[np.ndarray]] = {}
+        if synced_reader is not None:
+            synced_frames = synced_reader.read()
 
         # ── Process each zone's camera pair INDEPENDENTLY ───────────────────────
         for zone_id, cam_ids in zone_groups.items():
             zdef = zone_defs["zones"][zone_id]
             zone_floor = zdef.get("floor", 0)
 
-            # 1. Grab the latest frame from each of this zone's cameras (one tick).
-            #    Uniform across live/video — ThreadedCamera always serves the freshest
-            #    frame and handles looping/reconnect underneath.
             frames: Dict[int, np.ndarray] = {}
             for cam_id in cam_ids:
-                cap = caps.get(cam_id)
-                if cap is None:
-                    continue
-                f = _grab_frame(cap, resize_width)
+                if synced_reader is not None:
+                    f = synced_frames.get(cam_id)
+                else:
+                    cap = caps.get(cam_id)
+                    f = _grab_frame(cap, resize_width) if cap else None
                 if f is not None:
                     frames[cam_id] = f
             if not frames:
@@ -727,22 +1042,61 @@ def run_producer_mode(
                             err = compute_reprojection_avg(pos_local, cal_a, cal_b, pt_a, pt_b)
                             if err < reproj_threshold:
                                 pos_world = place_in_zone(pos_local, zdef)
-                                print(f"[triangulation] Person {mp.global_id} OK: err={err:.2f}px pos={pos_world}")
+                                if _DEBUG_TRIAG:
+                                    print(f"[triangulation] Person {mp.global_id} OK: err={err:.2f}px pos={pos_world}")
                             else:
-                                print(f"[triangulation] Person {mp.global_id} REJECTED: err={err:.2f}px >= thresh={reproj_threshold}")
+                                if _DEBUG_TRIAG:
+                                    print(f"[triangulation] Person {mp.global_id} REJECTED: err={err:.2f}px >= thresh={reproj_threshold}")
                         except Exception as e:
-                            print(f"[triangulation] Person {mp.global_id} failed with exception: {e}")
+                            print(f"[triangulation] ERROR Person {mp.global_id}: {e}")
                             pos_world = None
 
-                # Single-camera sightings (or a rejected triangulation) have no metric
-                # 3D fix; we still know the room, so we drop the avatar at the room
-                # centre so the person is at least counted/visible. (Swap for a
-                # ground-plane ray cast once per-camera world poses are calibrated.)
+                gid = int(mp.global_id)
+                now_t = time.time()
                 if pos_world is None:
-                    b = zdef["bounds"]; mn, mx = b["min"], b["max"]
-                    pos_world = (round((mn["x"] + mx["x"]) / 2, 2),
-                                 round(mn["y"] + 0.05, 2),
-                                 round((mn["z"] + mx["z"]) / 2, 2))
+                    cached = _last_known_pos.get(gid)
+                    if cached is not None and (now_t - cached[1]) < _TRIAG_GRACE_SECONDS:
+                        pos_world = cached[0]
+                        _in_grace.add(gid)
+                        # Don't reset _triag_confirmed here — an established track
+                        # (e.g. Vatsal) would lose its status on any single bad frame,
+                        # causing the cache to go stale for 3+ frames and producing
+                        # the same straight-line lerp artifact we're trying to fix.
+                    else:
+                        # Grace fully expired: person truly gone.  Reset so the next
+                        # appearance must earn MIN_CONFIRMED fresh frames before the
+                        # cache is written — prevents a reappearing person's first
+                        # partial-bbox frames from poisoning the grace cache.
+                        _in_grace.discard(gid)
+                        _triag_confirmed.pop(gid, None)
+                        continue
+                else:
+                    # On re-emergence from occlusion, bypass the EMA for this one
+                    # frame so stale history from the occlusion doesn't drag the
+                    # avatar sideways. The Kalman velocity was wrong during the
+                    # occluded period; jumping straight to the new raw position
+                    # (alpha=1.0) lets the EMA start fresh from a clean baseline.
+                    just_emerged = gid in _in_grace
+                    _in_grace.discard(gid)
+                    prev = _pos_ema.get(gid)
+                    if prev is not None and not just_emerged:
+                        a = _POS_EMA_ALPHA
+                        pos_world = (
+                            round(a * pos_world[0] + (1 - a) * prev[0], 2),
+                            round(a * pos_world[1] + (1 - a) * prev[1], 2),
+                            round(a * pos_world[2] + (1 - a) * prev[2], 2),
+                        )
+                    _pos_ema[gid] = pos_world
+                    # Only cache this position for the grace period once we've
+                    # seen clean triangulation for MIN_CONFIRMED consecutive frames.
+                    # A person entering the frame while already partially behind
+                    # someone else typically has a bad foot_point for the first
+                    # 1-2 frames — if we cached that and they immediately go fully
+                    # occluded, the grace period would serve the wrong position and
+                    # the THREE.js lerp would drift the avatar sideways for seconds.
+                    _triag_confirmed[gid] = _triag_confirmed.get(gid, 0) + 1
+                    if _triag_confirmed[gid] >= _TRIAG_MIN_CONFIRMED:
+                        _last_known_pos[gid] = (pos_world, now_t)
 
                 best = max(seen.values(), key=lambda tr: tr.confidence)
                 # Per-person PPE (glasses/hat) from the monitor's latest debounced status,
@@ -755,6 +1109,7 @@ def run_producer_mode(
                     person_ppe = dict(DEFAULT_PPE)
                 persons_all.append({
                     "id": int(mp.global_id),
+                    "name": _personnel_names.get(int(mp.global_id)),  # None if not in mapping
                     "x": pos_world[0], "y": pos_world[1], "z": pos_world[2],
                     "zone": zone_id,                       # exact: group-derived, not guessed
                     "floor": zone_floor,
@@ -765,18 +1120,56 @@ def run_producer_mode(
                     "camera_ids": cams_in_view,
                 })
 
-            # Phase 3: instead of JPEG-encoding here (which would chain encoder cost to
-            # the YOLO loop), publish the latest tracks for each camera. The per-camera
-            # DisplayLoop threads will pick these up and overlay them at native FPS.
             for cam_id in frames.keys():
                 latest_tracks.set(cam_id, per_camera_tracks.get(cam_id, []))
 
-        # ── PPE: OR-merge each person across all feeds, one debounce step per tick ──
+            # In video mode there is no DisplayLoop — publish annotated frames
+            # directly from the frames YOLO just processed so bboxes are always
+            # drawn on exactly the right frame (no independent reader drift).
+            if synced_reader is not None:
+                import cv2 as _cv2
+                for cam_id, frame in frames.items():
+                    if frame is None:
+                        continue
+                    annotated = frame.copy()
+                    fh, fw = annotated.shape[:2]
+                    for t in per_camera_tracks.get(cam_id, []):
+                        bx1, by1, bx2, by2 = t.bbox
+                        bw, bh = bx2 - bx1, by2 - by1
+                        x1 = max(0,  int(bx1 - 0.12 * bw))
+                        y1 = max(0,  int(by1 - 0.05 * bh))
+                        x2 = min(fw, int(bx2 + 0.12 * bw))
+                        y2 = min(fh, int(by2 + 0.05 * bh))
+                        _cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 200, 255), 2)
+                        label = f"#{t.track_id}"
+                        if getattr(t, "aruco_id", None) is not None:
+                            label += f" (ARUCO {t.aruco_id})"
+                        _cv2.putText(annotated, label, (x1, max(0, y1 - 8)),
+                                     _cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 200, 255), 2)
+                    ok, jpeg = _cv2.imencode('.jpg', annotated,
+                                            [int(_cv2.IMWRITE_JPEG_QUALITY), 75])
+                    if ok:
+                        try:
+                            redis_client.set(
+                                f"rigvision:camera:frame:{cam_id}",
+                                base64.b64encode(jpeg.tobytes()).decode('utf-8'),
+                                ex=3,
+                            )
+                        except Exception:
+                            pass
+
+        # Prune grace-period cache entries that haven't refreshed in a while —
+        # the person has genuinely left, not just hit a transient triangulation miss.
+        _prune_before = time.time() - (_TRIAG_GRACE_SECONDS * 4)
+        for gid in [g for g, (_, ts) in _last_known_pos.items() if ts < _prune_before]:
+            _last_known_pos.pop(gid, None)
+
+        # ── PPE: hand off to background thread (non-blocking) ────────────────
         if ppe_monitor is not None and ppe_frames and frame_count % ppe_every_n == 0:
             try:
-                ppe_monitor.process_multi(ppe_frames, ppe_person_cam_boxes, redis_client)
-            except Exception as e:
-                print(f"[ppe] process error: {e}")
+                _ppe_queue.put_nowait((dict(ppe_frames), dict(ppe_person_cam_boxes)))
+            except _queue.Full:
+                pass  # PPE thread still busy with previous frame — skip this tick
 
         # ── Fuse sensors + occupancy into zone state and publish to Redis ───────
         sensor_readings = read_sensor_readings(redis_client)
@@ -797,6 +1190,8 @@ def run_producer_mode(
 
     for dl in display_loops:
         dl.stop()
+    if synced_reader is not None:
+        synced_reader.release()
     for cap in caps.values():
         cap.release()
 
@@ -817,6 +1212,8 @@ def main() -> None:
                              "Foot-points are scaled from resize-width to this before DLT. "
                              "Higher = better depth precision, no YOLO speed cost.")
     parser.add_argument("--max-fps", type=float, default=None)
+    parser.add_argument("--video-offsets", nargs="+", default=None,
+                        help="Per-camera start-frame offsets: cam_id=frames e.g. --video-offsets 1=45")
     parser.add_argument("--redis-host", default=os.getenv("REDIS_HOST", "localhost"))
     parser.add_argument("--redis-port", type=int, default=int(os.getenv("REDIS_PORT", "6379")))
     parser.add_argument("--redis-password", default=None)
@@ -846,11 +1243,17 @@ def main() -> None:
               f"{ordered_cam_ids}; matching by position.")
     sources = {cid: cam_sources[i] for i, cid in enumerate(ordered_cam_ids) if i < len(cam_sources)}
 
+    video_offsets: Dict[int, int] = {}
+    if args.video_offsets:
+        for entry in args.video_offsets:
+            cam_id_str, frames_str = entry.split("=")
+            video_offsets[int(cam_id_str)] = int(frames_str)
+
     run_producer_mode(
         redis_client=redis_client, zone_defs=zone_defs, sources=sources,
         confidence=args.confidence, model_path=args.model, device=args.device,
         resize_width=args.resize_width, triag_width=args.triag_width, max_fps=args.max_fps,
-        is_video=(args.mode == "video"),
+        is_video=(args.mode == "video"), video_offsets=video_offsets,
     )
 
 

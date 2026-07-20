@@ -118,41 +118,49 @@ def detect_and_recognize(
 
     h, w = frame.shape[:2]
     bx1, by1, bx2, by2 = bbox
-    pad_x = 0.08 * (bx2 - bx1)
-    pad_y = 0.08 * (by2 - by1)
-    x1 = max(0, int(bx1 - pad_x))
-    y1 = max(0, int(by1 - pad_y))
-    x2 = max(0, int(bx2 + pad_x))
-    y2 = max(0, int(by2 + pad_y))
-    x1, y1 = min(w - 1, x1), min(h - 1, y1)
-    x2, y2 = min(w, x2), min(h, y2)
+    bw, bh = bx2 - bx1, by2 - by1
 
-    person_crop = frame[y1:y2, x1:x2]
-    if person_crop.size == 0:
-        return None, 0.0, None
+    def _scan(rx1: float, ry1: float, rx2: float, ry2: float):
+        """Crop frame to the given region and run detectMarkers. Returns
+        (marker_ids, marker_areas, crop_area) or None if the crop is empty."""
+        x1 = max(0, int(rx1))
+        y1 = max(0, int(ry1))
+        x2 = min(w, int(rx2))
+        y2 = min(h, int(ry2))
+        crop = frame[y1:y2, x1:x2]
+        if crop.size == 0:
+            return None
+        gray_crop = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+        if aruco_detector is not None:
+            corners, ids, _ = aruco_detector.detectMarkers(gray_crop)
+        else:
+            corners, ids, _ = cv2.aruco.detectMarkers(
+                gray_crop, aruco_dictionary, parameters=aruco_parameters)
+        if ids is None or len(ids) == 0:
+            return None
+        marker_ids = ids.flatten().astype(int)
+        marker_areas = [float(cv2.contourArea(c.reshape(-1, 2).astype(np.float32))) for c in corners]
+        crop_area = float(crop.shape[0] * crop.shape[1])
+        return marker_ids, marker_areas, crop_area
 
     try:
-        gray_crop = cv2.cvtColor(person_crop, cv2.COLOR_BGR2GRAY)
-        if aruco_detector is not None:
-            corners, ids, rejected = aruco_detector.detectMarkers(gray_crop)
-        else:
-            corners, ids, rejected = cv2.aruco.detectMarkers(
-                gray_crop,
-                aruco_dictionary,
-                parameters=aruco_parameters,
-            )
-
-        if ids is None or len(ids) == 0:
+        # Chest band first: badges/ID markers are worn on the torso, well below the
+        # head and above the waist. Scanning this tighter region (rather than the
+        # full head-to-toe bbox) makes the same marker pixels a much larger fraction
+        # of the analyzed crop, which helps it clear ArUco's minMarkerPerimeterRate
+        # threshold — a marker that's "too small" relative to a full-body crop can
+        # still pass relative to a chest-only crop, with zero extra resolution cost.
+        chest = _scan(bx1 - 0.08 * bw, by1 + 0.12 * bh, bx2 + 0.08 * bw, by1 + 0.55 * bh)
+        result = chest
+        if result is None:
+            # Fallback: full padded bbox, for bending/turned poses or an
+            # off-center marker the chest band would otherwise miss.
+            result = _scan(bx1 - 0.08 * bw, by1 - 0.08 * bh, bx2 + 0.08 * bw, by2 + 0.08 * bh)
+        if result is None:
             return None, 0.0, None
 
-        marker_ids = ids.flatten().astype(int)
-        marker_areas = []
-        for marker_corners in corners:
-            pts = marker_corners.reshape(-1, 2)
-            marker_areas.append(float(cv2.contourArea(pts.astype(np.float32))))
-
+        marker_ids, marker_areas, crop_area = result
         best_idx = int(np.argmax(marker_areas)) if marker_areas else 0
-        crop_area = float(person_crop.shape[0] * person_crop.shape[1])
         confidence = min(1.0, marker_areas[best_idx] / crop_area) if crop_area > 0 else 0.0
         return int(marker_ids[best_idx]), confidence, "aruco"
     except Exception:

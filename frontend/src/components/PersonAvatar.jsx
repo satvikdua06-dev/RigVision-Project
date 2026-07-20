@@ -136,7 +136,7 @@ export default function PersonAvatar({ person }) {
             width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
             background: hasAlert ? '#e06054' : hasUnknown ? '#8b93a3' : '#5b8def',
           }} />
-          <span>P{person.id} · {person.zone.replace(/_/g,' ').toUpperCase()}</span>
+          <span>{person.name || `P${person.id}`} · {person.zone.replace(/_/g,' ').toUpperCase()}</span>
         </div>
       </Html>
 

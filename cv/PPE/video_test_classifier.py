@@ -36,7 +36,7 @@ def build_transform(img_size: int = 224):
     ])
 
 
-def classify(model, transform, crop_bgr, device, threshold=0.5):
+def classify(model, transform, crop_bgr, device, threshold=0.5, is_cap=False):
     """Returns (present: bool, confidence: float)."""
     rgb  = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2RGB)
     img  = Image.fromarray(rgb)
@@ -44,6 +44,23 @@ def classify(model, transform, crop_bgr, device, threshold=0.5):
     with torch.no_grad():
         probs = torch.softmax(model(x), dim=1)[0]
     conf    = probs[1].item()   # probability of class 1 = "present"
+
+    if is_cap:
+        import numpy as np
+        ch, cw = crop_bgr.shape[:2]
+        if ch > 10 and cw > 10:
+            top_h = int(ch * 0.35)
+            cw_start = int(cw * 0.25)
+            cw_end = int(cw * 0.75)
+            center_top = crop_bgr[0:top_h, cw_start:cw_end]
+            if center_top.size > 0:
+                max_channel = np.max(center_top, axis=2)
+                dark_pixels = np.sum(max_channel < 85)
+                total_pixels = center_top.shape[0] * center_top.shape[1]
+                dark_ratio = dark_pixels / total_pixels
+                if dark_ratio > 0.80:
+                    conf = min(conf, 0.1)
+
     return conf >= threshold, conf
 
 
@@ -165,7 +182,7 @@ def main():
 
                 # ── Cap classification ──
                 cap_present, cap_prob = classify(
-                    cap_model, tf, crop, device, args.cap_conf
+                    cap_model, tf, crop, device, args.cap_conf, is_cap=True
                 )
                 cap_scores.append(cap_prob)
                 if len(cap_scores) > WINDOW:

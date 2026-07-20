@@ -346,6 +346,7 @@ function PersonsTab() {
     const term = search.toLowerCase()
     return (
       p.id.toString().includes(term) ||
+      (p.name    && p.name.toLowerCase().includes(term)) ||
       (p.zone    && p.zone.toLowerCase().includes(term)) ||
       (p.posture && p.posture.toLowerCase().includes(term))
     )
@@ -419,7 +420,8 @@ function PersonsTab() {
                   fontFamily: 'var(--font-mono)', fontSize: 12, fontWeight: 600,
                   color: 'var(--text-primary)', letterSpacing: 0.5,
                 }}>
-                  PERS #{p.id}
+                  {p.name ? p.name : `PERS #${p.id}`}
+                  {p.name && <span style={{ color: 'var(--text-dim)', fontWeight: 400, marginLeft: 5, fontSize: 10 }}>#{p.id}</span>}
                 </span>
                 {hasAlert ? (
                   <span style={{

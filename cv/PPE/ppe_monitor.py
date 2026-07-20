@@ -44,8 +44,9 @@ GLASSES_MODEL_DIR = os.getenv("PPE_GLASSES_MODEL_DIR",
                                str(_HERE / "models" / "glasses_classifier"))
 
 # Onset threshold: must exceed this (on the fast window) to first call item "detected".
-# Keep high to reject hair false-positives.
-CAP_CONFIRM_THRESHOLD     = float(os.getenv("PPE_CAP_THRESHOLD",             "0.97"))
+# Dark hair is already gated by the dark-pixel heuristic in _classify (cap_p → 0.1),
+# so 0.80 is safe without re-introducing hair false-positives.
+CAP_CONFIRM_THRESHOLD     = float(os.getenv("PPE_CAP_THRESHOLD",             "0.80"))
 GLASSES_CONFIRM_THRESHOLD = float(os.getenv("PPE_GLASSES_THRESHOLD",         "0.5"))
 
 # Maintain threshold: once "detected", only drop back to "missing" when the slow
@@ -55,17 +56,17 @@ GLASSES_MAINTAIN_THRESHOLD = float(os.getenv("PPE_GLASSES_MAINTAIN_THRESHOLD", "
 
 # Fast window: short buffer used for onset detection — hat appears → detected in
 # ~CAP_FAST_WINDOW frames instead of waiting for the full 90-frame average to rise.
-CAP_FAST_WINDOW     = int(os.getenv("PPE_CAP_FAST_WINDOW",     "10"))
-GLASSES_FAST_WINDOW = int(os.getenv("PPE_GLASSES_FAST_WINDOW", "10"))
+CAP_FAST_WINDOW     = int(os.getenv("PPE_CAP_FAST_WINDOW",     "5"))
+GLASSES_FAST_WINDOW = int(os.getenv("PPE_GLASSES_FAST_WINDOW", "5"))
 
 # Slow window: long buffer used to hold "detected" state through occlusions / transients.
-SCORE_WINDOW = int(os.getenv("PPE_SCORE_WINDOW", "90"))   # ~3s @ 30fps
+SCORE_WINDOW = int(os.getenv("PPE_SCORE_WINDOW", "30"))   # ~3s @ 10fps
 
 PERSON_CONFIDENCE = float(os.getenv("PPE_PERSON_CONFIDENCE", "0.3"))
-DETECT_SECONDS    = float(os.getenv("PPE_DETECT_SECONDS",    "3.0"))
+DETECT_SECONDS    = float(os.getenv("PPE_DETECT_SECONDS",    "1.5"))
 
 # Face detection crop — PAD_TOP=0.3 matches generate_caps_celeba.py training crops.
-FACE_CONFIDENCE = float(os.getenv("PPE_FACE_CONFIDENCE",  "0.5"))
+FACE_CONFIDENCE = float(os.getenv("PPE_FACE_CONFIDENCE",  "0.3"))
 FACE_PAD_TOP    = float(os.getenv("PPE_FACE_PAD_TOP",    "0.3"))
 FACE_PAD_BOTTOM = float(os.getenv("PPE_FACE_PAD_BOTTOM", "0.1"))
 FACE_PAD_LEFT   = float(os.getenv("PPE_FACE_PAD_LEFT",   "0.2"))
@@ -168,6 +169,12 @@ class PPEMonitor:
         self.device = (torch.device(device) if device
                        else torch.device("cuda" if torch.cuda.is_available() else "cpu"))
 
+        # Dedicated CUDA stream so PPE inference (run from a background thread)
+        # doesn't serialize against the main thread's YOLO calls on the shared
+        # default stream. torch.cuda.stream(None) is a no-op on CPU/no-CUDA.
+        self._stream = (torch.cuda.Stream(device=self.device)
+                        if self.device.type == "cuda" else None)
+
         # ── EfficientNet classifiers ──
         print(f"[ppe] Loading cap classifier  → {CAP_MODEL_DIR}")
         self.cap_model, cap_cfg = load_classifier(CAP_MODEL_DIR, self.device)
@@ -226,7 +233,7 @@ class PPEMonitor:
         hy2 = min(h, int(y1 + HEAD_REGION * bh))
         return frame[hy1:hy2, hx1:hx2], (hx1, hy1, hx2, hy2)
 
-    def _face_crop(self, frame: np.ndarray, box: Box) -> Optional[Tuple[np.ndarray, Box]]:
+    def _face_crop(self, frame: np.ndarray, box: Box, face_boxes: Optional[List[Tuple[int, int, int, int]]] = None) -> Optional[Tuple[np.ndarray, Box]]:
         """Detect faces on the full frame (same as video_test_classifier.py), find the
         largest face whose centre falls within the person bounding box, pad to capture
         cap crown + glasses temples. Returns None when no face is found — callers must
@@ -237,20 +244,24 @@ class PPEMonitor:
         if px2 <= px1 or py2 <= py1:
             return None
 
-        try:
-            results = self.face_model.predict(
-                source=frame, conf=FACE_CONFIDENCE, verbose=False)[0]
-        except Exception as e:
-            print(f"[ppe] face detection error: {e}")
-            return None
-
-        if results is None or results.boxes is None or len(results.boxes) == 0:
-            return None
+        if face_boxes is None:
+            try:
+                results = self.face_model.predict(
+                    source=frame, conf=FACE_CONFIDENCE, verbose=False)[0]
+                if results is not None and results.boxes is not None:
+                    face_boxes = [
+                        tuple(map(int, b.xyxy[0].cpu().tolist()))
+                        for b in results.boxes
+                    ]
+                else:
+                    face_boxes = []
+            except Exception as e:
+                print(f"[ppe] face detection error: {e}")
+                return None
 
         # Keep only faces whose centre lies within this person's bounding box.
         candidates = []
-        for b in results.boxes:
-            fx1, fy1, fx2, fy2 = map(int, b.xyxy[0].cpu().tolist())
+        for fx1, fy1, fx2, fy2 in face_boxes:
             cx, cy = (fx1 + fx2) / 2, (fy1 + fy2) / 2
             if px1 <= cx <= px2 and py1 <= cy <= py2:
                 area = (fx2 - fx1) * (fy2 - fy1)
@@ -278,6 +289,22 @@ class PPEMonitor:
         Returns (cap_prob, glasses_prob)."""
         cap_p  = classify_crop(self.cap_model,     self.cap_tf,     crop, self.device)
         gl_p   = classify_crop(self.glasses_model, self.glasses_tf, crop, self.device)
+
+        # Reject dark hair false-positives using a color heuristic in the top head region
+        ch, cw = crop.shape[:2]
+        if ch > 10 and cw > 10:
+            top_h = int(ch * 0.35)
+            cw_start = int(cw * 0.25)
+            cw_end = int(cw * 0.75)
+            center_top = crop[0:top_h, cw_start:cw_end]
+            if center_top.size > 0:
+                max_channel = np.max(center_top, axis=2)
+                dark_pixels = np.sum(max_channel < 85)
+                total_pixels = center_top.shape[0] * center_top.shape[1]
+                dark_ratio = dark_pixels / total_pixels
+                if dark_ratio > 0.80:
+                    cap_p = min(cap_p, 0.1)
+
         return cap_p, gl_p
 
     def _detect_with_buffers(
@@ -290,6 +317,7 @@ class PPEMonitor:
         glasses_slow: deque,
         cap_confirmed: str = "unknown",
         glasses_confirmed: str = "unknown",
+        face_boxes: Optional[List[Tuple[int, int, int, int]]] = None,
     ) -> Tuple[Optional[bool], Optional[bool], Optional[Box]]:
         """Get face crop, classify, update rolling-average buffers, apply hysteresis threshold.
 
@@ -304,10 +332,15 @@ class PPEMonitor:
         Returns (cap_present, glasses_present, crop_box).
         All three are None when no face was detected — callers must treat None as
         'no data' and NOT feed it into WORN/NOT_WORN logic."""
-        result = self._face_crop(frame, box)
+        result = self._face_crop(frame, box, face_boxes=face_boxes)
         if result is None:
-            return None, None, None
-        crop, crop_box = result
+            # Face detector found nothing — fall back to geometric head crop so the
+            # buffers still accumulate data rather than stalling in "unknown".
+            crop, crop_box = self._head_crop(frame, box)
+            if crop is None or crop.size == 0:
+                return None, None, None
+        else:
+            crop, crop_box = result
         cap_p, gl_p = self._classify(crop)
 
         cap_fast.append(cap_p)
@@ -346,76 +379,104 @@ class PPEMonitor:
 
         A person is WORN if the item is detected on ANY feed (OR logic). Returns
         and updates `last_person_status`."""
-        now = now or time.time()
-        out: Dict[int, Dict[str, str]] = {}
+        # All GPU work below runs on this monitor's dedicated CUDA stream so it
+        # doesn't serialize against the main thread's YOLO calls on the default
+        # stream. No-op (falls through to the default stream) on CPU.
+        with self._torch.cuda.stream(self._stream):
+            now = now or time.time()
+            out: Dict[int, Dict[str, str]] = {}
 
-        for pid, cam_boxes in persons_cam_boxes.items():
-            ps = self.person_states.setdefault(
-                pid, {item: ItemState() for item in ITEMS})
-            psc = self.person_scores.setdefault(pid, {
-                "cap_fast":     deque(maxlen=CAP_FAST_WINDOW),
-                "cap_slow":     deque(maxlen=SCORE_WINDOW),
-                "glasses_fast": deque(maxlen=GLASSES_FAST_WINDOW),
-                "glasses_slow": deque(maxlen=SCORE_WINDOW),
-            })
+            # Pre-detect faces once per unique camera frame this tick (batched if multiple frames)
+            faces_by_cam: Dict[int, list] = {}
+            cam_ids_ordered = list(frames_by_cam.keys())
+            frames_ordered = [frames_by_cam[cid] for cid in cam_ids_ordered]
 
-            cap_any = glasses_any = False
-            face_seen = False
-            cap_conf     = ps["head_protection"].confirmed
-            glasses_conf = ps["eye_protection"].confirmed
-            for cam_id, box in cam_boxes.items():
-                frame = frames_by_cam.get(cam_id)
-                if frame is None:
+            if frames_ordered:
+                try:
+                    results_list = self.face_model.predict(
+                        source=frames_ordered, conf=FACE_CONFIDENCE, verbose=False)
+                    for idx, cam_id in enumerate(cam_ids_ordered):
+                        results = results_list[idx]
+                        if results is not None and results.boxes is not None:
+                            faces_by_cam[cam_id] = [
+                                tuple(map(int, b.xyxy[0].cpu().tolist()))
+                                for b in results.boxes
+                            ]
+                        else:
+                            faces_by_cam[cam_id] = []
+                except Exception as e:
+                    print(f"[ppe] face detection error on batched predict: {e}")
+                    for cam_id in cam_ids_ordered:
+                        faces_by_cam[cam_id] = []
+
+            for pid, cam_boxes in persons_cam_boxes.items():
+                ps = self.person_states.setdefault(
+                    pid, {item: ItemState() for item in ITEMS})
+                psc = self.person_scores.setdefault(pid, {
+                    "cap_fast":     deque(maxlen=CAP_FAST_WINDOW),
+                    "cap_slow":     deque(maxlen=SCORE_WINDOW),
+                    "glasses_fast": deque(maxlen=GLASSES_FAST_WINDOW),
+                    "glasses_slow": deque(maxlen=SCORE_WINDOW),
+                })
+
+                cap_any = glasses_any = False
+                face_seen = False
+                cap_conf     = ps["head_protection"].confirmed
+                glasses_conf = ps["eye_protection"].confirmed
+                for cam_id, box in cam_boxes.items():
+                    frame = frames_by_cam.get(cam_id)
+                    if frame is None:
+                        continue
+                    cap_present, gl_present, _ = self._detect_with_buffers(
+                        frame, box,
+                        psc["cap_fast"], psc["cap_slow"],
+                        psc["glasses_fast"], psc["glasses_slow"],
+                        cap_conf, glasses_conf,
+                        face_boxes=faces_by_cam.get(cam_id),
+                    )
+                    if cap_present is None:
+                        continue  # no face detected on this feed — skip, don't count as NOT_WORN
+                    face_seen = True
+                    cap_any     = cap_any or cap_present
+                    glasses_any = glasses_any or gl_present
+
+                if not face_seen:
+                    # No face detected on any camera this tick — skip debounce update entirely
+                    # so confirmed state doesn't drift from stale NOT_WORN signals.
+                    out[pid] = {
+                        ITEM_TOKEN[item]: _to_person_status(ps[item].confirmed)
+                        for item in ITEMS
+                    }
                     continue
-                cap_present, gl_present, _ = self._detect_with_buffers(
-                    frame, box,
-                    psc["cap_fast"], psc["cap_slow"],
-                    psc["glasses_fast"], psc["glasses_slow"],
-                    cap_conf, glasses_conf,
-                )
-                if cap_present is None:
-                    continue  # no face detected on this feed — skip, don't count as NOT_WORN
-                face_seen = True
-                cap_any     = cap_any or cap_present
-                glasses_any = glasses_any or gl_present
 
-            if not face_seen:
-                # No face detected on any camera this tick — skip debounce update entirely
-                # so confirmed state doesn't drift from stale NOT_WORN signals.
+                raw = {
+                    "head_protection": WORN if cap_any     else NOT_WORN,
+                    "eye_protection":  WORN if glasses_any else NOT_WORN,
+                }
+                for item in ITEMS:
+                    transition = ps[item].update(raw[item], now)
+                    if transition == "missing":
+                        cam_id, box = next(iter(cam_boxes.items()))
+                        ps[item].proof = save_proof_frame(
+                            frames_by_cam[cam_id],
+                            f"{pid}_{ITEM_TOKEN[item]}",
+                            redis_client,
+                            person_box=box,
+                        )
+                    elif transition == "detected":
+                        ps[item].proof = None
                 out[pid] = {
                     ITEM_TOKEN[item]: _to_person_status(ps[item].confirmed)
                     for item in ITEMS
                 }
-                continue
 
-            raw = {
-                "head_protection": WORN if cap_any     else NOT_WORN,
-                "eye_protection":  WORN if glasses_any else NOT_WORN,
-            }
-            for item in ITEMS:
-                transition = ps[item].update(raw[item], now)
-                if transition == "missing":
-                    cam_id, box = next(iter(cam_boxes.items()))
-                    ps[item].proof = save_proof_frame(
-                        frames_by_cam[cam_id],
-                        f"{pid}_{ITEM_TOKEN[item]}",
-                        redis_client,
-                        person_box=box,
-                    )
-                elif transition == "detected":
-                    ps[item].proof = None
-            out[pid] = {
-                ITEM_TOKEN[item]: _to_person_status(ps[item].confirmed)
-                for item in ITEMS
-            }
+            # Prune state for people who have left the frame.
+            for gone in [pid for pid in self.person_states if pid not in persons_cam_boxes]:
+                self.person_states.pop(gone, None)
+                self.person_scores.pop(gone, None)
 
-        # Prune state for people who have left the frame.
-        for gone in [pid for pid in self.person_states if pid not in persons_cam_boxes]:
-            self.person_states.pop(gone, None)
-            self.person_scores.pop(gone, None)
-
-        self.last_person_status = out
-        return out
+            self.last_person_status = out
+            return out
 
     # ── Demo path: single-person, single frame ───────────────────────────────
     def process(
@@ -431,6 +492,20 @@ class PPEMonitor:
         persons = list(person_boxes or [])
         head_crops: List[Box] = []
 
+        # Pre-detect faces once for this single frame
+        face_boxes = []
+        if persons:
+            try:
+                results = self.face_model.predict(
+                    source=frame, conf=FACE_CONFIDENCE, verbose=False)[0]
+                if results is not None and results.boxes is not None:
+                    face_boxes = [
+                        tuple(map(int, b.xyxy[0].cpu().tolist()))
+                        for b in results.boxes
+                    ]
+            except Exception as e:
+                print(f"[ppe] face detection error in process: {e}")
+
         cap_any = glasses_any = False
         face_seen = False
         cap_conf     = self.states["head_protection"].confirmed
@@ -443,6 +518,7 @@ class PPEMonitor:
                 self._global_scores["glasses_fast"],
                 self._global_scores["glasses_slow"],
                 cap_conf, glasses_conf,
+                face_boxes=face_boxes,
             )
             if crop_box is not None:
                 head_crops.append(crop_box)
