@@ -44,6 +44,8 @@ export const useRigStore = create((set, get) => ({
   // PPE detection demo (cv/ppe_demo.py → rigvision:ppe:latest). Per-item status:
   // detected | missing | no_person | unknown. `proof` is set on a "missing" commit.
   ppe: { person_present: false },
+  compoundRisk: null,
+  incidents: [],
   connected: false,
   // Selection & UI State
   selectedPerson: null,
@@ -78,11 +80,13 @@ export const useRigStore = create((set, get) => ({
         const raw = state._latestRawData;
         if (raw) {
           set({
-            persons: raw.persons !== undefined ? raw.persons : state.persons,
-            zones: raw.zones !== undefined ? raw.zones : state.zones,
-            diagnostics: raw.diagnostics !== undefined ? raw.diagnostics : state.diagnostics,
+            persons:      raw.persons      !== undefined ? raw.persons      : state.persons,
+            zones:        raw.zones        !== undefined ? raw.zones        : state.zones,
+            diagnostics:  raw.diagnostics  !== undefined ? raw.diagnostics  : state.diagnostics,
             diagProgress: raw.diagProgress !== undefined ? raw.diagProgress : state.diagProgress,
-            ppe: raw.ppe !== undefined ? raw.ppe : state.ppe,
+            ppe:          raw.ppe          !== undefined ? raw.ppe          : state.ppe,
+            compoundRisk: raw.compoundRisk !== undefined ? raw.compoundRisk : state.compoundRisk,
+            incidents:    raw.incidents    !== undefined ? raw.incidents    : state.incidents,
             hasReceivedData: true,
             _latestRawData: null,
             _lastRenderTime: now,
@@ -153,6 +157,10 @@ export const useRigStore = create((set, get) => ({
           } else {
             nextRaw.ppe = state.ppe;
           }
+
+          // Compound risk + incidents (low-frequency, ~5s updates — always accept)
+          nextRaw.compoundRisk = data.compound_risk !== undefined ? data.compound_risk : state.compoundRisk;
+          nextRaw.incidents    = data.incidents    !== undefined ? data.incidents    : state.incidents;
 
           nextState._latestRawData = nextRaw;
           set(nextState);

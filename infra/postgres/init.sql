@@ -113,10 +113,57 @@ SELECT create_hypertable('person_tracking', 'recorded_at',
 CREATE INDEX IF NOT EXISTS idx_person_tracking_person_time
     ON person_tracking (person_id, recorded_at DESC);
 
+-- ── Permits (Permit-to-Work) ──
+CREATE TABLE IF NOT EXISTS permits (
+    permit_id       TEXT            PRIMARY KEY,
+    type            TEXT            NOT NULL,   -- hot_work, confined_space, electrical, excavation
+    zone            TEXT            NOT NULL,
+    description     TEXT            NOT NULL,
+    workers         TEXT[]          DEFAULT '{}',
+    issued_by       TEXT            NOT NULL,
+    start_time      TIMESTAMPTZ     NOT NULL,
+    end_time        TIMESTAMPTZ     NOT NULL,
+    status          TEXT            NOT NULL DEFAULT 'active',  -- active, closed, expired, revoked
+    requires_gas_clear  BOOLEAN     DEFAULT FALSE,
+    gas_clear_ppm   DOUBLE PRECISION DEFAULT 10.0,
+    created_at      TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+    closed_at       TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_permits_zone_status
+    ON permits (zone, status);
+
+CREATE INDEX IF NOT EXISTS idx_permits_status_time
+    ON permits (status, start_time DESC);
+
+-- ── Incidents ──
+CREATE TABLE IF NOT EXISTS incidents (
+    incident_id         TEXT            PRIMARY KEY,
+    severity            TEXT            NOT NULL,   -- HIGH, CRITICAL
+    title               TEXT            NOT NULL,
+    rules_fired         JSONB           DEFAULT '[]',
+    sensor_snapshot     JSONB           DEFAULT '{}',
+    persons_snapshot    JSONB           DEFAULT '[]',
+    permits_snapshot    JSONB           DEFAULT '[]',
+    report_text         TEXT,
+    status              TEXT            NOT NULL DEFAULT 'open',  -- open, acknowledged, closed
+    created_at          TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+    acknowledged_at     TIMESTAMPTZ,
+    closed_at           TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_incidents_severity_time
+    ON incidents (severity, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_incidents_status
+    ON incidents (status, created_at DESC);
+
 -- ──────────────────────────────────────────────────────────
 -- Done! Tables created:
 --   sensor_readings  (hypertable) — raw sensor time-series
 --   violations       — compliance violations with evidence
 --   anomalies        — detected sensor anomalies
 --   person_tracking  (hypertable) — historical person positions
+--   permits          — permit-to-work records
+--   incidents        — compound risk incident log
 -- ──────────────────────────────────────────────────────────

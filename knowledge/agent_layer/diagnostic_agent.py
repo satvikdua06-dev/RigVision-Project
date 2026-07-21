@@ -1,8 +1,8 @@
-"""LLM diagnostic agent.
+﻿"""LLM diagnostic agent.
 
 Retrieval-augmented root-cause diagnosis for flagged zones. Both RAG retrieval
 embeddings AND answer generation run LOCALLY via LM Studio (OpenAI-compatible
-REST, called with `requests` — no `openai`/`google` SDK). Generation is
+REST, called with `requests` â€” no `openai`/`google` SDK). Generation is
 configured by LLM_BASE_URL / LLM_API_KEY / LLM_MODEL; embeddings by
 EMBED_BASE_URL / EMBED_API_KEY / EMBED_MODEL (see .env.example and embeddings.py).
 """
@@ -24,10 +24,10 @@ load_dotenv()
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Answer-generation LLM — local LM Studio (OpenAI-compatible REST).
+# Answer-generation LLM â€” local LM Studio (OpenAI-compatible REST).
 LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "http://localhost:1234/v1").rstrip("/")
 LLM_API_KEY = os.environ.get("LLM_API_KEY", "lm-studio")
-LLM_MODEL = os.environ.get("LLM_MODEL", "google/gemma-4-12b-qat")
+LLM_MODEL = os.environ.get("LLM_MODEL", "qwen2.5-7b-instruct-1m")
 
 # Strict schema for the diagnosis the local model must return.
 # `anomaly_detected` is the anti-hallucination gate: the model must set it false (and
@@ -71,7 +71,7 @@ class LLMDiagnosticAgent:
         """Convenience wrapper: retrieve manuals then generate. Callers that want to
         report progress between the two stages call retrieve_manuals() and
         generate_answer() separately (see anomaly_listener)."""
-        logging.info("🔍 Retrieving device manuals from Vector DB...")
+        logging.info("ðŸ” Retrieving device manuals from Vector DB...")
         manuals_context = self.retrieve_manuals(graph_context)
         return self.generate_answer(telemetry, graph_context, manuals_context)
 
@@ -112,7 +112,7 @@ class LLMDiagnosticAgent:
         }}
         """
 
-        logging.info("🧠 Generating diagnosis via local LLM (%s @ %s)...", LLM_MODEL, LLM_BASE_URL)
+        logging.info("ðŸ§  Generating diagnosis via local LLM (%s @ %s)...", LLM_MODEL, LLM_BASE_URL)
         try:
             response = requests.post(
                 f"{LLM_BASE_URL}/chat/completions",

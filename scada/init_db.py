@@ -53,6 +53,47 @@ CREATE INDEX IF NOT EXISTS scada_readings_sensor_id_time_idx
     ON scada_readings (sensor_id, time DESC);
 """
 
+_CREATE_PERMITS = """
+CREATE TABLE IF NOT EXISTS permits (
+    permit_id           TEXT            PRIMARY KEY,
+    type                TEXT            NOT NULL,
+    zone                TEXT            NOT NULL,
+    description         TEXT            NOT NULL,
+    workers             JSONB           DEFAULT '[]',
+    issued_by           TEXT            NOT NULL,
+    start_time          TIMESTAMPTZ     NOT NULL,
+    end_time            TIMESTAMPTZ     NOT NULL,
+    status              TEXT            NOT NULL DEFAULT 'active',
+    requires_gas_clear  BOOLEAN         DEFAULT FALSE,
+    gas_clear_ppm       DOUBLE PRECISION DEFAULT 10.0,
+    sensor_limits       JSONB           DEFAULT '{}',
+    created_at          TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+    closed_at           TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_permits_zone_status ON permits (zone, status);
+CREATE INDEX IF NOT EXISTS idx_permits_status_time ON permits (status, start_time DESC);
+ALTER TABLE permits ADD COLUMN IF NOT EXISTS sensor_limits JSONB DEFAULT '{}';
+"""
+
+_CREATE_INCIDENTS = """
+CREATE TABLE IF NOT EXISTS incidents (
+    incident_id         TEXT            PRIMARY KEY,
+    severity            TEXT            NOT NULL,
+    title               TEXT            NOT NULL,
+    rules_fired         JSONB           DEFAULT '[]',
+    sensor_snapshot     JSONB           DEFAULT '{}',
+    persons_snapshot    JSONB           DEFAULT '[]',
+    permits_snapshot    JSONB           DEFAULT '[]',
+    report_text         TEXT,
+    status              TEXT            NOT NULL DEFAULT 'open',
+    created_at          TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+    acknowledged_at     TIMESTAMPTZ,
+    closed_at           TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_incidents_severity_time ON incidents (severity, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_incidents_status ON incidents (status, created_at DESC);
+"""
+
 
 def init_db(retries: int = 5, retry_delay: float = 3.0) -> bool:
     """
@@ -109,6 +150,16 @@ def init_db(retries: int = 5, retry_delay: float = 3.0) -> bool:
                 log.info("[init_db] Indexes ready")
             except psycopg2.Error:
                 conn.rollback()
+
+            # Create permits + incidents tables
+            for ddl, name in [(_CREATE_PERMITS, "permits"), (_CREATE_INCIDENTS, "incidents")]:
+                try:
+                    cur.execute(ddl)
+                    conn.commit()
+                    log.info("[init_db] %s table ready", name)
+                except psycopg2.Error as e:
+                    conn.rollback()
+                    log.warning("[init_db] %s table creation skipped: %s", name, e)
 
     conn.close()
     log.info("[init_db] Database initialisation complete")

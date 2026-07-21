@@ -13,6 +13,9 @@ from typing import Dict, Optional, Set
 
 # Allow `python backend/main.py` from any cwd to import backend/services/*.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Project root too, so `knowledge.agent_layer.*` (compliance / pattern / report
+# engines) is importable for the on-demand generation endpoints.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import redis.asyncio as aioredis
 import uvicorn
@@ -173,12 +176,14 @@ async def redis_to_websocket_bridge():
     _last_zone_statuses: Dict[str, str] = {}
     while True:
         try:
-            p_raw, z_hash, d_raw, ppe_raw, prog_map = await asyncio.gather(
+            p_raw, z_hash, d_raw, ppe_raw, prog_map, risk_raw, incidents_raw = await asyncio.gather(
                 r.get("rigvision:persons"),
                 r.hgetall("rigvision:zones"),
                 r.get("rigvision:diagnostics"),
                 r.get("rigvision:ppe:latest"),
                 r.hgetall(PROGRESS_KEY),
+                r.get("rigvision:compound_risk:latest"),
+                r.get("rigvision:incidents:latest"),
             )
 
             # Live diagnosis progress: parse each event's entry and prune stale ones.
@@ -232,6 +237,8 @@ async def redis_to_websocket_bridge():
                         "diagnostics": json.loads(d_raw) if d_raw else [],
                         "ppe": json.loads(ppe_raw) if ppe_raw else {},
                         "diag_progress": diag_progress,
+                        "compound_risk": json.loads(risk_raw) if risk_raw else None,
+                        "incidents": json.loads(incidents_raw) if incidents_raw else [],
                     }
                     await manager.broadcast(json.dumps(msg))
             await asyncio.sleep(0.033)
@@ -313,7 +320,7 @@ app.add_middleware(
         "http://127.0.0.1:3000", "http://127.0.0.1:5173", "http://127.0.0.1:5174",
     ],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "X-API-Key"],
 )
 
@@ -836,6 +843,298 @@ async def post_sensors(body: SensorReadingsRequest):
         "count": len(current),
         "diagnostics": diagnostics,
     }
+
+# ── Compound Risk ─────────────────────────────────────────────────────────────
+
+@app.get("/api/compound-risk")
+async def get_compound_risk():
+    raw = await get_redis().get("rigvision:compound_risk:latest")
+    return json.loads(raw) if raw else {"severity": "NORMAL", "rule_count": 0, "rules_fired": []}
+
+
+# ── Permits ───────────────────────────────────────────────────────────────────
+
+PERMITS_REDIS_KEY = "rigvision:permits:active"
+
+class PermitCreateRequest(BaseModel):
+    type: str                     # hot_work | confined_space | electrical | excavation
+    zone: str
+    description: str
+    workers: list = []
+    duration_hours: float = 4.0
+    # Per-permit sensor limits active only while this permit is open.
+    # Keys: "gas" (ppm), "temperature" (°C), "vibration" (g_rms), "pressure_low" (bar min).
+    # Absent or null = fall back to zone_definitions.json defaults.
+    sensor_limits: dict = {}
+
+@app.get("/api/permits")
+async def get_permits():
+    raw = await get_redis().get(PERMITS_REDIS_KEY)
+    return json.loads(raw) if raw else []
+
+@app.post("/api/permits", dependencies=[Depends(require_api_key)])
+async def create_permit(body: PermitCreateRequest):
+    import uuid as _uuid
+    r = get_redis()
+    now = int(time.time())
+    permit = {
+        "permit_id":          f"PTW-{time.strftime('%Y%m%d')}-{_uuid.uuid4().hex[:6].upper()}",
+        "type":               body.type,
+        "zone":               body.zone,
+        "description":        body.description,
+        "workers":            body.workers,
+        "issued_by":          "api",
+        "start_time":         now,
+        "end_time":           now + int(body.duration_hours * 3600),
+        "status":             "active",
+        # gas_clear_ppm derives from sensor_limits.gas; fall back to OISD-105 defaults per type
+        "requires_gas_clear": body.type in ("hot_work", "confined_space"),
+        "gas_clear_ppm":      float(body.sensor_limits.get("gas") or (5.0 if body.type == "hot_work" else 10.0)),
+        "sensor_limits":      {k: float(v) for k, v in body.sensor_limits.items() if v not in (None, "")},
+    }
+    raw = await r.get(PERMITS_REDIS_KEY)
+    permits = json.loads(raw) if raw else []
+    permits.append(permit)
+    await r.set(PERMITS_REDIS_KEY, json.dumps(permits))
+
+    # Write to Postgres best-effort
+    asyncio.create_task(asyncio.to_thread(_pg_write_permit, permit))
+    return {"status": "ok", "permit": permit}
+
+@app.patch("/api/permits/{permit_id}/close", dependencies=[Depends(require_api_key)])
+async def close_permit(permit_id: str):
+    r = get_redis()
+    raw = await r.get(PERMITS_REDIS_KEY)
+    permits = json.loads(raw) if raw else []
+    found = False
+    for p in permits:
+        if p["permit_id"] == permit_id:
+            p["status"] = "closed"
+            p["closed_at"] = int(time.time())
+            found = True
+            break
+    if not found:
+        raise HTTPException(status_code=404, detail=f"Permit {permit_id} not found")
+    await r.set(PERMITS_REDIS_KEY, json.dumps(permits))
+    return {"status": "ok", "permit_id": permit_id, "new_status": "closed"}
+
+def _pg_write_permit(permit: dict) -> None:
+    try:
+        import psycopg2
+        from datetime import datetime, timezone
+        conn = psycopg2.connect(
+            host=os.getenv("POSTGRES_HOST", "localhost"),
+            port=int(os.getenv("POSTGRES_PORT", "5433")),
+            dbname=os.getenv("POSTGRES_DB", "rigvision"),
+            user=os.getenv("POSTGRES_USER", "rigvision"),
+            password=os.getenv("POSTGRES_PASSWORD", "rigvision_dev_password"),
+        )
+        with conn.cursor() as cur:
+            import json as _json
+            from psycopg2.extras import Json as _Json
+            cur.execute("""
+                INSERT INTO permits
+                    (permit_id, type, zone, description, workers, issued_by,
+                     start_time, end_time, status, requires_gas_clear, gas_clear_ppm,
+                     sensor_limits)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                ON CONFLICT (permit_id) DO NOTHING
+            """, (
+                permit["permit_id"], permit["type"], permit["zone"],
+                permit["description"],
+                permit.get("workers", []),
+                permit.get("issued_by", "api"),
+                datetime.fromtimestamp(permit["start_time"], tz=timezone.utc),
+                datetime.fromtimestamp(permit["end_time"],   tz=timezone.utc),
+                permit.get("status", "active"),
+                permit.get("requires_gas_clear", True),
+                permit.get("gas_clear_ppm", 10.0),
+                _Json(permit.get("sensor_limits", {})),
+            ))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.debug("Permit Postgres write skipped: %s", e)
+
+
+# ── Incidents ─────────────────────────────────────────────────────────────────
+
+INCIDENTS_REDIS_KEY = "rigvision:incidents:latest"
+
+@app.get("/api/incidents")
+async def get_incidents():
+    raw = await get_redis().get(INCIDENTS_REDIS_KEY)
+    return json.loads(raw) if raw else []
+
+@app.get("/api/incidents/{incident_id}/report")
+async def get_incident_report(incident_id: str):
+    raw = await get_redis().get(INCIDENTS_REDIS_KEY)
+    incidents = json.loads(raw) if raw else []
+    for inc in incidents:
+        if inc.get("incident_id") == incident_id:
+            return {"incident_id": incident_id, "report_text": inc.get("report_text", "")}
+    raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
+
+@app.patch("/api/incidents/{incident_id}/acknowledge", dependencies=[Depends(require_api_key)])
+async def acknowledge_incident(incident_id: str):
+    r = get_redis()
+    raw = await r.get(INCIDENTS_REDIS_KEY)
+    incidents = json.loads(raw) if raw else []
+    found = False
+    for inc in incidents:
+        if inc.get("incident_id") == incident_id:
+            inc["status"] = "acknowledged"
+            inc["acknowledged_at"] = int(time.time())
+            found = True
+            break
+    if not found:
+        raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
+    await r.set(INCIDENTS_REDIS_KEY, json.dumps(incidents))
+    return {"status": "ok", "incident_id": incident_id, "new_status": "acknowledged"}
+
+
+# ── Pattern Intelligence ──────────────────────────────────────────────────────
+
+PATTERN_INTEL_KEY    = "rigvision:pattern_intel:latest"
+NEAR_MISSES_KEY      = "rigvision:near_misses:latest"
+
+@app.get("/api/pattern-intelligence")
+async def get_pattern_intelligence():
+    raw = await get_redis().get(PATTERN_INTEL_KEY)
+    if not raw:
+        return {"status": "pending", "analysis": None, "generated_at": None}
+    return json.loads(raw)
+
+@app.get("/api/near-misses")
+async def get_near_misses():
+    raw = await get_redis().get(NEAR_MISSES_KEY)
+    return json.loads(raw) if raw else []
+
+
+# ── Compliance Audit ──────────────────────────────────────────────────────────
+
+COMPLIANCE_AUDIT_KEY = "rigvision:compliance_audit:latest"
+
+@app.get("/api/compliance-audit")
+async def get_compliance_audit():
+    raw = await get_redis().get(COMPLIANCE_AUDIT_KEY)
+    if not raw:
+        return {"status": "pending", "compliance_score": None, "violations": [], "generated_at": None}
+    return json.loads(raw)
+
+
+# ── On-demand insight generation ──────────────────────────────────────────────
+# The compliance / pattern agents normally run on their own poll loops. These
+# endpoints let the frontend force a fresh pass without waiting for the timer.
+# Both are sync + blocking on an LM call, so they run in a worker thread.
+
+def _sync_redis():
+    """Blocking redis client for agent code (agents use sync redis, not aioredis)."""
+    import redis as _redis
+    return _redis.from_url(
+        f"redis://{REDIS_HOST}:{REDIS_PORT}",
+        password=REDIS_PASSWORD, decode_responses=True,
+    )
+
+@app.post("/api/compliance-audit/generate", dependencies=[Depends(require_api_key)])
+async def generate_compliance_audit():
+    from knowledge.agent_layer import compliance_audit
+    def _run():
+        return compliance_audit.generate(_sync_redis(), blocking=True)
+    try:
+        return await asyncio.to_thread(_run)
+    except Exception as e:
+        logger.error("Compliance audit generation failed: %s", e)
+        raise HTTPException(status_code=500, detail=f"Audit generation failed: {e}")
+
+@app.post("/api/pattern-intelligence/generate", dependencies=[Depends(require_api_key)])
+async def generate_pattern_intelligence():
+    from knowledge.agent_layer import pattern_intelligence
+    def _run():
+        return pattern_intelligence.generate(_sync_redis())
+    try:
+        return await asyncio.to_thread(_run)
+    except Exception as e:
+        logger.error("Pattern intelligence generation failed: %s", e)
+        raise HTTPException(status_code=500, detail=f"Pattern generation failed: {e}")
+
+@app.get("/api/code-legend")
+async def get_code_legend():
+    """Reference descriptions for every R-code (compound risk) and C-code
+    (compliance) currently defined in code. Read directly from the rule
+    modules so this can't drift from what actually fires."""
+    from risk_engine.rules import RULE_REGISTRY
+    from knowledge.agent_layer.compliance_audit import get_code_registry
+    return {
+        "risk_rules":  RULE_REGISTRY,
+        "compliance_codes": await asyncio.to_thread(get_code_registry),
+    }
+
+@app.post("/api/insights/reset", dependencies=[Depends(require_api_key)])
+async def reset_insights():
+    """Clear cached compliance + pattern reports so they regenerate from scratch."""
+    await get_redis().delete(COMPLIANCE_AUDIT_KEY, PATTERN_INTEL_KEY)
+    return {"status": "ok", "cleared": ["compliance_audit", "pattern_intel"]}
+
+
+# ── Daily Shift Reports ───────────────────────────────────────────────────────
+
+class DailyReportRequest(BaseModel):
+    report_date:  str = ""
+    shift:        str = "day"
+    supervisor:   str = ""
+    notes:        str = ""
+    window_hours: float = 24.0
+    # Each item: ref_id, signature, source, severity, zone, title,
+    #            action_taken, root_cause, resolution
+    items:        list = []
+
+@app.get("/api/daily-report/draft")
+async def get_daily_report_draft(hours: float = 24.0):
+    """Sweep the last N hours of anomalies/incidents/violations into a form draft."""
+    from knowledge.agent_layer import report_engine
+    return await asyncio.to_thread(report_engine.build_draft, _sync_redis(), hours)
+
+@app.get("/api/daily-reports")
+async def list_daily_reports():
+    from knowledge.agent_layer import report_engine
+    return await asyncio.to_thread(report_engine.get_reports, _sync_redis())
+
+@app.get("/api/daily-report/{report_id}")
+async def get_daily_report(report_id: str):
+    from knowledge.agent_layer import report_engine
+    rep = await asyncio.to_thread(report_engine.get_report, _sync_redis(), report_id)
+    if not rep:
+        raise HTTPException(status_code=404, detail=f"Report {report_id} not found")
+    return rep
+
+@app.post("/api/daily-report", dependencies=[Depends(require_api_key)])
+async def submit_daily_report(body: DailyReportRequest):
+    """Save a filled-in shift report, then kick off the AI review in the background."""
+    from knowledge.agent_layer import report_engine
+    report = await asyncio.to_thread(report_engine.save_report, _sync_redis(), body.model_dump())
+
+    async def _review_later(rid: str):
+        try:
+            await asyncio.to_thread(report_engine.review_report, _sync_redis(), rid)
+        except Exception as e:
+            logger.error("Report review failed for %s: %s", rid, e)
+    asyncio.create_task(_review_later(report["report_id"]))
+
+    return {"status": "ok", "report": report}
+
+@app.post("/api/daily-report/{report_id}/review", dependencies=[Depends(require_api_key)])
+async def review_daily_report(report_id: str):
+    """Re-run the AI review pass over an existing report."""
+    from knowledge.agent_layer import report_engine
+    try:
+        return await asyncio.to_thread(report_engine.review_report, _sync_redis(), report_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error("Report review failed: %s", e)
+        raise HTTPException(status_code=500, detail=f"Review failed: {e}")
+
 
 @app.websocket("/ws/realtime")
 async def websocket_realtime(websocket: WebSocket):

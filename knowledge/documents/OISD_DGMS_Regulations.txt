@@ -1,0 +1,78 @@
+OISD-105: Code of Practice on Design, Installation, Operation and Maintenance of Permit-to-Work Systems at Hydrocarbon Production Installations
+Standard Authority: Oil Industry Safety Directorate (OISD), Ministry of Petroleum and Natural Gas, Government of India
+---
+OISD-105 Clause 1: Scope and Application
+This standard applies to all oil and gas production facilities, drilling rigs, refineries, and petrochemical plants under the jurisdiction of the Ministry of Petroleum and Natural Gas. The permit-to-work system is a formal safety management tool that is a critical component of the management system.
+---
+OISD-105 Clause 4.2: Hot Work Permits — Gas Testing Requirements
+Hot work permits shall not be issued unless the work area has been tested and found to contain less than 5 ppm of H2S and less than 10% of Lower Explosive Limit (LEL) of flammable vapours. Testing shall be conducted by a competent person using calibrated instruments not more than 30 minutes before work commences. Gas testing shall be repeated at intervals not exceeding 30 minutes during the progress of hot work. Any reading above 10 ppm H2S or 10% LEL shall result in immediate cessation of hot work.
+---
+OISD-105 Clause 5.1: Confined Space Entry Permits
+No person shall enter a confined space without a valid confined space entry permit. Before any person enters, the space shall be tested for oxygen (19.5%–23.5%), flammable gases (<10% LEL), and toxic gases (H2S <10 ppm for entry; use SCBA if above 1 ppm TWA). A standby person trained in rescue shall be stationed at the entry point at all times during the operation.
+---
+OISD-105 Clause 6.4: Confined Space Entry — Emergency Protocols
+If a worker inside a confined space fails to respond to communication, or if gas levels rise above safe limits during an operation, the following procedure applies: (1) DO NOT enter to rescue without SCBA. (2) Alert emergency response team immediately. (3) Activate site emergency alarm. (4) Attempt rescue ONLY with full SCBA and a rescue line. (5) Notify DGMS within 2 hours of the incident.
+---
+OISD-105 Clause 7.3: Lock-Out/Tag-Out (LOTO) Procedures
+Before any maintenance work on pressurised, electrical, or mechanical equipment: (1) Identify all energy sources. (2) Notify operations and obtain permit. (3) Isolate equipment from energy sources (close valves, open breakers). (4) Apply locks and tags at each isolation point. (5) Verify isolation by attempting to start equipment. (6) No work shall commence without written confirmation that all isolation points are secure. Vibration on equipment under LOTO is grounds for immediate work stoppage.
+---
+OISD-116: Minimum Safety Requirements for Onshore/Offshore Drilling Operations
+Standard Authority: Oil Industry Safety Directorate (OISD), Ministry of Petroleum and Natural Gas, Government of India
+---
+OISD-116 Clause 3.1: Crew Staffing Requirements
+Minimum crew for drilling operations: Driller + 3 roughnecks + 1 derrickman on each shift. Night shifts on critical operations (well control, cementing) require a senior drilling supervisor on site. Reduced crew operations (below minimum) must be approved by Installation Manager and risk-assessed.
+---
+OISD-116 Clause 4: Multi-Hazard Risk Assessment
+When two or more independent hazardous conditions are simultaneously present (e.g., H2S elevated + active hot work + equipment maintenance), a formal multi-hazard risk assessment shall be conducted. The combined probability of harm may exceed the sum of individual risks due to compounding effects. Operations in such conditions shall require Installation Manager approval and increased monitoring frequency.
+---
+OISD-116 Clause 5.3: Pump and Machinery Operations
+Mud pump vibration exceeding 3 g_rms on any axis shall trigger an alert. Vibration exceeding 5 g_rms shall require immediate shutdown for inspection. Continued operation above 5 g_rms risks catastrophic bearing failure and potential hydrocarbon release.
+---
+OISD-118: Code of Practice on Design, Inspection and Maintenance of Pressure Vessels and Pressure Piping Systems
+Standard Authority: Oil Industry Safety Directorate (OISD), Ministry of Petroleum and Natural Gas, Government of India
+---
+OISD-118 Clause 5.2: Pressure Integrity and Monitoring
+Process piping and vessels shall be maintained within design operating pressure ±10%. A drop in line pressure below 30% of normal operating pressure is classified as an abnormal condition requiring immediate investigation. Simultaneous high temperature and low pressure is indicative of a potential seal or gasket failure and shall be treated as a potential hydrocarbon release emergency until confirmed otherwise.
+---
+OISD-118 Clause 6.1: Temperature Limits
+Pump casing surface temperature shall not exceed 80°C in normal operations. Temperature above 85°C indicates cooling system failure or excessive friction and requires shutdown. Temperature above 95°C in the presence of hydrocarbons is an immediate fire hazard.
+---
+DGMS Circular No. 2 of 2020: Safety in Mines — Confined Space Entry and Rescue
+Standard Authority: Directorate General of Mines Safety (DGMS), Ministry of Labour and Employment, Government of India
+---
+DGMS Circular 2/2020 Clause 3: Atmospheric Testing
+Before entry into any confined space, the atmosphere shall be tested for: (1) Oxygen content (19.5%–23.5%) (2) Flammable gases (<10% LEL) (3) Carbon monoxide (<35 ppm) (4) Hydrogen sulphide (<1 ppm TWA, <5 ppm STEL) (5) Carbon dioxide (<0.5%). A continuous monitoring device shall be used for operations exceeding 30 minutes.
+---
+DGMS Circular 3 of 2016: Hot Work in Hazardous Areas in Mines
+Standard Authority: Directorate General of Mines Safety (DGMS)
+---
+DGMS Circular 3/2016 Clause 4: Firewatch Requirements
+Hot work permits shall include provision for a dedicated firewatch during night shift operations. The firewatch person shall: carry a calibrated portable gas detector; have authority to stop work immediately; remain at post for 30 minutes after work completion; maintain a log of gas readings every 15 minutes.
+---
+DGMS Circular 3/2016 Clause 5: Simultaneous Operations (SIMOPS) Restrictions
+Hot work and confined space entry operations shall NOT be conducted simultaneously in adjacent areas without an explicit SIMOPS risk assessment approved by the Site Safety Officer. The minimum separation distance between hot work and a confined space entry point is 15 metres unless physical barriers are installed.
+---
+Factory Act 1948 — Sections Relevant to Oil and Gas Facilities
+Standard Authority: Ministry of Labour and Employment, Government of India
+---
+Factory Act 1948 Section 36: Personal Protective Equipment
+Every occupier shall provide and maintain all necessary personal protective equipment free of charge for every worker. Failure to provide adequate PPE constitutes a criminal offence under the Act. Where gas hazards exist, the occupier must provide and ensure correct usage of: (a) H2S personal monitors, (b) SCBA or airline breathing apparatus for confined space entry, (c) chemical-resistant gloves and face shields where corrosives are handled, (d) hard hats and safety footwear at all times in operational areas.
+---
+Factory Act 1948 Section 41B: Compulsory Disclosure of Information
+The occupier of any hazardous process factory (which includes hydrocarbon processing and drilling) must maintain accident records and disclose them to the Inspector of Factories within 24 hours of any accident involving serious injury or dangerous occurrence. DGMS notification is additionally required for all reportable occurrences under the Mines Act 1952.
+---
+Factory Act 1948 Section 41C: Worker Participation in Safety Management
+Workers have the right to refuse unsafe work and raise safety concerns without fear of reprisal. The occupier must investigate and respond to safety concerns within 7 days.
+---
+OISD-GDN-192: Guidelines on H2S Safety
+Standard Authority: Oil Industry Safety Directorate (OISD)
+---
+OISD-GDN-192 Clause 4: H2S Exposure Limits and Action Levels
+Action Level 1 (1–5 ppm): Mandatory H2S detector wear; brief exposure only with wind-direction awareness.
+Action Level 2 (5–10 ppm): All non-essential personnel evacuate upwind; donning of SCBA by essential workers.
+Action Level 3 (>10 ppm): Full evacuation of area; emergency response activation; SCBA mandatory for all entrants.
+IDLH (50 ppm): Immediately Dangerous to Life and Health — Emergency rescue only.
+H2S Personal Alert: Set to alarm at 5 ppm and evacuate alarm at 10 ppm.
+---
+OISD-GDN-192 Clause 6: H2S Emergency Response
+Upon H2S alarm activation: (1) Sound site siren. (2) All personnel move upwind to designated muster point. (3) Do NOT attempt to rescue without SCBA. (4) Identify source and isolate if safe to do so. (5) Notify emergency services and DGMS. (6) Account for all personnel at muster point within 10 minutes.

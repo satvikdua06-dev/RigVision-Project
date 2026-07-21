@@ -6,6 +6,7 @@ import { useRigStore } from './stores/useRigStore.js'
 import CameraFeeds from './components/CameraFeeds.jsx'
 import SensorConsole from './components/SensorConsole.jsx'
 import NotificationAlert from './components/NotificationAlert.jsx'
+import SafetyHeatmap from './components/SafetyHeatmap.jsx'
 
 const SENSOR_ROWS = [
   { icon: '🌡', lbl: 'Temp',  type: 'temperature', unit: '°C'  },
@@ -136,7 +137,8 @@ function ZoneDetailPanel() {
 
 export default function App() {
   const connectToBackend = useRigStore(s => s.connectToBackend)
-  const [route, setRoute] = useState(window.location.hash)
+  const [route, setRoute]           = useState(window.location.hash)
+  const [showHeatmap, setShowHeatmap] = useState(false)
 
   useEffect(() => {
     const onHash = () => setRoute(window.location.hash)
@@ -155,7 +157,7 @@ export default function App() {
 
   return (
     <div style={{ width:'100vw', height:'100vh', display:'flex', flexDirection:'column', overflow:'hidden' }}>
-      <TopBar />
+      <TopBar showHeatmap={showHeatmap} onToggleHeatmap={() => setShowHeatmap(v => !v)} />
       <div style={{ flex:1, display:'flex', overflow:'hidden' }}>
         <Sidebar />
 
@@ -165,6 +167,9 @@ export default function App() {
 
           {/* Zone detail panel — anchored top-left of canvas, next to sidebar */}
           <ZoneDetailPanel />
+
+          {/* Geospatial Safety Heatmap — anchored top-right of canvas */}
+          {showHeatmap && <SafetyHeatmap onClose={() => setShowHeatmap(false)} />}
 
           {/* Overlay for Camera Feeds */}
           <CameraFeeds />

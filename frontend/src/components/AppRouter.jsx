@@ -5,6 +5,7 @@ import ProtectedRoute from './ProtectedRoute';
 import App from '../App';
 import DiagnosticsLive from './DiagnosticsLive';
 import ManualsViewer from './ManualsViewer';
+import InsightsPage from './InsightsPage';
 
 /**
  * AppRouter - Main router component
@@ -52,6 +53,16 @@ export default function AppRouter() {
           element={
             <ProtectedRoute>
               <ManualsViewer />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Safety Insights Hub */}
+        <Route
+          path="/insights"
+          element={
+            <ProtectedRoute>
+              <InsightsPage />
             </ProtectedRoute>
           }
         />

@@ -3,6 +3,7 @@ import { useRigStore } from '../stores/useRigStore.js'
 import { ProofLightbox, ppeChipStyle, personPpeItems, ppeHasAlert } from './PPEPanel.jsx'
 import StatusBadge from './ui/StatusBadge.jsx'
 import CircularGauge from './ui/CircularGauge.jsx'
+import PermitPanel from './PermitPanel.jsx'
 
 const STATUS_COLOR = {
   normal:   'var(--accent-green)',
@@ -516,12 +517,155 @@ function PersonsTab() {
   )
 }
 
+const SEV_TEXT_COLOR = {
+  CRITICAL: 'var(--accent-red)',
+  HIGH:     'var(--accent-amber)',
+  WARNING:  'var(--accent-amber)',
+  NORMAL:   'var(--accent-green)',
+}
+
+function CompoundRiskTab() {
+  const compoundRisk = useRigStore(s => s.compoundRisk)
+
+  if (!compoundRisk) return (
+    <div style={{
+      textAlign: 'center', color: 'var(--text-dim)',
+      fontFamily: 'var(--font-mono)', fontSize: 11, padding: 24,
+    }}>COMPOUND RISK ENGINE LOADING…</div>
+  )
+
+  const rules    = compoundRisk.rules_fired     || []
+  const actions  = compoundRisk.immediate_actions || []
+  const narrative = compoundRisk.narrative       || ''
+  const severity  = compoundRisk.severity        || 'NORMAL'
+  const sevColor  = SEV_TEXT_COLOR[severity]     || 'var(--accent-green)'
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        paddingBottom: 10, marginBottom: 12, borderBottom: '1px solid var(--border-solid)',
+      }}>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-dim)', letterSpacing: 1 }}>
+          COMPOUND RISK ENGINE
+        </span>
+        <span style={{
+          fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700,
+          color: sevColor, border: `1px solid ${sevColor}40`,
+          background: `${sevColor}18`, padding: '2px 8px', borderRadius: 2, letterSpacing: 1,
+        }}>
+          {severity} · {rules.length} RULE{rules.length !== 1 ? 'S' : ''}
+        </span>
+      </div>
+
+      {/* Rule cards */}
+      {rules.length === 0 ? (
+        <div style={{
+          background: 'var(--bg-card)', border: '1px solid var(--border-solid)',
+          borderLeft: '3px solid var(--accent-green)', borderRadius: 2, padding: '12px 13px',
+          fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--accent-green)',
+        }}>
+          ALL SYSTEMS NORMAL — No compound risks detected
+        </div>
+      ) : rules.map((rule, i) => {
+        const rSev   = rule.severity || 'WARNING'
+        const rColor = rSev === 'CRITICAL' ? 'var(--accent-red)' : 'var(--accent-amber)'
+        return (
+          <div key={rule.rule_id || i} style={{
+            background: 'var(--bg-card)', border: '1px solid var(--border-solid)',
+            borderLeft: `3px solid ${rColor}`, borderRadius: 2, padding: '11px 13px', marginBottom: 8,
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: 0.5 }}>
+                {rule.rule_id}
+              </span>
+              <span style={{
+                fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700,
+                color: rColor, border: `1px solid ${rColor}40`, background: `${rColor}18`,
+                padding: '1px 6px', borderRadius: 2, letterSpacing: 1,
+              }}>{rSev}</span>
+            </div>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 5 }}>
+              {rule.title}
+            </div>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)', marginBottom: 6, lineHeight: 1.5 }}>
+              {rule.description}
+            </div>
+            {rule.contributing_factors?.length > 0 && (
+              <div style={{ marginBottom: 4 }}>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--text-dim)', letterSpacing: 0.5 }}>FACTORS  </span>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--accent-amber)' }}>
+                  {rule.contributing_factors.join(' · ')}
+                </span>
+              </div>
+            )}
+            {rule.regulatory_refs?.length > 0 && (
+              <div style={{ marginBottom: rule.zone ? 4 : 0 }}>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--text-dim)', letterSpacing: 0.5 }}>REGS  </span>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--accent-cobalt)' }}>
+                  {rule.regulatory_refs.join(' · ')}
+                </span>
+              </div>
+            )}
+            {rule.zone && (
+              <div>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--text-dim)' }}>ZONE  </span>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--text-primary)' }}>
+                  {rule.zone.replace(/_/g, ' ').toUpperCase()}
+                </span>
+              </div>
+            )}
+          </div>
+        )
+      })}
+
+      {/* Immediate actions */}
+      {actions.length > 0 && (
+        <div style={{ marginTop: 14 }}>
+          <div style={{
+            fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--text-dim)',
+            letterSpacing: 1.2, marginBottom: 8,
+          }}>IMMEDIATE ACTIONS</div>
+          {actions.map((action, i) => (
+            <div key={i} style={{
+              display: 'flex', gap: 8, alignItems: 'flex-start',
+              background: 'var(--bg-card)', border: '1px solid var(--border-solid)',
+              borderRadius: 2, padding: '8px 12px', marginBottom: 6,
+              fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-primary)', lineHeight: 1.5,
+            }}>
+              <span style={{ color: 'var(--accent-red)', fontWeight: 700, flexShrink: 0, minWidth: 14 }}>{i + 1}.</span>
+              <span>{action}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* AI narrative */}
+      {narrative && !narrative.startsWith('Narrative generation failed') && narrative !== '' && (
+        <div style={{
+          marginTop: 14, background: 'var(--bg-card)', border: '1px solid var(--border-solid)',
+          borderRadius: 2, padding: '10px 12px',
+        }}>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--text-dim)', letterSpacing: 1, marginBottom: 6 }}>
+            AI RISK NARRATIVE
+          </div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+            {narrative}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Sidebar() {
   const tab           = useRigStore(s => s.sidebarTab)
   const setTab        = useRigStore(s => s.setSidebarTab)
   const persons       = useRigStore(s => s.persons)
   const zones         = useRigStore(s => s.zones)
   const connected     = useRigStore(s => s.connected)
+  const compoundRisk  = useRigStore(s => s.compoundRisk)
   const showAvatars   = useRigStore(s => s.showAvatars)
   const showSensors   = useRigStore(s => s.showSensors)
   const toggleAvatars = useRigStore(s => s.toggleAvatars)
@@ -538,12 +682,15 @@ export default function Sidebar() {
     return () => clearInterval(id)
   }, [])
 
-  const criticalCount = Object.values(zones).filter(z => z.status === 'critical').length
-  const alertPersons  = persons.filter(p => ppeHasAlert(p.ppe || {})).length
+  const criticalCount  = Object.values(zones).filter(z => z.status === 'critical').length
+  const alertPersons   = persons.filter(p => ppeHasAlert(p.ppe || {})).length
+  const riskRuleCount  = (compoundRisk?.rules_fired || []).length
 
   const tabs = [
     { id: 'zones',   label: 'ZONES',     badge: criticalCount },
     { id: 'persons', label: 'PERSONNEL', badge: alertPersons  },
+    { id: 'risk',    label: 'RISK',      badge: riskRuleCount },
+    { id: 'permits', label: 'PERMITS',   badge: 0             },
   ]
 
   const toggleBtnStyle = (active) => ({
@@ -655,6 +802,8 @@ export default function Sidebar() {
       <div style={{ flex: 1, overflowY: 'auto', padding: '12px 14px 16px' }}>
         {tab === 'zones'   && <ZonesTab />}
         {tab === 'persons' && <PersonsTab />}
+        {tab === 'risk'    && <CompoundRiskTab />}
+        {tab === 'permits' && <PermitPanel />}
       </div>
 
       {/* Footer */}
