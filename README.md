@@ -2,6 +2,7 @@
 
 A 3D dashboard for monitoring an RigVision drilling rig from a browser. The site shows the rig as an interactive 3D model and overlays it with live camera feeds, sensor readings, and safety alerts.
 
+Youtube Walkthrough : [https://youtu.be/x_otGeyzShI](https://www.youtube.com/watch?v=x_otGeyzShI)
 ---
 
 ## Why we built this
